@@ -144,7 +144,7 @@ uint16_t juice_udp_get_port(socket_t sock) {
 	return get_addr_port((struct sockaddr *)&sa);
 }
 
-int juice_udp_get_addrs(socket_t sock, sockaddr_record_t *records,
+int juice_udp_get_addrs(socket_t sock, struct sockaddr_record *records,
                         size_t count) {
 	uint16_t port = juice_udp_get_port(sock);
 	if (port == 0) {
