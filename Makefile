@@ -25,10 +25,10 @@ $(NAME).a: $(OBJS)
 	$(AR) crf $@ $(OBJS)
 
 $(NAME).so: $(OBJS)
-	$(CXX) $(LDFLAGS) -shared -o $@ $(OBJS) $(LDLIBS)
+	$(CC) $(LDFLAGS) -shared -o $@ $(OBJS) $(LDLIBS)
 
 tests: $(NAME).a test/main.o
-	$(CXX) $(LDFLAGS) -o $@ test/main.o $(LDLIBS) $(NAME).a
+	$(CC) $(LDFLAGS) -o $@ test/main.o $(LDLIBS) $(NAME).a
 
 clean:
 	-$(RM) include/juice/*.d *.d
