@@ -169,8 +169,8 @@ int juice_udp_get_addrs(socket_t sock, sockaddr_record_t *records,
 			if (count) {
 				memcpy(&records->addr, sa, len);
 				records->len = len;
-				if (set_addr_port((struct sockaddr *)&records->addr, port) ==
-				    0) {
+				sa = (struct sockaddr *)&records->addr;
+				if (set_addr_port(sa, port) == 0) {
 					++records;
 					--count;
 				}
@@ -181,7 +181,8 @@ int juice_udp_get_addrs(socket_t sock, sockaddr_record_t *records,
 
 	freeifaddrs(ifas);
     return ret;
-#else
+
+#else // NO_IFADDRS
 	char hostname[HOST_NAME_MAX];
 	if (gethostname(hostname, HOST_NAME_MAX)) {
 		JLOG_ERROR("gethostname failed, errno=%d", errno);
@@ -198,13 +199,12 @@ int juice_udp_get_addrs(socket_t sock, sockaddr_record_t *records,
 	aiHints.ai_socktype = SOCK_DGRAM;
 	aiHints.ai_protocol = 0;
 	aiHints.ai_flags = AI_NUMERICSERV;
-	if (getaddrinfo(hostname, service, &aiHints, &aiList) != 0) {
-		JLOG_ERROR("getaddrinfo failed: local hostname is not resolvable");
-		if (getaddrinfo("localhost", service, &aiHints, &aiList) != 0) {
-			memcpy(records->addr, aiList->ai_addr, aiList->ai_addrlen);
-			records->len = aiList->ai_addrlen;
-			++records;
-			--count;
+	if (getaddrinfo(hostname, service, &aiHints, &aiList)) {
+		JLOG_WARN("getaddrinfo failed: hostname \"%s\" is not resolvable",
+		          hostname);
+		if (getaddrinfo("localhost", service, &aiHints, &aiList)) {
+			JLOG_ERROR(
+			    "getaddrinfo failed: hostname \"localhost\" is not resolvable");
 			return -1;
 		}
 	}
