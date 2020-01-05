@@ -19,6 +19,7 @@
 #ifndef JUICE_SOCKET_H
 #define JUICE_SOCKET_H
 
+#include <stdint.h>
 #include <stdlib.h>
 
 #if defined(_WIN32) || defined(_WIN64)
