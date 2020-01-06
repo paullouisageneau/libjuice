@@ -18,12 +18,7 @@
 
 #include "socket.h"
 
-struct sockaddr_record {
-	struct sockaddr_storage addr;
-	socklen_t len;
-};
-
 socket_t juice_udp_create(void);
 uint16_t juice_udp_get_port(socket_t sock);
 int juice_udp_get_addrs(socket_t sock, struct sockaddr_record *records,
-                        size_t count);
+                        size_t *count);

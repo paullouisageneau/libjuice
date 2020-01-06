@@ -66,14 +66,14 @@ struct stun_header {
 #define STUN_CLASS_MASK 0x0110
 
 typedef enum stun_class {
-	STUN_CLASS_REQUEST = 0x0110,
+	STUN_CLASS_REQUEST = 0x0000,
 	STUN_CLASS_INDICATION = 0x0010,
 	STUN_CLASS_RESP_SUCCESS = 0x0100,
 	STUN_CLASS_RESP_ERROR = 0x0110
 } stun_class_t;
 
 typedef enum stun_method {
-	STUN_METHOD_BINDING = 0x001,
+	STUN_METHOD_BINDING = 0x0001,
 } stun_method_t;
 
 /*
@@ -128,8 +128,8 @@ struct stun_value_mapped_address {
 };
 
 typedef enum stun_address_family {
-	STUN_ADDRESS_FAMILY_IPV4,
-	STUN_ADDRESS_FAMILY_IPV6,
+	STUN_ADDRESS_FAMILY_IPV4 = 0x01,
+	STUN_ADDRESS_FAMILY_IPV6 = 0x02,
 } stun_address_family_t;
 
 /*
@@ -162,7 +162,8 @@ typedef struct stun_message {
 
 int stun_write(void *buf, size_t size, const stun_message_t *msg);
 int stun_write_header(void *buf, size_t size, stun_class_t class,
-                      stun_method_t method, const uint8_t *transaction_id);
+                      stun_method_t method, size_t length,
+                      const uint8_t *transaction_id);
 int stun_write_attr(void *buf, size_t size, uint16_t type, const void *value,
                     size_t len);
 

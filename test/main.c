@@ -18,8 +18,20 @@
 
 #include "juice/juice.h"
 
+#include <stdio.h>
+#include <unistd.h>
+
 int main(int argc, char **argv) {
 	juice_log_set_level(JUICE_LOG_LEVEL_VERBOSE);
 
+	juice_config_t config;
+	config.lite = false;
+	config.cb_state_changed = NULL;
+	config.cb_candidate = NULL;
+	config.cb_recv = NULL;
+
+	juice_agent_t *agent = juice_agent_create(&config);
+
+	sleep(10);
 	return 0;
 }

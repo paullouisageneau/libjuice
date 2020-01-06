@@ -145,12 +145,15 @@ uint16_t juice_udp_get_port(socket_t sock) {
 }
 
 int juice_udp_get_addrs(socket_t sock, struct sockaddr_record *records,
-                        size_t count) {
+                        size_t *count) {
 	uint16_t port = juice_udp_get_port(sock);
 	if (port == 0) {
 		JLOG_ERROR("Getting UDP port failed");
 		return -1;
 	}
+
+	struct sockaddr_record *end = records + *count;
+	*count = 0;
 
 #ifndef NO_IFADDRS
 	struct ifaddrs *ifas;
@@ -163,17 +166,16 @@ int juice_udp_get_addrs(socket_t sock, struct sockaddr_record *records,
 	struct ifaddrs *ifa = ifas;
 	while (ifa) {
 		struct sockaddr *sa = ifa->ifa_addr;
-		socklen_t len = sa ? get_addr_len(sa) : 0;
-		if (len) {
+		socklen_t len;
+		if (sa && (sa->sa_family == AF_INET || sa->sa_family == AF_INET6) &&
+		    (len = get_addr_len(sa))) {
 			++ret;
-			if (count) {
+			if (records != end) {
 				memcpy(&records->addr, sa, len);
+				set_addr_port((struct sockaddr *)&records->addr, port);
 				records->len = len;
-				sa = (struct sockaddr *)&records->addr;
-				if (set_addr_port(sa, port) == 0) {
-					++records;
-					--count;
-				}
+				++records;
+				++*count;
 			}
 		}
 		ifa = ifa->ifa_next;
@@ -212,14 +214,16 @@ int juice_udp_get_addrs(socket_t sock, struct sockaddr_record *records,
 	int ret = 0;
 	addrinfo *ai = aiList;
 	while (ai) {
-		if (count && (ai->ai_family == AF_INET || ai->ai_family == AF_INET6)) {
-			memcpy(&records->addr, sa, len);
-			records->len = len;
-			++records;
-			--count;
+		if (ai->ai_family == AF_INET || ai->ai_family == AF_INET6) {
+			++ret;
+			if (records != end) {
+				memcpy(&records->addr, ai->ai_addr, ai->ai_addrlen);
+				records->len = ai->ai_addrlen;
+				++records;
+				++*count;
+			}
 		}
 		ai = ai->ai_next;
-		++ret;
 	}
 
 	freeaddrinfo(aiList);

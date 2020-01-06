@@ -92,4 +92,9 @@ typedef int ctl_t;
 
 #endif // defined(_WIN32) || defined(_WIN64)
 
+struct sockaddr_record {
+	struct sockaddr_storage addr;
+	socklen_t len;
+};
+
 #endif // JUICE_SOCKET_H
