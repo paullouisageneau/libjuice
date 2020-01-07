@@ -16,29 +16,33 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include "juice/juice.h"
+#include "crc32.h"
 
-#include <stdint.h>
-#include <stdio.h>
-#include <string.h>
-#include <unistd.h>
+#define CRC32_REVERSED_POLY 0xEDB88320
+#define CRC32_INIT 0xFFFFFFFF
+#define CRC32_XOR 0xFFFFFFFF
 
-uint32_t crc32(const void *data, size_t size);
+uint32_t crc32_byte(uint32_t crc) {
+	for (int i = 0; i < 8; ++i)
+		if (crc & 1)
+			crc = (crc >> 1) ^ CRC32_REVERSED_POLY;
+		else
+			crc = (crc >> 1);
+	return crc;
+}
 
-int main(int argc, char **argv) {
-	juice_log_set_level(JUICE_LOG_LEVEL_VERBOSE);
+uint32_t crc32_table(const char *p, size_t size, uint32_t *table) {
+	uint32_t crc = CRC32_INIT;
+	while (size--)
+		crc = table[(uint8_t)(crc & 0xFF) ^ *p++] ^ (crc >> 8);
+	return crc ^ CRC32_XOR;
+}
 
-	const char *str = "123456789";
-	printf("%X\n", crc32(str, strlen(str)));
+uint32_t crc32(const void *data, size_t size) {
+	static uint32_t table[256] = {0};
+	if (table[0] == 0)
+		for (size_t i = 0; i < 256; ++i)
+			table[i] = crc32_byte(i);
 
-	juice_config_t config;
-	config.lite = false;
-	config.cb_state_changed = NULL;
-	config.cb_candidate = NULL;
-	config.cb_recv = NULL;
-
-	juice_agent_t *agent = juice_agent_create(&config);
-
-	sleep(10);
-	return 0;
+	return crc32_table(data, size, table);
 }

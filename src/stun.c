@@ -17,6 +17,7 @@
  */
 
 #include "stun.h"
+#include "crc32.h"
 #include "juice.h"
 #include "log.h"
 #include "udp.h"
@@ -25,10 +26,40 @@
 #include <stdlib.h>
 
 #define STUN_MAGIC 0x2112A442
+#define STUN_FINGERPRINT_XOR 0x5354554E // "STUN"
 
 int stun_write(void *buf, size_t size, const stun_message_t *msg) {
-	return stun_write_header(buf, size, msg->msg_class, msg->msg_method, 0,
-	                         msg->transaction_id);
+	uint8_t *begin = buf;
+	uint8_t *pos = begin;
+	uint8_t *end = begin + size;
+
+	size_t length = sizeof(struct stun_attr) + 4;
+
+	size_t len =
+	    stun_write_header(pos, end - pos, msg->msg_class, msg->msg_method,
+	                      length, msg->transaction_id);
+	if (len <= 0)
+		goto no_space;
+	pos += len;
+
+	// TODO
+	// short term credentials
+	// PRIORITY, USE-CANDIDATE, ICE-CONTROLLED, and ICE-CONTROLLING
+
+	// WARNING: length !
+
+	uint32_t fingerprint = crc32(buf, pos - begin) ^ STUN_FINGERPRINT_XOR;
+	len =
+	    stun_write_attr(pos, end - pos, STUN_ATTR_FINGERPRINT, &fingerprint, 4);
+	if (len <= 0)
+		goto no_space;
+	pos += len;
+
+	return pos - begin;
+
+no_space:
+	JLOG_ERROR("Not enough space in buffer for STUN message, size=%zu", size);
+	return -1;
 }
 
 int stun_write_header(void *buf, size_t size, stun_class_t class,
@@ -71,7 +102,7 @@ int stun_read(const void *data, size_t size, stun_message_t *msg) {
 
 	const struct stun_header *header = data;
 	if (ntohl(header->magic) != STUN_MAGIC) {
-		JLOG_VERBOSE("STUN magic invalid");
+		JLOG_VERBOSE("STUN magic number invalid");
 		return -1;
 	}
 

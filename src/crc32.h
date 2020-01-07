@@ -16,29 +16,12 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include "juice/juice.h"
+#ifndef JUICE_CRC32C_H
+#define JUICE_CRC32C_H
 
 #include <stdint.h>
-#include <stdio.h>
-#include <string.h>
-#include <unistd.h>
+#include <stdlib.h>
 
 uint32_t crc32(const void *data, size_t size);
 
-int main(int argc, char **argv) {
-	juice_log_set_level(JUICE_LOG_LEVEL_VERBOSE);
-
-	const char *str = "123456789";
-	printf("%X\n", crc32(str, strlen(str)));
-
-	juice_config_t config;
-	config.lite = false;
-	config.cb_state_changed = NULL;
-	config.cb_candidate = NULL;
-	config.cb_recv = NULL;
-
-	juice_agent_t *agent = juice_agent_create(&config);
-
-	sleep(10);
-	return 0;
-}
+#endif // JUICE_CRC32_H

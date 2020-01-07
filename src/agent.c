@@ -32,7 +32,7 @@ int resolve_addr(const char *hostname, const char *service,
 
 	struct addrinfo hints;
 	memset(&hints, 0, sizeof(struct addrinfo));
-	hints.ai_family = AF_INET; // TODO
+	hints.ai_family = AF_UNSPEC;
 	hints.ai_socktype = SOCK_DGRAM;
 	hints.ai_protocol = IPPROTO_UDP;
 	hints.ai_flags = AI_ADDRCONFIG;
@@ -62,8 +62,9 @@ void agent_run(juice_agent_t *agent) {
 	const char *stun_service = "19302";
 
 	struct sockaddr_record records[4];
-	size_t count = 4;
-	if (resolve_addr(stun_hostname, stun_service, records, &count) <= 0) {
+	size_t records_count = 4;
+	if (resolve_addr(stun_hostname, stun_service, records, &records_count) <=
+	    0) {
 		JLOG_ERROR("STUN address resolution failed");
 		return;
 	}
@@ -83,50 +84,54 @@ void agent_run(juice_agent_t *agent) {
 		return;
 	}
 
-	if (sendto(agent->sock, buffer, size, 0,
-	           (struct sockaddr *)&records[0].addr, records[0].len) <= 0)
-		JLOG_ERROR("STUN message send failed");
-
-	fd_set set;
-	FD_ZERO(&set);
-	FD_SET(agent->sock, &set);
+	for (int i = 0; i < records_count; ++i) {
+		if (sendto(agent->sock, buffer, size, 0,
+		           (struct sockaddr *)&records[i].addr, records[i].len) <= 0)
+			JLOG_ERROR("STUN message send failed");
+	}
 
 	struct timeval timeout;
 	timeout.tv_sec = 10;
 	timeout.tv_usec = 0;
 
-	int n = SOCKET_TO_INT(agent->sock) + 1;
-	int ret = select(n, &set, NULL, NULL, &timeout);
-	if (ret < 0) {
-		JLOG_ERROR("select failed");
-		return;
-	}
+	while (true) {
+		fd_set set;
+		FD_ZERO(&set);
+		FD_SET(agent->sock, &set);
 
-	if (FD_ISSET(agent->sock, &set)) {
-		struct sockaddr_storage addr;
-		socklen_t addrlen = sizeof(addr);
-		int ret = recvfrom(agent->sock, buffer, 1280, 0,
-		                   (struct sockaddr *)&addr, &addrlen);
+		int n = SOCKET_TO_INT(agent->sock) + 1;
+		int ret = select(n, &set, NULL, NULL, &timeout);
 		if (ret < 0) {
-			JLOG_ERROR("recvfrom failed");
+			JLOG_ERROR("select failed");
 			return;
 		}
 
-		if (stun_read(buffer, ret, &msg) < 0) {
-			JLOG_ERROR("STUN message read failed");
-			return;
-		}
+		if (FD_ISSET(agent->sock, &set)) {
+			struct sockaddr_storage addr;
+			socklen_t addrlen = sizeof(addr);
+			int ret = recvfrom(agent->sock, buffer, 1280, 0,
+			                   (struct sockaddr *)&addr, &addrlen);
+			if (ret < 0) {
+				JLOG_ERROR("recvfrom failed");
+				return;
+			}
 
-		char host[256];
-		char service[16];
-		if (getnameinfo((struct sockaddr *)&msg.mapped_addr, msg.mapped_addrlen,
-		                host, 256, service, 16,
-		                NI_NUMERICHOST | NI_NUMERICSERV | NI_DGRAM)) {
-			JLOG_ERROR("getnameinfo failed");
-			return;
-		}
+			if (stun_read(buffer, ret, &msg) < 0) {
+				JLOG_ERROR("STUN message read failed");
+				return;
+			}
 
-		JLOG_INFO("Mapped address: %s:%s\n", host, service);
+			char host[256];
+			char service[16];
+			if (getnameinfo((struct sockaddr *)&msg.mapped_addr,
+			                msg.mapped_addrlen, host, 256, service, 16,
+			                NI_NUMERICHOST | NI_NUMERICSERV | NI_DGRAM)) {
+				JLOG_ERROR("getnameinfo failed");
+				return;
+			}
+
+			JLOG_INFO("Mapped address: %s:%s\n", host, service);
+		}
 	}
 
 	return;
