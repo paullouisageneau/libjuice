@@ -95,6 +95,6 @@ typedef int ctl_t;
 struct sockaddr_record {
 	struct sockaddr_storage addr;
 	socklen_t len;
-};
+} sockaddr_record_t;
 
 #endif // JUICE_SOCKET_H

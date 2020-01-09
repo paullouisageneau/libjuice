@@ -21,6 +21,7 @@
 
 #include "socket.h" // for sockaddr stuff
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #pragma pack(push, 1)
@@ -102,9 +103,13 @@ typedef enum stun_attr_type {
 	STUN_ATTR_REALM = 0x0014,
 	STUN_ATTR_NONCE = 0x0015,
 	STUN_ATTR_XOR_MAPPED_ADDRESS = 0x0020,
+	STUN_ATTR_PRIORITY = 0x0024,
+	STUN_ATTR_USE_CANDIDATE = 0x0025,
 	STUN_ATTR_SOFTWARE = 0x8022,
 	STUN_ATTR_ALTERNATE_SERVER = 0x8023,
 	STUN_ATTR_FINGERPRINT = 0x8028,
+	STUN_ATTR_ICE_CONTROLLED = 0x8029,
+	STUN_ATTR_ICE_CONTROLLING = 0x802A,
 } stun_attr_type_t;
 
 /*
@@ -156,19 +161,28 @@ typedef struct stun_message {
 	stun_class_t msg_class;
 	stun_method_t msg_method;
 	uint8_t transaction_id[STUN_TRANSACTION_ID_SIZE];
-	struct sockaddr_storage mapped_addr;
-	socklen_t mapped_addrlen;
+	unsigned int error_code;
+	bool has_integrity;
+	bool has_fingerprint;
+	const char *username;
+	const char *password;
+	unsigned int priority;
+	bool use_candidate;
+	bool ice_controlling;
+	bool ice_controlled;
+	struct sockaddr_record mapped;
 } stun_message_t;
 
 int stun_write(void *buf, size_t size, const stun_message_t *msg);
 int stun_write_header(void *buf, size_t size, stun_class_t class,
-                      stun_method_t method, size_t length,
-                      const uint8_t *transaction_id);
+                      stun_method_t method, const uint8_t *transaction_id);
+size_t stun_update_header_length(void *buf, size_t length);
 int stun_write_attr(void *buf, size_t size, uint16_t type, const void *value,
-                    size_t len);
+                    size_t length);
 
-int stun_read(const void *data, size_t size, stun_message_t *msg);
-int stun_read_attr(const void *data, size_t size, stun_message_t *msg);
+int stun_read(void *data, size_t size, stun_message_t *msg);
+int stun_read_attr(const void *data, size_t size, stun_message_t *msg,
+                   uint8_t *begin, uint8_t *attr_begin);
 int stun_read_value_mapped_address(const void *data, size_t size,
                                    stun_message_t *msg, const uint8_t *mask);
 

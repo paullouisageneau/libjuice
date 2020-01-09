@@ -90,6 +90,9 @@ void agent_run(juice_agent_t *agent) {
 			JLOG_ERROR("STUN message send failed");
 	}
 
+	// Send STUN binding request
+	JLOG_VERBOSE("STUN binding request sent to %zu addresses", records_count);
+
 	struct timeval timeout;
 	timeout.tv_sec = 10;
 	timeout.tv_usec = 0;
@@ -116,21 +119,21 @@ void agent_run(juice_agent_t *agent) {
 				return;
 			}
 
-			if (stun_read(buffer, ret, &msg) < 0) {
+			if (stun_read(buffer, ret, &msg) <= 0) {
 				JLOG_ERROR("STUN message read failed");
 				return;
 			}
 
 			char host[256];
 			char service[16];
-			if (getnameinfo((struct sockaddr *)&msg.mapped_addr,
-			                msg.mapped_addrlen, host, 256, service, 16,
+			if (getnameinfo((struct sockaddr *)&msg.mapped.addr, msg.mapped.len,
+			                host, 256, service, 16,
 			                NI_NUMERICHOST | NI_NUMERICSERV | NI_DGRAM)) {
 				JLOG_ERROR("getnameinfo failed");
 				return;
 			}
 
-			JLOG_INFO("Mapped address: %s:%s\n", host, service);
+			JLOG_INFO("Mapped address: %s:%s", host, service);
 		}
 	}
 

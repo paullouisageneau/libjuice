@@ -6,7 +6,10 @@ AR=$(CROSS)ar
 RM=rm -f
 CFLAGS=-g -O0 -pthread -fPIC -Wall -Wno-address-of-packed-member
 LDFLAGS=-pthread
-INCLUDES=-Iinclude/juice
+LIBS=nettle
+
+LDLIBS= $(shell pkg-config --libs $(LIBS))
+INCLUDES=-Iinclude/juice $(shell pkg-config --cflags $(LIBS))
 
 SRCS=$(shell printf "%s " src/*.c)
 OBJS=$(subst .c,.o,$(SRCS))
