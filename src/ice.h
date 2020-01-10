@@ -40,6 +40,11 @@ typedef struct juice_candidate {
 	struct sockaddr_record resolved;
 } juice_candidate_t;
 
+typedef struct juice_candidate_pair {
+	juice_candidate_t local;
+	juice_candidate_t remote;
+} juice_candidate_pair_t;
+
 #define JUICE_CANDIDATE_PREF_HOST 120
 #define JUICE_CANDIDATE_PREF_PEER_REFLEXIVE 110
 #define JUICE_CANDIDATE_PREF_SERVER_REFLEXIVE 100
