@@ -179,6 +179,9 @@ int stun_write_header(void *buf, size_t size, stun_class_t class,
 size_t stun_update_header_length(void *buf, size_t length);
 int stun_write_attr(void *buf, size_t size, uint16_t type, const void *value,
                     size_t length);
+int stun_write_value_mapped_address(void *buf, size_t size,
+                                    const struct sockaddr *addr,
+                                    socklen_t addrlen, const uint8_t *mask);
 
 int stun_read(void *data, size_t size, stun_message_t *msg);
 int stun_read_attr(const void *data, size_t size, stun_message_t *msg,

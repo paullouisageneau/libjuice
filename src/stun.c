@@ -70,6 +70,24 @@ int stun_write(void *buf, size_t size, const stun_message_t *msg) {
 		pos += len;
 	}
 
+	if (msg->mapped.len) {
+		JLOG_VERBOSE("Writing XOR mapped address");
+		uint8_t value[32];
+		uint8_t mask[16];
+		*((uint32_t *)mask) = htonl(STUN_MAGIC);
+		memcpy(mask + 4, msg->transaction_id, 12);
+		int value_len = stun_write_value_mapped_address(
+		    value, 32, (const struct sockaddr *)&msg->mapped.addr,
+		    msg->mapped.len, mask);
+		if (value_len > 0) {
+			len = stun_write_attr(pos, end - pos, STUN_ATTR_XOR_MAPPED_ADDRESS,
+			                      value, value_len);
+			if (len <= 0)
+				goto no_space;
+			pos += len;
+		}
+	}
+
 	if (msg->priority) {
 		uint32_t priority = htonl(msg->priority);
 		len = stun_write_attr(pos, end - pos, STUN_ATTR_PRIORITY, &priority, 4);
@@ -180,6 +198,43 @@ int stun_write_attr(void *buf, size_t size, uint16_t type, const void *value,
 	memcpy(attr->value, value, length);
 
 	return sizeof(struct stun_attr) + length;
+}
+
+int stun_write_value_mapped_address(void *buf, size_t size,
+                                    const struct sockaddr *addr,
+                                    socklen_t addrlen, const uint8_t *mask) {
+	if (size < sizeof(struct stun_value_mapped_address))
+		return -1;
+
+	struct stun_value_mapped_address *value = buf;
+	switch (addr->sa_family) {
+	case AF_INET: {
+		value->family = STUN_ADDRESS_FAMILY_IPV4;
+		if (size < sizeof(struct stun_value_mapped_address) + 4)
+			return -1;
+		JLOG_VERBOSE("Writing IPv4 address");
+		const struct sockaddr_in *sin = (const struct sockaddr_in *)addr;
+		value->port = sin->sin_port ^ *((uint16_t *)mask);
+		*((uint32_t *)value->address) =
+		    sin->sin_addr.s_addr ^ *((uint32_t *)mask);
+		return sizeof(struct stun_value_mapped_address) + 4;
+	}
+	case AF_INET6: {
+		value->family = STUN_ADDRESS_FAMILY_IPV6;
+		if (size < sizeof(struct stun_value_mapped_address) + 16)
+			return -1;
+		JLOG_VERBOSE("Writing IPv6 address");
+		const struct sockaddr_in6 *sin6 = (const struct sockaddr_in6 *)addr;
+		value->port = sin6->sin6_port ^ *((uint16_t *)mask);
+		for (int i = 0; i < 16; ++i)
+			value->address[i] = sin6->sin6_addr.s6_addr[i] ^ mask[i];
+		return sizeof(struct stun_value_mapped_address) + 16;
+	}
+	default: {
+		JLOG_DEBUG("Unknown address family %u", (unsigned int)addr->sa_family);
+		return -1;
+	}
+	}
 }
 
 int stun_read(void *data, size_t size, stun_message_t *msg) {
@@ -439,7 +494,7 @@ int stun_read_value_mapped_address(const void *data, size_t size,
 		break;
 	}
 	default: {
-		JLOG_DEBUG("Unknown address family %X", (unsigned int)family);
+		JLOG_DEBUG("Unknown STUN address family %X", (unsigned int)family);
 		len = size;
 		break;
 	}
