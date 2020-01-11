@@ -20,34 +20,64 @@
 #define JUICE_ICE_H
 
 #include "juice.h"
-#include "socket.h"
+#include "socket.h" // for sockaddr stuff
 
-typedef enum juice_candidate_type {
-	JUICE_CANDIDATE_TYPE_HOST,
-	JUICE_CANDIDATE_TYPE_SERVER_REFLEXIVE,
-	JUICE_CANDIDATE_TYPE_PEER_REFLEXIVE,
-	JUICE_CANDIDATE_TYPE_RELAYED,
-} juice_candidate_type_t;
+#include <stdint.h>
 
-typedef struct juice_candidate {
-	juice_candidate_type_t type;
-	unsigned int priority;
-	unsigned int component;
-	char foundation[32 + 1]; // foundation is composed of 1 to 32 ice-chars
+#define ICE_MAX_CANDIDATES_COUNT 16
+
+typedef enum ice_candidate_type {
+	ICE_CANDIDATE_TYPE_HOST,
+	ICE_CANDIDATE_TYPE_SERVER_REFLEXIVE,
+	ICE_CANDIDATE_TYPE_PEER_REFLEXIVE,
+	ICE_CANDIDATE_TYPE_RELAYED,
+} ice_candidate_type_t;
+
+// RFC 8445: The RECOMMENDED values for type preferences are 126 for host
+// candidates, 110 for peer-reflexive candidates, 100 for server-reflexive
+// candidates, and 0 for relayed candidates.
+#define ICE_CANDIDATE_PREF_HOST 126
+#define ICE_CANDIDATE_PREF_PEER_REFLEXIVE 110
+#define ICE_CANDIDATE_PREF_SERVER_REFLEXIVE 100
+#define ICE_CANDIDATE_PREF_RELAYED 0
+
+typedef struct ice_candidate {
+	ice_candidate_type_t type;
+	uint32_t priority;
+	int component;
+	char foundation[32 + 1]; // 1 to 32 characters
 	char transport[32 + 1];
-	char hostname[1024 + 1];
+	char hostname[256 + 1];
 	char service[32 + 1];
 	struct sockaddr_record resolved;
-} juice_candidate_t;
+} ice_candidate_t;
 
-typedef struct juice_candidate_pair {
-	juice_candidate_t local;
-	juice_candidate_t remote;
-} juice_candidate_pair_t;
+typedef struct ice_description {
+	char ice_ufrag[256 + 1]; // 4 to 256 characters
+	char ice_pwd[256 + 1];   // 22 to 256 characters
+	ice_candidate_t candidates[ICE_MAX_CANDIDATES_COUNT];
+	size_t candidates_count;
+} ice_description_t;
 
-#define JUICE_CANDIDATE_PREF_HOST 120
-#define JUICE_CANDIDATE_PREF_PEER_REFLEXIVE 110
-#define JUICE_CANDIDATE_PREF_SERVER_REFLEXIVE 100
-#define JUICE_CANDIDATE_PREF_RELAYED 30
+typedef struct ice_candidate_pair {
+	ice_candidate_t local;
+	ice_candidate_t remote;
+} ice_candidate_pair_t;
+
+typedef enum ice_resolve_mode {
+	ICE_RESOLVE_MODE_SIMPLE,
+	ICE_RESOLVE_MODE_LOOKUP,
+} ice_resolve_mode_t;
+
+int ice_parse_sdp(const char *sdp, ice_description_t *description);
+int ice_parse_sdp_candidate(const char *line, ice_candidate_t *candidate);
+int ice_create_local_candidate(ice_candidate_type_t type, int component,
+                               const struct sockaddr_record *record,
+                               ice_candidate_t *candidate);
+int ice_resolve_candidate(ice_candidate_t *candidate, ice_resolve_mode_t mode);
+int ice_add_candidate(const ice_candidate_t *candidate,
+                      ice_description_t *description);
+int ice_generate_sdp(const ice_description_t *description, char *buffer,
+                     size_t size);
 
 #endif

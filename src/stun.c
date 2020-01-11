@@ -240,7 +240,7 @@ int stun_write_value_mapped_address(void *buf, size_t size,
 int stun_read(void *data, size_t size, stun_message_t *msg) {
 	memset(msg, 0, sizeof(*msg));
 
-	// RFC 5245: The most significant 2 bits of every STUN message MUST be
+	// RFC 5389: The most significant 2 bits of every STUN message MUST be
 	// zeroes.
 	if (!size || *((uint8_t *)data) & 0xC0) {
 		JLOG_VERBOSE("Not a STUN message: first 2 bits are not zeroes");
@@ -258,7 +258,7 @@ int stun_read(void *data, size_t size, stun_message_t *msg) {
 		return 0;
 	}
 
-	// RFC 5245: The message length MUST contain the size, in bytes, of the
+	// RFC 5389: The message length MUST contain the size, in bytes, of the
 	// message not including the 20-byte STUN header. Since all STUN attributes
 	// are padded to a multiple of 4 bytes, the last 2 bits of this field are
 	// always zero.

@@ -36,12 +36,12 @@ int resolve_addr(const char *hostname, const char *service,
 	hints.ai_socktype = SOCK_DGRAM;
 	hints.ai_protocol = IPPROTO_UDP;
 	hints.ai_flags = AI_ADDRCONFIG;
-	struct addrinfo *aiList = NULL;
-	if (getaddrinfo(hostname, service, &hints, &aiList))
+	struct addrinfo *ai_list = NULL;
+	if (getaddrinfo(hostname, service, &hints, &ai_list))
 		return -1;
 
 	int ret = 0;
-	for (struct addrinfo *ai = aiList; ai; ai = ai->ai_next) {
+	for (struct addrinfo *ai = ai_list; ai; ai = ai->ai_next) {
 		if (ai->ai_family == AF_INET || ai->ai_family == AF_INET6) {
 			++ret;
 			if (records != end) {
@@ -53,7 +53,7 @@ int resolve_addr(const char *hostname, const char *service,
 		}
 	}
 
-	freeaddrinfo(aiList);
+	freeaddrinfo(ai_list);
 	return ret;
 }
 
@@ -125,9 +125,9 @@ void agent_run(juice_agent_t *agent) {
 			}
 
 			char host[256];
-			char service[16];
+			char service[32];
 			if (getnameinfo((struct sockaddr *)&msg.mapped.addr, msg.mapped.len,
-			                host, 256, service, 16,
+			                host, 256, service, 32,
 			                NI_NUMERICHOST | NI_NUMERICSERV | NI_DGRAM)) {
 				JLOG_ERROR("getnameinfo failed");
 				return;

@@ -166,7 +166,7 @@ typedef struct stun_message {
 	bool has_fingerprint;
 	const char *username;
 	const char *password;
-	unsigned int priority;
+	uint32_t priority;
 	bool use_candidate;
 	bool ice_controlling;
 	bool ice_controlled;
