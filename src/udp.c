@@ -87,7 +87,7 @@ static bool is_local_addr(struct sockaddr *sa) {
 		for (int i = 0; i < 9; ++i)
 			if (b[i] != 0)
 				return false;
-		if (b[10] == 0xFF && b[11] == 0xFF) { // IPv4 mapped
+		if (b[10] == 0xFF && b[11] == 0xFF) { // IPv4-mapped
 			if (b[12] == 127)                 // localhost
 				return true;
 			if (b[12] == 169 && b[13] == 254) // link-local
@@ -103,6 +103,16 @@ static bool is_local_addr(struct sockaddr *sa) {
 	default:
 		return false;
 	}
+}
+
+static bool is_temp_inet6_addr(struct sockaddr *sa) {
+	if (sa->sa_family != AF_INET6)
+		return false;
+	if (is_local_addr(sa))
+		return false;
+	const struct sockaddr_in6 *sin6 = (const struct sockaddr_in6 *)sa;
+	const uint8_t *b = sin6->sin6_addr.s6_addr;
+	return (b[8] & 0x02) ? false : true;
 }
 
 socket_t juice_udp_create(void) {
@@ -200,17 +210,45 @@ int juice_udp_get_addrs(socket_t sock, struct sockaddr_record *records,
 		return -1;
 	}
 
+	// RFC 8445: If gathering one or more host candidates that correspond to an
+	// IPv6 address that was generated using a mechanism that prevents location
+	// tracking [RFC7721], host candidates that correspond to IPv6 addresses
+	// that do allow location tracking, are configured on the same interface,
+	// and are part of the same network prefix MUST NOT be gathered.  Similarly,
+	// when host candidates corresponding to an IPv6 address generated using a
+	// mechanism that prevents location tracking are gathered, then host
+	// candidates corresponding to IPv6 link-local addresses [RFC4291] MUST NOT
+	// be gathered. The IPv6 default address selection specification [RFC6724]
+	// specifies that temporary addresses [RFC4941] are to be preferred over
+	// permanent addresses.
+
+	// Here, we will prevent gathering permanent IPv6 addresses if a temporary
+	// one is found. This is more restrictive but fully compliant.
+	bool has_temp_inet6 = false;
 	for (struct ifaddrs *ifa = ifas; ifa; ifa = ifa->ifa_next) {
+		if (!(ifa->ifa_flags & IFF_UP) || (ifa->ifa_flags & IFF_LOOPBACK))
+			continue;
+		if (ifa->ifa_addr && is_temp_inet6_addr(ifa->ifa_addr)) {
+			has_temp_inet6 = true;
+		}
+	}
+
+	for (struct ifaddrs *ifa = ifas; ifa; ifa = ifa->ifa_next) {
+		// RFC 8445: Addresses from a loopback interface MUST NOT be included in
+		// the candidate addresses.
 		if (!(ifa->ifa_flags & IFF_UP) || (ifa->ifa_flags & IFF_LOOPBACK))
 			continue;
 
 		struct sockaddr *sa = ifa->ifa_addr;
-		if (!sa)
-			continue;
-
 		socklen_t len;
-		if ((sa->sa_family == AF_INET || sa->sa_family == AF_INET6) &&
+		if (sa && (sa->sa_family == AF_INET || sa->sa_family == AF_INET6) &&
 		    !is_local_addr(sa) && (len = get_addr_len(sa))) {
+
+			// Do not gather permanent addresses if a temporary one was found
+			if (sa->sa_family == AF_INET6 && has_temp_inet6 &&
+			    !is_temp_inet6_addr(sa))
+				continue;
+
 			++ret;
 			if (records != end) {
 				memcpy(&records->addr, sa, len);
@@ -223,7 +261,7 @@ int juice_udp_get_addrs(socket_t sock, struct sockaddr_record *records,
 
 	freeifaddrs(ifas);
 
-#else // NO_IFADDRS
+#else // NO_IFADDRS defined
 	char hostname[HOST_NAME_MAX];
 	if (gethostname(hostname, HOST_NAME_MAX)) {
 		JLOG_ERROR("gethostname failed, errno=%d", errno);
