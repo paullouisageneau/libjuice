@@ -27,7 +27,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define BUFFER_SIZE 4096
+#define BUFFER_SIZE 1024
 
 static const char *skip_prefix(const char *str, const char *prefix) {
 	size_t len = strlen(prefix);
@@ -51,14 +51,14 @@ static int parse_sdp_line(const char *line, ice_description_t *description) {
 		return 0;
 	}
 	ice_candidate_t candidate;
-	if (ice_parse_sdp_candidate(line, &candidate) == 0) {
+	if (ice_parse_candidate_sdp(line, &candidate) == 0) {
 		ice_add_candidate(&candidate, description);
 		return 0;
 	}
 	return -1;
 }
 
-static int parse_candidate(const char *line, ice_candidate_t *candidate) {
+static int parse_sdp_candidate(const char *line, ice_candidate_t *candidate) {
 	memset(candidate, 0, sizeof(*candidate));
 
 	line = skip_prefix(line, "a=");
@@ -158,10 +158,10 @@ int ice_parse_sdp(const char *sdp, ice_description_t *description) {
 		return -1;
 }
 
-int ice_parse_sdp_candidate(const char *line, ice_candidate_t *candidate) {
+int ice_parse_candidate_sdp(const char *line, ice_candidate_t *candidate) {
 	const char *arg;
 	if (match_prefix(line, "a=candidate:", &arg)) {
-		if (parse_candidate(line, candidate) < 0)
+		if (parse_sdp_candidate(line, candidate) < 0)
 			return -1;
 		ice_resolve_candidate(candidate, ICE_RESOLVE_MODE_SIMPLE);
 		return 0;
@@ -243,6 +243,55 @@ int ice_generate_sdp(const ice_description_t *description, char *buffer,
 	if (!*description->ice_ufrag || !*description->ice_pwd)
 		return -1;
 
-	return snprintf(buffer, size, "a=ice-ufrag:%s\r\na=ice-pwd:%s\r\n",
-	                description->ice_ufrag, description->ice_pwd);
+	size_t len = 0;
+	char *begin = buffer;
+	char *end = begin + size;
+
+	// Round 0 is for the description, round i with i>0 is for candidate i-1
+	for (size_t i = 0; i < description->candidates_count + 1; ++i) {
+		int ret;
+		if (i == 0) {
+			ret = snprintf(begin, end - begin,
+			               "a=ice-ufrag:%s\r\na=ice-pwd:%s\r\n",
+			               description->ice_ufrag, description->ice_pwd);
+		} else {
+			char buffer[BUFFER_SIZE];
+			if (ice_generate_candidate_sdp(description->candidates + i - 1,
+			                               buffer, BUFFER_SIZE) < 0)
+				continue;
+			ret = snprintf(begin, end - begin, "%s\r\n", buffer);
+		}
+		if (ret < 0)
+			return -1;
+		len += ret;
+		begin += ret < end - begin - 1 ? ret : end - begin - 1;
+	}
+	return len;
+}
+
+int ice_generate_candidate_sdp(const ice_candidate_t *candidate, char *buffer,
+                               size_t size) {
+	const char *type;
+	switch (candidate->type) {
+	case ICE_CANDIDATE_TYPE_HOST:
+		type = "host";
+		break;
+	case ICE_CANDIDATE_TYPE_PEER_REFLEXIVE:
+		type = "prflx";
+		break;
+	case ICE_CANDIDATE_TYPE_SERVER_REFLEXIVE:
+		type = "srflx";
+		break;
+	case ICE_CANDIDATE_TYPE_RELAYED:
+		type = "relay";
+		break;
+	default:
+		JLOG_ERROR("Unknown candidate type");
+		return -1;
+	}
+
+	return snprintf(buffer, size, "%s %u UDP %u %s %s typ %s",
+	                candidate->foundation, candidate->component,
+	                candidate->priority, candidate->hostname,
+	                candidate->service, type);
 }

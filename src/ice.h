@@ -70,7 +70,7 @@ typedef enum ice_resolve_mode {
 } ice_resolve_mode_t;
 
 int ice_parse_sdp(const char *sdp, ice_description_t *description);
-int ice_parse_sdp_candidate(const char *line, ice_candidate_t *candidate);
+int ice_parse_candidate_sdp(const char *line, ice_candidate_t *candidate);
 int ice_create_local_description(ice_description_t *description);
 int ice_create_local_candidate(ice_candidate_type_t type, int component,
                                const struct sockaddr_record *record,
@@ -80,5 +80,6 @@ int ice_add_candidate(const ice_candidate_t *candidate,
                       ice_description_t *description);
 int ice_generate_sdp(const ice_description_t *description, char *buffer,
                      size_t size);
-
+int ice_generate_candidate_sdp(const ice_candidate_t *candidate, char *buffer,
+                               size_t size);
 #endif
