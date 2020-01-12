@@ -125,12 +125,9 @@ void agent_run(juice_agent_t *agent) {
 				return;
 			}
 
-			int component = 1; // TODO
-
 			ice_candidate_t candidate;
 			if (ice_create_local_candidate(ICE_CANDIDATE_TYPE_SERVER_REFLEXIVE,
-			                               component, &msg.mapped,
-			                               &candidate)) {
+			                               1, &msg.mapped, &candidate)) {
 				JLOG_WARN("Failed to create server reflexive candidate");
 				return;
 			}
@@ -197,11 +194,10 @@ int juice_agent_gather_candidates(juice_agent_t *agent) {
 
 	JLOG_VERBOSE("Adding %d local host candidates", records_count);
 
-	int component = 1; // TODO
 	for (int i = 0; i < records_count; ++i) {
 		ice_candidate_t candidate;
-		if (ice_create_local_candidate(ICE_CANDIDATE_TYPE_HOST, component,
-		                               records + i, &candidate)) {
+		if (ice_create_local_candidate(ICE_CANDIDATE_TYPE_HOST, 1, records + i,
+		                               &candidate)) {
 			JLOG_WARN("Failed to create host candidate");
 			continue;
 		}
