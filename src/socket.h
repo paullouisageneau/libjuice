@@ -22,7 +22,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 
-#if defined(_WIN32) || defined(_WIN64)
+#ifdef _WIN32
 
 #ifndef _WIN32_WINNT
 #define _WIN32_WINNT 0x0501
@@ -90,7 +90,7 @@ typedef int ctl_t;
 #define INVALID_SOCKET -1
 #define SOCKET_TO_INT(x) (x)
 
-#endif // defined(_WIN32) || defined(_WIN64)
+#endif // _WIN32
 
 struct sockaddr_record {
 	struct sockaddr_storage addr;

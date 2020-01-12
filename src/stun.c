@@ -21,6 +21,7 @@
 #include "hmac.h"
 #include "juice.h"
 #include "log.h"
+#include "random.h"
 #include "udp.h"
 
 #include <assert.h>
@@ -35,13 +36,6 @@
 #define htonll(x)                                                              \
 	((uint64_t)htonl(((uint64_t)(x)&0xFFFFFFFF) << 32) |                       \
 	 (uint64_t)htonl((uint64_t)(x) >> 32))
-
-// RAND_MAX is guaranteed to be at least 2^15 - 1
-#define rand64()                                                               \
-	(((uint64_t)(rand() & 0x7800) << 49) |                                     \
-	 ((uint64_t)(rand() & 0x7FFF) << 45) |                                     \
-	 ((uint64_t)(rand() & 0x7FFF) << 30) |                                     \
-	 ((uint64_t)(rand() & 0x7FFF) << 15) | (uint64_t)(rand() & 0x7FFF))
 
 int stun_write(void *buf, size_t size, const stun_message_t *msg) {
 	uint8_t *begin = buf;
@@ -104,7 +98,7 @@ int stun_write(void *buf, size_t size, const stun_message_t *msg) {
 	}
 
 	if (msg->ice_controlling) {
-		uint64_t random = htonll(rand64());
+		uint64_t random = htonll(juice_rand64());
 		len = stun_write_attr(pos, end - pos, STUN_ATTR_ICE_CONTROLLING,
 		                      &random, 8);
 		if (len <= 0)
@@ -113,7 +107,7 @@ int stun_write(void *buf, size_t size, const stun_message_t *msg) {
 	}
 
 	if (msg->ice_controlled) {
-		uint64_t random = htonll(rand64());
+		uint64_t random = htonll(juice_rand64());
 		len = stun_write_attr(pos, end - pos, STUN_ATTR_ICE_CONTROLLED, &random,
 		                      8);
 		if (len <= 0)
