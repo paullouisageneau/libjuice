@@ -19,14 +19,19 @@
 #ifndef JUICE_AGENT_H
 #define JUICE_AGENT_H
 
+#include "ice.h"
 #include "juice.h"
 #include "socket.h"
 
 #include <pthread.h>
+#include <stdbool.h>
 
 struct juice_agent {
 	socket_t sock;
 	pthread_t thread;
+	ice_description_t local;
+	ice_description_t remote;
+	bool is_controlling;
 };
 
 #endif

@@ -39,6 +39,9 @@ int main(int argc, char **argv) {
 
 	juice_agent_t *agent = juice_agent_create(&config);
 
+	sleep(1);
+	juice_agent_gather_candidates(agent);
+
 	sleep(10);
 	return 0;
 }

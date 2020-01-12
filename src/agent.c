@@ -25,10 +25,11 @@
 #include <assert.h>
 #include <stdlib.h>
 
+#define BUFFER_SIZE 1024
+
 int resolve_addr(const char *hostname, const char *service,
-                 struct sockaddr_record *records, size_t *count) {
-	struct sockaddr_record *end = records + *count;
-	*count = 0;
+                 struct sockaddr_record *records, size_t count) {
+	struct sockaddr_record *end = records + count;
 
 	struct addrinfo hints;
 	memset(&hints, 0, sizeof(struct addrinfo));
@@ -48,7 +49,6 @@ int resolve_addr(const char *hostname, const char *service,
 				memcpy(&records->addr, ai->ai_addr, ai->ai_addrlen);
 				records->len = ai->ai_addrlen;
 				++records;
-				++*count;
 			}
 		}
 	}
@@ -62,9 +62,8 @@ void agent_run(juice_agent_t *agent) {
 	const char *stun_service = "19302";
 
 	struct sockaddr_record records[4];
-	size_t records_count = 4;
-	if (resolve_addr(stun_hostname, stun_service, records, &records_count) <=
-	    0) {
+	int records_count = resolve_addr(stun_hostname, stun_service, records, 4);
+	if (records_count <= 0) {
 		JLOG_ERROR("STUN address resolution failed");
 		return;
 	}
@@ -178,7 +177,45 @@ error:
 
 void juice_agent_destroy(juice_agent_t *agent) { free(agent); }
 
-int juice_agent_gather_candidates(juice_agent_t *agent) { return -1; }
+int juice_agent_gather_candidates(juice_agent_t *agent) {
+	JLOG_DEBUG("Gathering candidates");
+
+	struct sockaddr_record records[ICE_MAX_CANDIDATES_COUNT - 1];
+	int records_count =
+	    juice_udp_get_addrs(agent->sock, records, ICE_MAX_CANDIDATES_COUNT - 1);
+	if (records_count < 0) {
+		JLOG_WARN("Failed to gather local host candidates");
+		records_count = 0;
+	}
+
+	JLOG_VERBOSE("Adding %d local host candidates", records_count);
+
+	int component = 1; // TODO
+	for (int i = 0; i < records_count; ++i) {
+		ice_candidate_t candidate;
+		if (ice_create_local_candidate(ICE_CANDIDATE_TYPE_HOST, component,
+		                               records + i, &candidate)) {
+			JLOG_WARN("Failed to create local host candidate from address");
+			continue;
+		}
+		if (ice_add_candidate(&candidate, &agent->local)) {
+			JLOG_WARN("Failed to add candidate to local description");
+			continue;
+		}
+		char buffer[BUFFER_SIZE];
+		if (ice_generate_candidate_sdp(&candidate, buffer, BUFFER_SIZE) < 0) {
+			JLOG_WARN("Failed to generate SDP for local candidate");
+			continue;
+		}
+
+		JLOG_DEBUG("Gathered local candidate: %s", buffer);
+
+		// Trigger callback
+	}
+
+	// Trigger STUN
+	return 0;
+}
 
 const char *juice_agent_get_local_description(juice_agent_t *agent) {
 	return NULL;

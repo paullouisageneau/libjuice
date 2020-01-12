@@ -145,15 +145,14 @@ uint16_t juice_udp_get_port(socket_t sock) {
 }
 
 int juice_udp_get_addrs(socket_t sock, struct sockaddr_record *records,
-                        size_t *count) {
+                        size_t count) {
 	uint16_t port = juice_udp_get_port(sock);
 	if (port == 0) {
 		JLOG_ERROR("Getting UDP port failed");
 		return -1;
 	}
 
-	struct sockaddr_record *end = records + *count;
-	*count = 0;
+	struct sockaddr_record *end = records + count;
 
 #ifndef NO_IFADDRS
 	struct ifaddrs *ifas;
@@ -175,7 +174,6 @@ int juice_udp_get_addrs(socket_t sock, struct sockaddr_record *records,
 				set_addr_port((struct sockaddr *)&records->addr, port);
 				records->len = len;
 				++records;
-				++*count;
 			}
 		}
 		ifa = ifa->ifa_next;
@@ -220,7 +218,6 @@ int juice_udp_get_addrs(socket_t sock, struct sockaddr_record *records,
 				memcpy(&records->addr, ai->ai_addr, ai->ai_addrlen);
 				records->len = ai->ai_addrlen;
 				++records;
-				++*count;
 			}
 		}
 		ai = ai->ai_next;

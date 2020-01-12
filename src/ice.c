@@ -29,6 +29,9 @@
 
 #define BUFFER_SIZE 1024
 
+#define CLAMP(x, low, high)                                                    \
+	(((x) > (high)) ? (high) : (((x) < (low)) ? (low) : (x)))
+
 static const char *skip_prefix(const char *str, const char *prefix) {
 	size_t len = strlen(prefix);
 	return strncmp(str, prefix, len) == 0 ? str + len : str;
@@ -93,46 +96,88 @@ static int parse_sdp_candidate(const char *line, ice_candidate_t *candidate) {
 	return 0;
 }
 
-static uint32_t compute_candidate_priority(ice_candidate_type_t type,
-                                           int component, int addr_family) {
-	uint32_t pref = 0;
-	switch (type) {
+static void compute_candidate_foundation(ice_candidate_t *candidate) {
+	uint8_t blob[18];
+	memset(blob, 0, 18);
+
+	const struct sockaddr_storage *ss = &candidate->resolved.addr;
+	blob[0] = ((uint8_t)candidate->type) << 4;
+	int rounds = 6; // 6*3 = 18
+	switch (ss->ss_family) {
+	case AF_INET: {
+		blob[0] += 0x01;
+		const struct sockaddr_in *sin = (const struct sockaddr_in *)ss;
+		const uint8_t *bytes = (const uint8_t *)&sin->sin_addr.s_addr;
+		for (int i = 0; i < 4; ++i)
+			blob[i + 1] = bytes[i];
+		rounds = 2; // 2*3 = 6
+		break;
+	}
+	case AF_INET6: {
+		blob[0] += 0x02;
+		const struct sockaddr_in6 *sin6 = (const struct sockaddr_in6 *)ss;
+		for (int i = 0; i < 16; ++i)
+			blob[i + 1] = sin6->sin6_addr.s6_addr[i];
+		break;
+	}
+	default: {
+		JLOG_ERROR("Unknown candidate type");
+		juice_random(blob + 1, 16);
+		break;
+	}
+	}
+	// Generate a 24-char foundation string from blob
+	static const char mchars64[] =
+	    "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz+/";
+	char *out = candidate->foundation;
+	for (int i = 0; i < rounds; ++i) {
+		uint8_t b1 = blob[i * 3];
+		uint8_t b2 = blob[i * 3 + 1];
+		uint8_t b3 = blob[i * 3 + 2];
+		*(out++) = mchars64[(b1 & 0xFC) >> 2];
+		*(out++) = mchars64[((b1 & 0x03) << 4) | ((b2 & 0xF0) >> 2)];
+		*(out++) = mchars64[((b2 & 0x0F) << 2) | ((b3 & 0xC0) >> 4)];
+		*(out++) = mchars64[(b3 & 0x3F)];
+	}
+	*(out - 1) = '\0'; // last char is 0 since the last byte of the blob is 0
+}
+
+static void compute_candidate_priority(ice_candidate_t *candidate) {
+	uint32_t p = 0;
+	switch (candidate->type) {
 	case ICE_CANDIDATE_TYPE_HOST:
-		pref += ICE_CANDIDATE_PREF_HOST;
+		p += ICE_CANDIDATE_PREF_HOST;
 		break;
 	case ICE_CANDIDATE_TYPE_PEER_REFLEXIVE:
-		pref += ICE_CANDIDATE_PREF_PEER_REFLEXIVE;
+		p += ICE_CANDIDATE_PREF_PEER_REFLEXIVE;
 		break;
 	case ICE_CANDIDATE_TYPE_SERVER_REFLEXIVE:
-		pref += ICE_CANDIDATE_PREF_SERVER_REFLEXIVE;
+		p += ICE_CANDIDATE_PREF_SERVER_REFLEXIVE;
 		break;
 	case ICE_CANDIDATE_TYPE_RELAYED:
-		pref += ICE_CANDIDATE_PREF_RELAYED;
+		p += ICE_CANDIDATE_PREF_RELAYED;
 		break;
 	default:
 		break;
 	}
 
-	pref <<= 16;
+	p <<= 16;
 	// TODO: intermingling between IP families
-	switch (addr_family) {
-	case AF_INET6:
-		pref += 65535;
-		break;
+	const struct sockaddr_storage *ss = &candidate->resolved.addr;
+	switch (ss->ss_family) {
 	case AF_INET:
-		pref += 32767;
+		p += 32767;
+		break;
+	case AF_INET6:
+		p += 65535;
 		break;
 	default:
 		break;
 	}
 
-	pref <<= 8;
-	if (component < 1)
-		component = 1;
-	if (component > 256)
-		component = 256;
-	pref += 256 - component;
-	return pref;
+	p <<= 8;
+	p += 256 - CLAMP(candidate->component, 1, 256);
+	candidate->priority = p;
 }
 
 int ice_parse_sdp(const char *sdp, ice_description_t *description) {
@@ -183,10 +228,10 @@ int ice_create_local_candidate(ice_candidate_type_t type, int component,
 	memset(candidate, 0, sizeof(*candidate));
 	candidate->type = type;
 	candidate->component = component;
-	candidate->priority =
-	    compute_candidate_priority(type, component, record->addr.ss_family);
 	candidate->resolved = *record;
-	snprintf(candidate->foundation, 32 + 1, "%u", (unsigned int)type + 1);
+
+	compute_candidate_foundation(candidate);
+	compute_candidate_priority(candidate);
 
 	if (getnameinfo((struct sockaddr *)&record->addr, record->len,
 	                candidate->hostname, 256, candidate->service, 32,
