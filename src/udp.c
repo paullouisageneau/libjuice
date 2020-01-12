@@ -19,11 +19,12 @@
 #include "udp.h"
 #include "log.h"
 
+#include <stdbool.h>
 #include <stdio.h>
 
-static struct addrinfo *find_family(struct addrinfo *aiList,
+static struct addrinfo *find_family(struct addrinfo *ai_list,
                                     unsigned int family) {
-	struct addrinfo *ai = aiList;
+	struct addrinfo *ai = ai_list;
 	while (ai && ai->ai_family != family)
 		ai = ai->ai_next;
 	return ai;
@@ -67,24 +68,61 @@ static int set_addr_port(struct sockaddr *sa, uint16_t port) {
 	}
 }
 
+static bool is_local_addr(struct sockaddr *sa) {
+	switch (sa->sa_family) {
+	case AF_INET: {
+		const struct sockaddr_in *sin = (const struct sockaddr_in *)sa;
+		const uint8_t *b = (const uint8_t *)&sin->sin_addr.s_addr;
+		if (b[0] == 127) // localhost
+			return true;
+		if (b[0] == 169 && b[1] == 254) // link-local
+			return true;
+		return false;
+	}
+	case AF_INET6: {
+		const struct sockaddr_in6 *sin6 = (const struct sockaddr_in6 *)sa;
+		const uint8_t *b = sin6->sin6_addr.s6_addr;
+		if (b[0] == 0xFE && b[1] == 0x80) // link-local
+			return true;
+		for (int i = 0; i < 9; ++i)
+			if (b[i] != 0)
+				return false;
+		if (b[10] == 0xFF && b[11] == 0xFF) { // IPv4 mapped
+			if (b[12] == 127)                 // localhost
+				return true;
+			if (b[12] == 169 && b[13] == 254) // link-local
+				return true;
+		}
+		for (int i = 10; i < 15; ++i)
+			if (b[i] != 0)
+				return false;
+		if (b[15] == 1) // localhost
+			return true;
+		return false;
+	}
+	default:
+		return false;
+	}
+}
+
 socket_t juice_udp_create(void) {
 	// Obtain local Address
-	struct addrinfo *aiList = NULL;
-	struct addrinfo aiHints;
-	memset(&aiHints, 0, sizeof(aiHints));
-	aiHints.ai_family = AF_UNSPEC;
-	aiHints.ai_socktype = SOCK_DGRAM;
-	aiHints.ai_protocol = IPPROTO_UDP;
-	aiHints.ai_flags = AI_PASSIVE | AI_NUMERICSERV;
-	if (getaddrinfo(NULL, "0", &aiHints, &aiList) != 0) {
+	struct addrinfo *ai_list = NULL;
+	struct addrinfo hints;
+	memset(&hints, 0, sizeof(hints));
+	hints.ai_family = AF_UNSPEC;
+	hints.ai_socktype = SOCK_DGRAM;
+	hints.ai_protocol = IPPROTO_UDP;
+	hints.ai_flags = AI_PASSIVE | AI_NUMERICSERV;
+	if (getaddrinfo(NULL, "0", &hints, &ai_list) != 0) {
 		JLOG_ERROR("getaddrinfo for binding address failed, errno=%d", errno);
 		return INVALID_SOCKET;
 	}
 
 	// Prefer IPv6
 	struct addrinfo *ai;
-	if ((ai = find_family(aiList, AF_INET6)) == NULL &&
-	    (ai = find_family(aiList, AF_INET)) == NULL) {
+	if ((ai = find_family(ai_list, AF_INET6)) == NULL &&
+	    (ai = find_family(ai_list, AF_INET)) == NULL) {
 		JLOG_ERROR("getaddrinfo for binding address failed: no suitable "
 		           "address family");
 		goto error;
@@ -125,11 +163,11 @@ socket_t juice_udp_create(void) {
 		goto error;
 	}
 
-	freeaddrinfo(aiList);
+	freeaddrinfo(ai_list);
 	return sock;
 
 error:
-	freeaddrinfo(aiList);
+	freeaddrinfo(ai_list);
 	return INVALID_SOCKET;
 }
 
@@ -153,6 +191,7 @@ int juice_udp_get_addrs(socket_t sock, struct sockaddr_record *records,
 	}
 
 	struct sockaddr_record *end = records + count;
+	int ret = 0;
 
 #ifndef NO_IFADDRS
 	struct ifaddrs *ifas;
@@ -161,13 +200,17 @@ int juice_udp_get_addrs(socket_t sock, struct sockaddr_record *records,
 		return -1;
 	}
 
-	int ret = 0;
-	struct ifaddrs *ifa = ifas;
-	while (ifa) {
+	for (struct ifaddrs *ifa = ifas; ifa; ifa = ifa->ifa_next) {
+		if (!(ifa->ifa_flags & IFF_UP) || (ifa->ifa_flags & IFF_LOOPBACK))
+			continue;
+
 		struct sockaddr *sa = ifa->ifa_addr;
+		if (!sa)
+			continue;
+
 		socklen_t len;
-		if (sa && (sa->sa_family == AF_INET || sa->sa_family == AF_INET6) &&
-		    (len = get_addr_len(sa))) {
+		if ((sa->sa_family == AF_INET || sa->sa_family == AF_INET6) &&
+		    !is_local_addr(sa) && (len = get_addr_len(sa))) {
 			++ret;
 			if (records != end) {
 				memcpy(&records->addr, sa, len);
@@ -176,11 +219,9 @@ int juice_udp_get_addrs(socket_t sock, struct sockaddr_record *records,
 				++records;
 			}
 		}
-		ifa = ifa->ifa_next;
 	}
 
 	freeifaddrs(ifas);
-    return ret;
 
 #else // NO_IFADDRS
 	char hostname[HOST_NAME_MAX];
@@ -192,27 +233,26 @@ int juice_udp_get_addrs(socket_t sock, struct sockaddr_record *records,
 	char service[8];
 	snprintf(service, 8, "%hu", port);
 
-	addrinfo *aiList = NULL;
-	addrinfo aiHints;
-	memset(&aiHints, 0, sizeof(aiHints));
-	aiHints.ai_family = AF_UNSPEC;
-	aiHints.ai_socktype = SOCK_DGRAM;
-	aiHints.ai_protocol = 0;
-	aiHints.ai_flags = AI_NUMERICSERV;
-	if (getaddrinfo(hostname, service, &aiHints, &aiList)) {
+	struct addrinfo *ai_list = NULL;
+	struct addrinfo hints;
+	memset(&hints, 0, sizeof(hints));
+	hints.ai_family = AF_UNSPEC;
+	hints.ai_socktype = SOCK_DGRAM;
+	hints.ai_protocol = 0;
+	hints.ai_flags = AI_ADDRCONFIG | AI_NUMERICSERV;
+	if (getaddrinfo(hostname, service, &hints, &ai_list)) {
 		JLOG_WARN("getaddrinfo failed: hostname \"%s\" is not resolvable",
 		          hostname);
-		if (getaddrinfo("localhost", service, &aiHints, &aiList)) {
+		if (getaddrinfo("localhost", service, &hints, &ai_list)) {
 			JLOG_ERROR(
 			    "getaddrinfo failed: hostname \"localhost\" is not resolvable");
 			return -1;
 		}
 	}
 
-	int ret = 0;
-	addrinfo *ai = aiList;
-	while (ai) {
-		if (ai->ai_family == AF_INET || ai->ai_family == AF_INET6) {
+	for (struct addrinfo *ai = ai_list; ai; ai = ai->ai_next) {
+		if ((ai->ai_family == AF_INET || ai->ai_family == AF_INET6) &&
+		    !is_local_addr(sa)) {
 			++ret;
 			if (records != end) {
 				memcpy(&records->addr, ai->ai_addr, ai->ai_addrlen);
@@ -220,10 +260,10 @@ int juice_udp_get_addrs(socket_t sock, struct sockaddr_record *records,
 				++records;
 			}
 		}
-		ai = ai->ai_next;
 	}
 
-	freeaddrinfo(aiList);
-	return ret;
+	freeaddrinfo(ai_list);
 #endif
+
+	return ret;
 }

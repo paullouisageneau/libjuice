@@ -244,7 +244,7 @@ int ice_create_local_candidate(ice_candidate_type_t type, int component,
 
 int ice_resolve_candidate(ice_candidate_t *candidate, ice_resolve_mode_t mode) {
 	struct addrinfo hints;
-	memset(&hints, 0, sizeof(struct addrinfo));
+	memset(&hints, 0, sizeof(hints));
 	hints.ai_family = AF_UNSPEC;
 	hints.ai_socktype = SOCK_DGRAM;
 	hints.ai_protocol = IPPROTO_UDP;

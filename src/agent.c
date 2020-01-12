@@ -32,7 +32,7 @@ int resolve_addr(const char *hostname, const char *service,
 	struct sockaddr_record *end = records + count;
 
 	struct addrinfo hints;
-	memset(&hints, 0, sizeof(struct addrinfo));
+	memset(&hints, 0, sizeof(hints));
 	hints.ai_family = AF_UNSPEC;
 	hints.ai_socktype = SOCK_DGRAM;
 	hints.ai_protocol = IPPROTO_UDP;
