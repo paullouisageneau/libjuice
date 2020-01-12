@@ -17,6 +17,7 @@
  */
 
 #include "agent.h"
+#include "ice.h"
 #include "juice.h"
 #include "log.h"
 #include "stun.h"
@@ -109,10 +110,11 @@ void agent_run(juice_agent_t *agent) {
 		}
 
 		if (FD_ISSET(agent->sock, &set)) {
-			struct sockaddr_storage addr;
-			socklen_t addrlen = sizeof(addr);
+
+			struct sockaddr_record record;
+			record.len = sizeof(record.addr);
 			int ret = recvfrom(agent->sock, buffer, 1280, 0,
-			                   (struct sockaddr *)&addr, &addrlen);
+			                   (struct sockaddr *)&record.addr, &record.len);
 			if (ret < 0) {
 				JLOG_ERROR("recvfrom failed");
 				return;
@@ -123,16 +125,20 @@ void agent_run(juice_agent_t *agent) {
 				return;
 			}
 
-			char host[256];
-			char service[32];
-			if (getnameinfo((struct sockaddr *)&msg.mapped.addr, msg.mapped.len,
-			                host, 256, service, 32,
-			                NI_NUMERICHOST | NI_NUMERICSERV | NI_DGRAM)) {
-				JLOG_ERROR("getnameinfo failed");
+			int component = 1; // TODO
+
+			ice_candidate_t candidate;
+			if (ice_create_local_candidate(ICE_CANDIDATE_TYPE_SERVER_REFLEXIVE,
+			                               component, &msg.mapped,
+			                               &candidate)) {
+				JLOG_WARN("Failed to create server reflexive candidate");
 				return;
 			}
 
-			JLOG_INFO("Mapped address: %s:%s", host, service);
+			if (ice_add_candidate(&candidate, &agent->local)) {
+				JLOG_WARN("Failed to add candidate to local description");
+				return;
+			}
 		}
 	}
 
@@ -151,7 +157,8 @@ juice_agent_t *juice_agent_create(const juice_config_t *config) {
 		return NULL;
 	}
 
-	memset(agent, 0, sizeof(juice_agent_t));
+	memset(agent, 0, sizeof(*agent));
+	ice_create_local_description(&agent->local);
 
 	agent->sock = juice_udp_create();
 	if (agent->sock == INVALID_SOCKET) {
@@ -195,7 +202,7 @@ int juice_agent_gather_candidates(juice_agent_t *agent) {
 		ice_candidate_t candidate;
 		if (ice_create_local_candidate(ICE_CANDIDATE_TYPE_HOST, component,
 		                               records + i, &candidate)) {
-			JLOG_WARN("Failed to create local host candidate from address");
+			JLOG_WARN("Failed to create host candidate");
 			continue;
 		}
 		if (ice_add_candidate(&candidate, &agent->local)) {
