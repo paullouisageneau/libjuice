@@ -295,3 +295,18 @@ int ice_generate_candidate_sdp(const ice_candidate_t *candidate, char *buffer,
 	                candidate->priority, candidate->hostname,
 	                candidate->service, type);
 }
+
+int ice_create_candidate_pair(ice_candidate_t *local, ice_candidate_t *remote,
+                              bool is_controlling, ice_candidate_pair_t *pair) {
+	pair->local = local;
+	pair->remote = remote;
+
+	// Compute pair priority according to RFC 8445
+	// See https://tools.ietf.org/html/rfc8445#section-6.1.2.3
+	uint64_t g = is_controlling ? local->priority : remote->priority;
+	uint64_t d = is_controlling ? remote->priority : local->priority;
+	uint64_t min = g < d ? g : d;
+	uint64_t max = g > d ? g : d;
+	pair->priority = (min << 32) + (max << 1) + (g > d ? 1 : 0);
+	return 0;
+}

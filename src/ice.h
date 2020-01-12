@@ -22,6 +22,7 @@
 #include "juice.h"
 #include "socket.h" // for sockaddr stuff
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #define ICE_MAX_CANDIDATES_COUNT 16
@@ -60,8 +61,9 @@ typedef struct ice_description {
 } ice_description_t;
 
 typedef struct ice_candidate_pair {
-	ice_candidate_t local;
-	ice_candidate_t remote;
+	ice_candidate_t *local;
+	ice_candidate_t *remote;
+	uint64_t priority;
 } ice_candidate_pair_t;
 
 typedef enum ice_resolve_mode {
@@ -82,4 +84,7 @@ int ice_generate_sdp(const ice_description_t *description, char *buffer,
                      size_t size);
 int ice_generate_candidate_sdp(const ice_candidate_t *candidate, char *buffer,
                                size_t size);
+int ice_create_candidate_pair(ice_candidate_t *local, ice_candidate_t *remote,
+                              bool is_controlling, ice_candidate_pair_t *pair);
+
 #endif
