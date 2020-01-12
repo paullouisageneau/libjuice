@@ -18,8 +18,10 @@
 
 #include "ice.h"
 #include "log.h"
+#include "random.h"
 #include "socket.h" // for sockaddr stuff
 
+#include <assert.h>
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -167,6 +169,14 @@ int ice_parse_sdp_candidate(const char *line, ice_candidate_t *candidate) {
 	return -1;
 }
 
+int ice_create_local_description(ice_description_t *description) {
+	memset(description, 0, sizeof(*description));
+	juice_random_str64(description->ice_ufrag, 4 + 1);
+	juice_random_str64(description->ice_pwd, 22 + 1);
+	description->candidates_count = 0;
+	return 0;
+}
+
 int ice_create_local_candidate(ice_candidate_type_t type, int component,
                                const struct sockaddr_record *record,
                                ice_candidate_t *candidate) {
@@ -219,7 +229,7 @@ int ice_resolve_candidate(ice_candidate_t *candidate, ice_resolve_mode_t mode) {
 
 int ice_add_candidate(const ice_candidate_t *candidate,
                       ice_description_t *description) {
-	// TODO sanity checks
+	// TODO: sanity checks
 	if (description->candidates_count < ICE_MAX_CANDIDATES_COUNT) {
 		memcpy(description->candidates + description->candidates_count,
 		       candidate, sizeof(*candidate));
