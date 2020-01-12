@@ -274,12 +274,18 @@ int ice_resolve_candidate(ice_candidate_t *candidate, ice_resolve_mode_t mode) {
 
 int ice_add_candidate(const ice_candidate_t *candidate,
                       ice_description_t *description) {
-	// TODO: sanity checks
-	if (description->candidates_count < ICE_MAX_CANDIDATES_COUNT) {
-		memcpy(description->candidates + description->candidates_count,
-		       candidate, sizeof(*candidate));
-		++description->candidates_count;
+	if (description->candidates_count >= ICE_MAX_CANDIDATES_COUNT)
+		return -1;
+	++description->candidates_count;
+	ice_candidate_t *pos =
+	    description->candidates + description->candidates_count;
+	while (--pos > description->candidates) {
+		ice_candidate_t *prev = pos - 1;
+		if (prev->priority > candidate->priority)
+			break;
+		*pos = *prev;
 	}
+	*pos = *candidate;
 	return 0;
 }
 

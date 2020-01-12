@@ -202,18 +202,21 @@ int juice_agent_gather_candidates(juice_agent_t *agent) {
 			JLOG_WARN("Failed to add candidate to local description");
 			continue;
 		}
+	}
+
+	for (int i = 0; i < agent->local.candidates_count; ++i) {
+		ice_candidate_t *candidate = agent->local.candidates + i;
 		char buffer[BUFFER_SIZE];
-		if (ice_generate_candidate_sdp(&candidate, buffer, BUFFER_SIZE) < 0) {
+		if (ice_generate_candidate_sdp(candidate, buffer, BUFFER_SIZE) < 0) {
 			JLOG_WARN("Failed to generate SDP for local candidate");
 			continue;
 		}
-
 		JLOG_DEBUG("Gathered local candidate: %s", buffer);
 
-		// Trigger callback
+		// TODO: Trigger callback
 	}
 
-	// Trigger STUN
+	// TODO: Trigger STUN
 	return 0;
 }
 
