@@ -20,6 +20,8 @@
 #include "log.h"
 
 #include <math.h>
+#include <stdbool.h>
+#include <time.h>
 
 #if defined(__linux__)
 #include <errno.h>
@@ -59,10 +61,7 @@ static int random_bytes(void *buf, size_t size) {
 }
 
 #else
-#warning                                                                       \
-    "No platform-specific implementation for random_bytes(), will fall back on rand()"
 static int random_bytes(void *buf, size_t size) {
-	JLOG_WARN("No platform-specific implementation for random_bytes()");
 	return -1;
 }
 #endif
@@ -71,13 +70,34 @@ void juice_random(void *buf, size_t size) {
 	if (random_bytes(buf, size) == 0)
 		return;
 
-	// Fallback to rand()
-	JLOG_WARN("Falling back on rand()");
+#ifdef __unix__
+#define random_func random
+#define srandom_func srandom
+	JLOG_DEBUG("Using random() for random bytes");
+#else
+#define random_func rand
+#define srandom_func srand
+	JLOG_WARN("Falling back on rand() for random bytes");
+#endif
 
+	static bool srandom_called = false;
+	if (!srandom_called) {
+		unsigned int seed;
+		struct timespec ts;
+		if (clock_gettime(CLOCK_REALTIME, &ts) == 0)
+			seed = (unsigned int)(ts.tv_sec ^ ts.tv_nsec);
+		else
+			seed = (unsigned int)time(NULL);
+		srandom_func(seed);
+		srandom_called = true;
+	}
 	// RAND_MAX is guaranteed to be at least 2^15 - 1
 	uint8_t *bytes = buf;
 	for (size_t i = 0; i < size; ++i)
-		bytes[i] = (uint8_t)((rand() & 0x7f80) >> 7);
+		bytes[i] = (uint8_t)((random_func() & 0x7f80) >> 7);
+
+#undef random_func
+#undef srandom_func
 }
 
 void juice_random_str64(char *buf, size_t size) {
