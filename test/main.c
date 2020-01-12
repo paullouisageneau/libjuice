@@ -23,13 +23,8 @@
 #include <string.h>
 #include <unistd.h>
 
-uint32_t crc32(const void *data, size_t size);
-
 int main(int argc, char **argv) {
 	juice_log_set_level(JUICE_LOG_LEVEL_VERBOSE);
-
-	const char *str = "123456789";
-	printf("%X\n", crc32(str, strlen(str)));
 
 	juice_config_t config;
 	config.lite = false;
@@ -38,10 +33,8 @@ int main(int argc, char **argv) {
 	config.cb_recv = NULL;
 
 	juice_agent_t *agent = juice_agent_create(&config);
-
-	sleep(1);
 	juice_agent_gather_candidates(agent);
 
-	sleep(10);
+	sleep(5);
 	return 0;
 }

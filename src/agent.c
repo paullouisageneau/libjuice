@@ -77,8 +77,8 @@ void agent_run(juice_agent_t *agent) {
 	msg.msg_class = STUN_CLASS_REQUEST;
 	msg.msg_method = STUN_METHOD_BINDING;
 
-	char buffer[1280];
-	int size = stun_write(buffer, 1280, &msg);
+	char buffer[BUFFER_SIZE];
+	int size = stun_write(buffer, BUFFER_SIZE, &msg);
 	if (size <= 0) {
 		JLOG_ERROR("STUN message write failed");
 		return;
@@ -113,7 +113,7 @@ void agent_run(juice_agent_t *agent) {
 
 			struct sockaddr_record record;
 			record.len = sizeof(record.addr);
-			int ret = recvfrom(agent->sock, buffer, 1280, 0,
+			int ret = recvfrom(agent->sock, buffer, BUFFER_SIZE, 0,
 			                   (struct sockaddr *)&record.addr, &record.len);
 			if (ret < 0) {
 				JLOG_ERROR("recvfrom failed");
@@ -136,6 +136,15 @@ void agent_run(juice_agent_t *agent) {
 				JLOG_WARN("Failed to add candidate to local description");
 				return;
 			}
+
+			if (ice_generate_candidate_sdp(&candidate, buffer, BUFFER_SIZE) <
+			    0) {
+				JLOG_WARN("Failed to generate SDP for local candidate");
+				return;
+			}
+			JLOG_DEBUG("Gathered server reflexive candidate: %s", buffer);
+
+			// TODO: Trigger callback
 		}
 	}
 
@@ -160,12 +169,6 @@ juice_agent_t *juice_agent_create(const juice_config_t *config) {
 	agent->sock = juice_udp_create();
 	if (agent->sock == INVALID_SOCKET) {
 		JLOG_FATAL("UDP socket creation for agent failed");
-		goto error;
-	}
-
-	int ret = pthread_create(&agent->thread, NULL, agent_thread_entry, agent);
-	if (ret) {
-		JLOG_FATAL("pthread_create for agent failed, error=%d", ret);
 		goto error;
 	}
 
@@ -207,19 +210,23 @@ int juice_agent_gather_candidates(juice_agent_t *agent) {
 		}
 	}
 
+	char buffer[BUFFER_SIZE];
 	for (int i = 0; i < agent->local.candidates_count; ++i) {
 		ice_candidate_t *candidate = agent->local.candidates + i;
-		char buffer[BUFFER_SIZE];
 		if (ice_generate_candidate_sdp(candidate, buffer, BUFFER_SIZE) < 0) {
 			JLOG_WARN("Failed to generate SDP for local candidate");
 			continue;
 		}
-		JLOG_DEBUG("Gathered local candidate: %s", buffer);
+		JLOG_DEBUG("Gathered host candidate: %s", buffer);
 
 		// TODO: Trigger callback
 	}
 
-	// TODO: Trigger STUN
+	int ret = pthread_create(&agent->thread, NULL, agent_thread_entry, agent);
+	if (ret) {
+		JLOG_FATAL("pthread_create for agent failed, error=%d", ret);
+		return -1;
+	}
 	return 0;
 }
 
