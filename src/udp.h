@@ -18,6 +18,10 @@
 
 #include "socket.h"
 
+#include <stdbool.h>
+
+bool inet6_addr_unmapv4(struct sockaddr *sa, socklen_t *len);
+
 socket_t juice_udp_create(void);
 uint16_t juice_udp_get_port(socket_t sock);
 int juice_udp_get_addrs(socket_t sock, struct sockaddr_record *records,

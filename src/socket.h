@@ -97,4 +97,11 @@ struct sockaddr_record {
 	socklen_t len;
 } sockaddr_record_t;
 
+#ifndef IN6_IS_ADDR_V4MAPPED
+#define IN6_IS_ADDR_V4MAPPED(a)                                                \
+	((((a)->s6_words[0]) == 0) && (((a)->s6_words[1]) == 0) &&                 \
+	 (((a)->s6_word[2]) == 0) && (((a)->s6_word[3]) == 0) &&                   \
+	 (((a)->s6_word[4]) == 0) && (((a)->s6_word[5]) == 0xFFFF))
+#endif
+
 #endif // JUICE_SOCKET_H

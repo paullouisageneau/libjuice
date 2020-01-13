@@ -24,6 +24,7 @@
 #include "udp.h"
 
 #include <assert.h>
+#include <stdbool.h>
 #include <stdlib.h>
 
 #define BUFFER_SIZE 1024
@@ -56,6 +57,52 @@ int resolve_addr(const char *hostname, const char *service,
 
 	freeaddrinfo(ai_list);
 	return ret;
+}
+
+int agent_add_reflexive_candidate(juice_agent_t *agent,
+                                  ice_candidate_type_t type,
+                                  const struct sockaddr_record *record) {
+	if (type == ICE_CANDIDATE_TYPE_HOST) {
+		JLOG_ERROR("Invalid type for reflexive candidate");
+		return -1;
+	}
+	if (ice_find_candidate_from_addr(&agent->local, record)) {
+		JLOG_DEBUG("A local candidate already exists for the mapped address, "
+		           "ignoring");
+		return 0;
+	}
+	ice_candidate_t candidate;
+	if (ice_create_local_candidate(type, 1, record, &candidate)) {
+		JLOG_WARN("Failed to create reflexive candidate");
+		return -1;
+	}
+	if (ice_add_candidate(&candidate, &agent->local)) {
+		JLOG_WARN("Failed to add candidate to local description");
+		return -1;
+	}
+	char buffer[BUFFER_SIZE];
+	if (ice_generate_candidate_sdp(&candidate, buffer, BUFFER_SIZE) < 0) {
+		JLOG_WARN("Failed to generate SDP for local candidate");
+		return -1;
+	}
+	JLOG_DEBUG("Gathered reflexive candidate: %s", buffer);
+
+	// TODO: trigger callback
+	return 0;
+}
+
+int agent_process_stun_message(juice_agent_t *agent, const stun_message_t *msg,
+                               bool is_server) {
+	if (msg->mapped.len) {
+		ice_candidate_type_t type = is_server
+		                                ? ICE_CANDIDATE_TYPE_SERVER_REFLEXIVE
+		                                : ICE_CANDIDATE_TYPE_PEER_REFLEXIVE;
+		if (agent_add_reflexive_candidate(agent, type, &msg->mapped) < 0) {
+			JLOG_WARN("Failed add reflexive candidate from STUN message");
+			return -1;
+		}
+	}
+	return 0;
 }
 
 void agent_run(juice_agent_t *agent) {
@@ -110,7 +157,6 @@ void agent_run(juice_agent_t *agent) {
 		}
 
 		if (FD_ISSET(agent->sock, &set)) {
-
 			struct sockaddr_record record;
 			record.len = sizeof(record.addr);
 			int ret = recvfrom(agent->sock, buffer, BUFFER_SIZE, 0,
@@ -120,31 +166,28 @@ void agent_run(juice_agent_t *agent) {
 				return;
 			}
 
+			if (record.addr.ss_family == AF_INET6)
+				inet6_addr_unmapv4((struct sockaddr *)&record.addr,
+				                   &record.len);
+
+			bool is_server = false;
+			for (int i = 0; i < records_count; ++i) {
+				if (record.len == records[i].len &&
+				    memcmp(&record.addr, &records[i].addr, record.len) == 0) {
+					is_server = true;
+					break;
+				}
+			}
+
 			if (stun_read(buffer, ret, &msg) <= 0) {
-				JLOG_ERROR("STUN message read failed");
-				return;
+				JLOG_WARN("STUN message read failed");
+				continue;
 			}
 
-			ice_candidate_t candidate;
-			if (ice_create_local_candidate(ICE_CANDIDATE_TYPE_SERVER_REFLEXIVE,
-			                               1, &msg.mapped, &candidate)) {
-				JLOG_WARN("Failed to create server reflexive candidate");
-				return;
+			if (agent_process_stun_message(agent, &msg, is_server) < 0) {
+				JLOG_ERROR("STUN message processing failed");
+				continue;
 			}
-
-			if (ice_add_candidate(&candidate, &agent->local)) {
-				JLOG_WARN("Failed to add candidate to local description");
-				return;
-			}
-
-			if (ice_generate_candidate_sdp(&candidate, buffer, BUFFER_SIZE) <
-			    0) {
-				JLOG_WARN("Failed to generate SDP for local candidate");
-				return;
-			}
-			JLOG_DEBUG("Gathered server reflexive candidate: %s", buffer);
-
-			// TODO: Trigger callback
 		}
 	}
 

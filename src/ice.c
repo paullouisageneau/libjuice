@@ -302,6 +302,20 @@ void ice_sort_candidates(ice_description_t *description) {
 	}
 }
 
+const ice_candidate_t *
+ice_find_candidate_from_addr(const ice_description_t *description,
+                             const struct sockaddr_record *record) {
+	const ice_candidate_t *cur = description->candidates;
+	const ice_candidate_t *end = cur + description->candidates_count;
+	while (cur != end) {
+		if (record->len == cur->resolved.len &&
+		    memcmp(&record->addr, &cur->resolved.addr, record->len) == 0)
+			return cur;
+		++cur;
+	}
+	return NULL;
+}
+
 int ice_generate_sdp(const ice_description_t *description, char *buffer,
                      size_t size) {
 	if (!*description->ice_ufrag || !*description->ice_pwd)

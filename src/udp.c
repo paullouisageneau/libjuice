@@ -19,7 +19,6 @@
 #include "udp.h"
 #include "log.h"
 
-#include <stdbool.h>
 #include <stdio.h>
 
 static struct addrinfo *find_family(struct addrinfo *ai_list,
@@ -113,6 +112,25 @@ static bool is_temp_inet6_addr(struct sockaddr *sa) {
 	const struct sockaddr_in6 *sin6 = (const struct sockaddr_in6 *)sa;
 	const uint8_t *b = sin6->sin6_addr.s6_addr;
 	return (b[8] & 0x02) ? false : true;
+}
+
+bool inet6_addr_unmapv4(struct sockaddr *sa, socklen_t *len) {
+	if (sa->sa_family != AF_INET6)
+		return false;
+
+	const struct sockaddr_in6 *sin6 = (const struct sockaddr_in6 *)sa;
+	if (!IN6_IS_ADDR_V4MAPPED(&sin6->sin6_addr))
+		return false;
+
+	struct sockaddr_in6 copy = *sin6;
+	sin6 = &copy;
+
+	struct sockaddr_in *sin = (struct sockaddr_in *)sa;
+	sin->sin_family = AF_INET;
+	sin->sin_port = sin6->sin6_port;
+	sin->sin_addr.s_addr = *((uint32_t *)(sin6->sin6_addr.s6_addr + 12));
+	*len = sizeof(*sin);
+	return true;
 }
 
 socket_t juice_udp_create(void) {
