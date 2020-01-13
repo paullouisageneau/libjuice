@@ -61,8 +61,8 @@ bool addr_is_local(struct sockaddr *sa) {
 	switch (sa->sa_family) {
 	case AF_INET: {
 		const struct sockaddr_in *sin = (const struct sockaddr_in *)sa;
-		const uint8_t *b = (const uint8_t *)&sin->sin_addr.s_addr;
-		if (b[0] == 127) // localhost
+		const uint8_t *b = (const uint8_t *)&sin->sin_addr;
+		if (b[0] == 127) // loopback
 			return true;
 		if (b[0] == 169 && b[1] == 254) // link-local
 			return true;
@@ -70,23 +70,20 @@ bool addr_is_local(struct sockaddr *sa) {
 	}
 	case AF_INET6: {
 		const struct sockaddr_in6 *sin6 = (const struct sockaddr_in6 *)sa;
-		const uint8_t *b = sin6->sin6_addr.s6_addr;
-		if (b[0] == 0xFE && b[1] == 0x80) // link-local
+		if (IN6_IS_ADDR_LOOPBACK(&sin6->sin6_addr)) {
 			return true;
-		for (int i = 0; i < 9; ++i)
-			if (b[i] != 0)
-				return false;
-		if (b[10] == 0xFF && b[11] == 0xFF) { // IPv4-mapped
-			if (b[12] == 127)                 // localhost
-				return true;
-			if (b[12] == 169 && b[13] == 254) // link-local
-				return true;
 		}
-		for (int i = 10; i < 15; ++i)
-			if (b[i] != 0)
-				return false;
-		if (b[15] == 1) // localhost
+		if (IN6_IS_ADDR_LINKLOCAL(&sin6->sin6_addr)) {
 			return true;
+		}
+		if (IN6_IS_ADDR_V4MAPPED(&sin6->sin6_addr)) {
+			const uint8_t *b = (const uint8_t *)&sin6->sin6_addr + 12;
+			if (b[0] == 127) // loopback
+				return true;
+			if (b[0] == 169 && b[1] == 254) // link-local
+				return true;
+			return false;
+		}
 		return false;
 	}
 	default:
@@ -100,7 +97,7 @@ bool addr_is_temp_inet6(struct sockaddr *sa) {
 	if (addr_is_local(sa))
 		return false;
 	const struct sockaddr_in6 *sin6 = (const struct sockaddr_in6 *)sa;
-	const uint8_t *b = sin6->sin6_addr.s6_addr;
+	const uint8_t *b = (const uint8_t *)&sin6->sin6_addr;
 	return (b[8] & 0x02) ? false : true;
 }
 
@@ -118,7 +115,7 @@ bool addr_unmap_inet6_v4mapped(struct sockaddr *sa, socklen_t *len) {
 	struct sockaddr_in *sin = (struct sockaddr_in *)sa;
 	sin->sin_family = AF_INET;
 	sin->sin_port = sin6->sin6_port;
-	sin->sin_addr.s_addr = *((uint32_t *)(sin6->sin6_addr.s6_addr + 12));
+	memcpy(&sin->sin_addr, ((const uint8_t *)&sin6->sin6_addr) + 12, 4);
 	*len = sizeof(*sin);
 	return true;
 }

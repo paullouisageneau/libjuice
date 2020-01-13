@@ -92,11 +92,27 @@ typedef int ctl_t;
 
 #endif // _WIN32
 
+#ifndef IN6_IS_ADDR_LOOPBACK
+#define IN6_IS_ADDR_LOOPBACK(a)                                                \
+	(((const uint32_t *)(a))[0] == 0 && ((const uint32_t *)(a))[1] == 0 &&     \
+	 ((const uint32_t *)(a))[2] == 0 &&                                        \
+	 ((const uint32_t *)(a))[3] == htonl(1))
+#endif
+
+#ifndef IN6_IS_ADDR_LINKLOCAL
+#define IN6_IS_ADDR_LINKLOCAL(a)                                               \
+	((((const uint32_t *)(a))[0] & htonl(0xffc00000)) == htonl(0xfe800000))
+#endif
+
+#ifndef IN6_IS_ADDR_SITELOCAL
+#define IN6_IS_ADDR_SITELOCAL(a)                                               \
+	((((const uint32_t *)(a))[0] & htonl(0xffc00000)) == htonl(0xfec00000))
+#endif
+
 #ifndef IN6_IS_ADDR_V4MAPPED
 #define IN6_IS_ADDR_V4MAPPED(a)                                                \
-	((((a)->s6_words[0]) == 0) && (((a)->s6_words[1]) == 0) &&                 \
-	 (((a)->s6_word[2]) == 0) && (((a)->s6_word[3]) == 0) &&                   \
-	 (((a)->s6_word[4]) == 0) && (((a)->s6_word[5]) == 0xFFFF))
+	((((const uint32_t *)(a))[0] == 0) && (((const uint32_t *)(a))[1] == 0) && \
+	 (((const uint32_t *)(a))[2] == htonl(0xFFFF)))
 #endif
 
 #endif // JUICE_SOCKET_H

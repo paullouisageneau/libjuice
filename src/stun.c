@@ -209,8 +209,9 @@ int stun_write_value_mapped_address(void *buf, size_t size,
 		JLOG_VERBOSE("Writing IPv4 address");
 		const struct sockaddr_in *sin = (const struct sockaddr_in *)addr;
 		value->port = sin->sin_port ^ *((uint16_t *)mask);
-		*((uint32_t *)value->address) =
-		    sin->sin_addr.s_addr ^ *((uint32_t *)mask);
+		const uint8_t *bytes = (const uint8_t *)&sin->sin_addr;
+		for (int i = 0; i < 4; ++i)
+			value->address[i] = bytes[i] ^ mask[i];
 		return sizeof(struct stun_value_mapped_address) + 4;
 	}
 	case AF_INET6: {
@@ -220,8 +221,9 @@ int stun_write_value_mapped_address(void *buf, size_t size,
 		JLOG_VERBOSE("Writing IPv6 address");
 		const struct sockaddr_in6 *sin6 = (const struct sockaddr_in6 *)addr;
 		value->port = sin6->sin6_port ^ *((uint16_t *)mask);
+		const uint8_t *bytes = (const uint8_t *)&sin6->sin6_addr;
 		for (int i = 0; i < 16; ++i)
-			value->address[i] = sin6->sin6_addr.s6_addr[i] ^ mask[i];
+			value->address[i] = bytes[i] ^ mask[i];
 		return sizeof(struct stun_value_mapped_address) + 16;
 	}
 	default: {
@@ -468,8 +470,9 @@ int stun_read_value_mapped_address(const void *data, size_t size,
 		struct sockaddr_in *sin = (struct sockaddr_in *)&msg->mapped.addr;
 		sin->sin_family = AF_INET;
 		sin->sin_port = value->port ^ *((uint16_t *)mask);
-		sin->sin_addr.s_addr =
-		    *((uint32_t *)value->address) ^ *((uint32_t *)mask);
+		uint8_t *bytes = (uint8_t *)&sin->sin_addr;
+		for (int i = 0; i < 4; ++i)
+			bytes[i] = value->address[i] ^ mask[i];
 		break;
 	}
 	case STUN_ADDRESS_FAMILY_IPV6: {
@@ -483,8 +486,9 @@ int stun_read_value_mapped_address(const void *data, size_t size,
 		struct sockaddr_in6 *sin6 = (struct sockaddr_in6 *)&msg->mapped.addr;
 		sin6->sin6_family = AF_INET6;
 		sin6->sin6_port = value->port ^ *((uint16_t *)mask);
+		uint8_t *bytes = (uint8_t *)&sin6->sin6_addr;
 		for (int i = 0; i < 16; ++i)
-			sin6->sin6_addr.s6_addr[i] = value->address[i] ^ mask[i];
+			bytes[i] = value->address[i] ^ mask[i];
 		break;
 	}
 	default: {

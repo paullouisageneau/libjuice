@@ -107,16 +107,15 @@ static void compute_candidate_foundation(ice_candidate_t *candidate) {
 		blob[0] += 0x01;
 		const struct sockaddr_in *sin = (const struct sockaddr_in *)ss;
 		const uint8_t *bytes = (const uint8_t *)&sin->sin_addr.s_addr;
-		for (int i = 0; i < 4; ++i)
-			blob[i + 1] = bytes[i];
+		memcpy(blob + 1, bytes, 4);
 		rounds = 2; // 2*3 = 6
 		break;
 	}
 	case AF_INET6: {
 		blob[0] += 0x02;
 		const struct sockaddr_in6 *sin6 = (const struct sockaddr_in6 *)ss;
-		for (int i = 0; i < 16; ++i)
-			blob[i + 1] = sin6->sin6_addr.s6_addr[i];
+		const uint8_t *bytes = (const uint8_t *)&sin6->sin6_addr;
+		memcpy(blob + 1, bytes, 16);
 		break;
 	}
 	default: {
