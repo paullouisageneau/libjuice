@@ -23,14 +23,24 @@
 #include <string.h>
 #include <unistd.h>
 
+void on_state_changed(juice_agent_t *agent, juice_state_t state,
+                      void *user_ptr) {}
+
+void on_candidate(juice_agent_t *agent, const char *sdp, void *user_ptr) {
+	printf("Candidate: %s\n", sdp);
+}
+
+void on_recv(juice_agent_t *agent, const char *data, size_t size,
+             void *user_ptr) {}
+
 int main(int argc, char **argv) {
 	juice_log_set_level(JUICE_LOG_LEVEL_VERBOSE);
 
 	juice_config_t config;
 	config.lite = false;
-	config.cb_state_changed = NULL;
-	config.cb_candidate = NULL;
-	config.cb_recv = NULL;
+	config.cb_state_changed = on_state_changed;
+	config.cb_candidate = on_candidate;
+	config.cb_recv = on_recv;
 
 	juice_agent_t *agent = juice_agent_create(&config);
 	juice_agent_gather_candidates(agent);

@@ -88,7 +88,8 @@ int agent_add_reflexive_candidate(juice_agent_t *agent,
 	}
 	JLOG_DEBUG("Gathered reflexive candidate: %s", buffer);
 
-	// TODO: trigger callback
+	if (agent->config.cb_candidate)
+		agent->config.cb_candidate(agent, buffer, agent->config.user_ptr);
 	return 0;
 }
 
@@ -208,6 +209,7 @@ juice_agent_t *juice_agent_create(const juice_config_t *config) {
 	}
 
 	memset(agent, 0, sizeof(*agent));
+	agent->config = *config;
 	ice_create_local_description(&agent->local);
 
 	agent->sock = udp_create_socket();
@@ -263,9 +265,11 @@ int juice_agent_gather_candidates(juice_agent_t *agent) {
 			JLOG_WARN("Failed to generate SDP for local candidate");
 			continue;
 		}
+
 		JLOG_DEBUG("Gathered host candidate: %s", buffer);
 
-		// TODO: Trigger callback
+		if (agent->config.cb_candidate)
+			agent->config.cb_candidate(agent, buffer, agent->config.user_ptr);
 	}
 
 	int ret = pthread_create(&agent->thread, NULL, agent_thread_entry, agent);

@@ -27,6 +27,7 @@
 #include <stdbool.h>
 
 struct juice_agent {
+	juice_config_t config;
 	socket_t sock;
 	pthread_t thread;
 	ice_description_t local;
