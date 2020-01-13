@@ -210,6 +210,8 @@ int juice_agent_gather_candidates(juice_agent_t *agent) {
 		}
 	}
 
+	ice_sort_candidates(&agent->local);
+
 	char buffer[BUFFER_SIZE];
 	for (int i = 0; i < agent->local.candidates_count; ++i) {
 		ice_candidate_t *candidate = agent->local.candidates + i;

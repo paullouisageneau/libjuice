@@ -276,17 +276,30 @@ int ice_add_candidate(const ice_candidate_t *candidate,
                       ice_description_t *description) {
 	if (description->candidates_count >= ICE_MAX_CANDIDATES_COUNT)
 		return -1;
-	++description->candidates_count;
 	ice_candidate_t *pos =
 	    description->candidates + description->candidates_count;
-	while (--pos > description->candidates) {
-		ice_candidate_t *prev = pos - 1;
-		if (prev->priority > candidate->priority)
-			break;
-		*pos = *prev;
-	}
 	*pos = *candidate;
+	++description->candidates_count;
 	return 0;
+}
+
+void ice_sort_candidates(ice_description_t *description) {
+	// In-place insertion sort
+	ice_candidate_t *begin = description->candidates;
+	ice_candidate_t *end = begin + description->candidates_count;
+	ice_candidate_t *cur = begin;
+	ice_candidate_t tmp;
+	while (++cur != end) {
+		uint32_t priority = cur->priority;
+		ice_candidate_t *prev = cur;
+		while (--prev >= begin && prev->priority < priority) {
+			if (prev + 1 == cur)
+				tmp = *(prev + 1);
+			*(prev + 1) = *prev;
+		}
+		if (prev + 1 != cur)
+			*(prev + 1) = tmp;
+	}
 }
 
 int ice_generate_sdp(const ice_description_t *description, char *buffer,

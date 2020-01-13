@@ -80,6 +80,7 @@ int ice_create_local_candidate(ice_candidate_type_t type, int component,
 int ice_resolve_candidate(ice_candidate_t *candidate, ice_resolve_mode_t mode);
 int ice_add_candidate(const ice_candidate_t *candidate,
                       ice_description_t *description);
+void ice_sort_candidates(ice_description_t *description);
 int ice_generate_sdp(const ice_description_t *description, char *buffer,
                      size_t size);
 int ice_generate_candidate_sdp(const ice_candidate_t *candidate, char *buffer,
