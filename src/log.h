@@ -19,16 +19,9 @@
 #ifndef JUICE_LOG_H
 #define JUICE_LOG_H
 
-#include <stdarg.h>
+#include "juice.h" // for log level
 
-typedef enum {
-	JUICE_LOG_LEVEL_VERBOSE,
-	JUICE_LOG_LEVEL_DEBUG,
-	JUICE_LOG_LEVEL_INFO,
-	JUICE_LOG_LEVEL_WARN,
-	JUICE_LOG_LEVEL_ERROR,
-	JUICE_LOG_LEVEL_FATAL
-} juice_log_level_t;
+#include <stdarg.h>
 
 void juice_log_set_level(juice_log_level_t level);
 
