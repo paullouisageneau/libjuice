@@ -36,4 +36,7 @@ struct sockaddr_record {
 	socklen_t len;
 } sockaddr_record_t;
 
+int addr_resolve(const char *hostname, const char *service,
+                 struct sockaddr_record *records, size_t count);
+
 #endif // JUICE_ADDR_H

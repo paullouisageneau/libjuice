@@ -26,38 +26,19 @@
 
 #include <assert.h>
 #include <stdbool.h>
+#include <stdint.h>
 #include <stdlib.h>
 
-#define BUFFER_SIZE 1024
+#define BUFFER_SIZE 4096
 
-int resolve_addr(const char *hostname, const char *service,
-                 struct sockaddr_record *records, size_t count) {
-	struct sockaddr_record *end = records + count;
+typedef int64_t timestamp_t;
+typedef timestamp_t timediff_t;
 
-	struct addrinfo hints;
-	memset(&hints, 0, sizeof(hints));
-	hints.ai_family = AF_UNSPEC;
-	hints.ai_socktype = SOCK_DGRAM;
-	hints.ai_protocol = IPPROTO_UDP;
-	hints.ai_flags = AI_ADDRCONFIG;
-	struct addrinfo *ai_list = NULL;
-	if (getaddrinfo(hostname, service, &hints, &ai_list))
-		return -1;
-
-	int ret = 0;
-	for (struct addrinfo *ai = ai_list; ai; ai = ai->ai_next) {
-		if (ai->ai_family == AF_INET || ai->ai_family == AF_INET6) {
-			++ret;
-			if (records != end) {
-				memcpy(&records->addr, ai->ai_addr, ai->ai_addrlen);
-				records->len = ai->ai_addrlen;
-				++records;
-			}
-		}
-	}
-
-	freeaddrinfo(ai_list);
-	return ret;
+static timestamp_t current_timestamp() {
+	struct timespec ts;
+	if (clock_gettime(CLOCK_REALTIME, &ts))
+		return 0;
+	return (timestamp_t)ts.tv_sec * 1000 + (timestamp_t)ts.tv_nsec / 1000000;
 }
 
 int agent_add_reflexive_candidate(juice_agent_t *agent,
@@ -93,6 +74,37 @@ int agent_add_reflexive_candidate(juice_agent_t *agent,
 	return 0;
 }
 
+int agent_add_candidate_pair(juice_agent_t *agent, ice_candidate_t *remote) {
+	// Here is the trick: local candidates are undifferenciated for sending.
+	// Therefore, we don't need to match remote candidates with local ones.
+	ice_candidate_pair_t pair;
+	if (ice_create_candidate_pair(NULL, remote, agent->config.is_controlling,
+	                              &pair)) {
+		JLOG_ERROR("Failed to create candidate pair");
+		return -1;
+	}
+
+	if (agent->candidate_pairs_count >= MAX_CANDIDATE_PAIRS_COUNT)
+		return -1;
+
+	// Insert pair in order
+	ice_candidate_pair_t *begin = agent->candidate_pairs;
+	ice_candidate_pair_t *end = begin + agent->remote.candidates_count;
+	ice_candidate_pair_t *prev = end;
+	while (--prev >= begin && prev->priority < pair.priority)
+		*(prev + 1) = *prev;
+	ice_candidate_pair_t *pos = prev + 1;
+	*pos = pair;
+	++agent->candidate_pairs_count;
+
+	// There is only one component, therefore we can unfreeze the pair
+	// immediately!
+	pos->state = ICE_CANDIDATE_PAIR_STATE_WAITING;
+
+	// TODO: force checks scheduling
+	return 0;
+}
+
 int agent_process_stun_message(juice_agent_t *agent, const stun_message_t *msg,
                                bool is_server) {
 	if (msg->mapped.len) {
@@ -107,12 +119,18 @@ int agent_process_stun_message(juice_agent_t *agent, const stun_message_t *msg,
 	return 0;
 }
 
+int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
+	// TODO: send check/retransmission/keepalive and stuff
+	*next_timestamp = current_timestamp() + 50;
+	return 0;
+}
+
 void agent_run(juice_agent_t *agent) {
 	const char *stun_hostname = "stun.l.google.com";
 	const char *stun_service = "19302";
 
 	struct sockaddr_record records[4];
-	int records_count = resolve_addr(stun_hostname, stun_service, records, 4);
+	int records_count = addr_resolve(stun_hostname, stun_service, records, 4);
 	if (records_count <= 0) {
 		JLOG_ERROR("STUN address resolution failed");
 		return;
@@ -142,11 +160,15 @@ void agent_run(juice_agent_t *agent) {
 	// Send STUN binding request
 	JLOG_VERBOSE("STUN binding request sent to %zu addresses", records_count);
 
-	struct timeval timeout;
-	timeout.tv_sec = 10;
-	timeout.tv_usec = 0;
+	timestamp_t next_timestamp = current_timestamp() + 10000;
+	while (agent_bookkeeping(agent, &next_timestamp) == 0) {
+		timediff_t timediff = next_timestamp - current_timestamp();
+		if (timediff < 0)
+			timediff = 0;
+		struct timeval timeout;
+		timeout.tv_sec = timediff / 1000;
+		timeout.tv_usec = timediff * 1000;
 
-	while (true) {
 		fd_set set;
 		FD_ZERO(&set);
 		FD_SET(agent->sock, &set);
@@ -154,7 +176,7 @@ void agent_run(juice_agent_t *agent) {
 		int n = SOCKET_TO_INT(agent->sock) + 1;
 		int ret = select(n, &set, NULL, NULL, &timeout);
 		if (ret < 0) {
-			JLOG_ERROR("select failed");
+			JLOG_ERROR("select failed, errno=%d", errno);
 			return;
 		}
 
@@ -292,6 +314,9 @@ int juice_agent_set_remote_description(juice_agent_t *agent, const char *sdp) {
 		JLOG_ERROR("Failed to parse remote SDP description");
 		return -1;
 	}
+	for (size_t i = 0; i < agent->remote.candidates_count; ++i)
+		if (agent_add_candidate_pair(agent, agent->remote.candidates + i))
+			return -1;
 	return 0;
 }
 
@@ -302,10 +327,12 @@ int juice_agent_add_remote_candidate(juice_agent_t *agent, const char *sdp) {
 		return -1;
 	}
 	if (ice_add_candidate(&candidate, &agent->remote)) {
-		JLOG_ERROR("Failed to add candidate to local description");
+		JLOG_ERROR("Failed to add candidate to remote description");
 		return -1;
 	}
-	return 0;
+	ice_candidate_t *remote =
+	    agent->remote.candidates + agent->remote.candidates_count - 1;
+	return agent_add_candidate_pair(agent, remote);
 }
 
 int juice_agent_send(juice_agent_t *agent, const char *data, size_t size) {

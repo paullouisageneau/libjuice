@@ -60,10 +60,19 @@ typedef struct ice_description {
 	size_t candidates_count;
 } ice_description_t;
 
+typedef enum ice_candidate_pair_state {
+	ICE_CANDIDATE_PAIR_STATE_WAITING,
+	ICE_CANDIDATE_PAIR_STATE_INPROGRESS,
+	ICE_CANDIDATE_PAIR_STATE_SUCCEEDED,
+	ICE_CANDIDATE_PAIR_STATE_FAILED,
+	ICE_CANDIDATE_PAIR_STATE_FROZEN,
+} ice_candidate_pair_state_t;
+
 typedef struct ice_candidate_pair {
 	ice_candidate_t *local;
 	ice_candidate_t *remote;
 	uint64_t priority;
+	ice_candidate_pair_state_t state;
 } ice_candidate_pair_t;
 
 typedef enum ice_resolve_mode {

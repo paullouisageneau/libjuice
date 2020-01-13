@@ -119,3 +119,33 @@ bool addr_unmap_inet6_v4mapped(struct sockaddr *sa, socklen_t *len) {
 	*len = sizeof(*sin);
 	return true;
 }
+
+int addr_resolve(const char *hostname, const char *service,
+                 struct sockaddr_record *records, size_t count) {
+	struct sockaddr_record *end = records + count;
+
+	struct addrinfo hints;
+	memset(&hints, 0, sizeof(hints));
+	hints.ai_family = AF_UNSPEC;
+	hints.ai_socktype = SOCK_DGRAM;
+	hints.ai_protocol = IPPROTO_UDP;
+	hints.ai_flags = AI_ADDRCONFIG;
+	struct addrinfo *ai_list = NULL;
+	if (getaddrinfo(hostname, service, &hints, &ai_list))
+		return -1;
+
+	int ret = 0;
+	for (struct addrinfo *ai = ai_list; ai; ai = ai->ai_next) {
+		if (ai->ai_family == AF_INET || ai->ai_family == AF_INET6) {
+			++ret;
+			if (records != end) {
+				memcpy(&records->addr, ai->ai_addr, ai->ai_addrlen);
+				records->len = ai->ai_addrlen;
+				++records;
+			}
+		}
+	}
+
+	freeaddrinfo(ai_list);
+	return ret;
+}

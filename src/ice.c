@@ -369,8 +369,10 @@ int ice_generate_candidate_sdp(const ice_candidate_t *candidate, char *buffer,
 
 int ice_create_candidate_pair(ice_candidate_t *local, ice_candidate_t *remote,
                               bool is_controlling, ice_candidate_pair_t *pair) {
+	memset(pair, 0, sizeof(*pair));
 	pair->local = local;
 	pair->remote = remote;
+	pair->state = ICE_CANDIDATE_PAIR_STATE_FROZEN;
 
 	// Compute pair priority according to RFC 8445
 	// See https://tools.ietf.org/html/rfc8445#section-6.1.2.3

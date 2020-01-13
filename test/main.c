@@ -39,7 +39,8 @@ int main(int argc, char **argv) {
 	juice_log_set_level(JUICE_LOG_LEVEL_VERBOSE);
 
 	juice_config_t config;
-	config.lite = false;
+	config.is_lite = false;
+	config.is_controlling = true;
 	config.cb_state_changed = on_state_changed;
 	config.cb_candidate = on_candidate;
 	config.cb_recv = on_recv;
