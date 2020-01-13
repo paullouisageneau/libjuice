@@ -195,10 +195,8 @@ int ice_parse_sdp(const char *sdp, ice_description_t *description) {
 		}
 		++sdp;
 	}
-	if (*description->ice_ufrag && *description->ice_pwd)
-		return 0;
-	else
-		return -1;
+	ice_sort_candidates(description);
+	return *description->ice_ufrag && *description->ice_pwd ? 0 : -1;
 }
 
 int ice_parse_candidate_sdp(const char *line, ice_candidate_t *candidate) {
@@ -257,7 +255,6 @@ int ice_resolve_candidate(ice_candidate_t *candidate, ice_resolve_mode_t mode) {
 		candidate->resolved.len = 0;
 		return -1;
 	}
-
 	for (struct addrinfo *ai = ai_list; ai; ai = ai->ai_next) {
 		if (ai->ai_family == AF_INET || ai->ai_family == AF_INET6) {
 			candidate->resolved.len = ai->ai_addrlen;
@@ -265,7 +262,6 @@ int ice_resolve_candidate(ice_candidate_t *candidate, ice_resolve_mode_t mode) {
 			break;
 		}
 	}
-
 	freeaddrinfo(ai_list);
 	return 0;
 }
@@ -365,7 +361,6 @@ int ice_generate_candidate_sdp(const ice_candidate_t *candidate, char *buffer,
 		JLOG_ERROR("Unknown candidate type");
 		return -1;
 	}
-
 	return snprintf(buffer, size, "a=candidate:%s %u UDP %u %s %s typ %s",
 	                candidate->foundation, candidate->component,
 	                candidate->priority, candidate->hostname,

@@ -74,16 +74,16 @@ int agent_add_reflexive_candidate(juice_agent_t *agent,
 	}
 	ice_candidate_t candidate;
 	if (ice_create_local_candidate(type, 1, record, &candidate)) {
-		JLOG_WARN("Failed to create reflexive candidate");
+		JLOG_ERROR("Failed to create reflexive candidate");
 		return -1;
 	}
 	if (ice_add_candidate(&candidate, &agent->local)) {
-		JLOG_WARN("Failed to add candidate to local description");
+		JLOG_ERROR("Failed to add candidate to local description");
 		return -1;
 	}
 	char buffer[BUFFER_SIZE];
 	if (ice_generate_candidate_sdp(&candidate, buffer, BUFFER_SIZE) < 0) {
-		JLOG_WARN("Failed to generate SDP for local candidate");
+		JLOG_ERROR("Failed to generate SDP for local candidate");
 		return -1;
 	}
 	JLOG_DEBUG("Gathered reflexive candidate: %s", buffer);
@@ -100,7 +100,7 @@ int agent_process_stun_message(juice_agent_t *agent, const stun_message_t *msg,
 		                                ? ICE_CANDIDATE_TYPE_SERVER_REFLEXIVE
 		                                : ICE_CANDIDATE_TYPE_PEER_REFLEXIVE;
 		if (agent_add_reflexive_candidate(agent, type, &msg->mapped) < 0) {
-			JLOG_WARN("Failed add reflexive candidate from STUN message");
+			JLOG_ERROR("Failed add reflexive candidate from STUN message");
 			return -1;
 		}
 	}
@@ -193,7 +193,7 @@ void agent_run(juice_agent_t *agent) {
 		}
 	}
 
-	return;
+	JLOG_DEBUG("Agent thread finished");
 }
 
 void *agent_thread_entry(void *arg) {
@@ -237,8 +237,10 @@ int juice_agent_gather_candidates(juice_agent_t *agent) {
 	int records_count =
 	    udp_get_addrs(agent->sock, records, ICE_MAX_CANDIDATES_COUNT - 1);
 	if (records_count < 0) {
-		JLOG_WARN("Failed to gather local host candidates");
+		JLOG_ERROR("Failed to gather local host candidates");
 		records_count = 0;
+	} else if (records_count == 0) {
+		JLOG_WARN("No local host candidates gathered");
 	}
 
 	JLOG_VERBOSE("Adding %d local host candidates", records_count);
@@ -247,11 +249,11 @@ int juice_agent_gather_candidates(juice_agent_t *agent) {
 		ice_candidate_t candidate;
 		if (ice_create_local_candidate(ICE_CANDIDATE_TYPE_HOST, 1, records + i,
 		                               &candidate)) {
-			JLOG_WARN("Failed to create host candidate");
+			JLOG_ERROR("Failed to create host candidate");
 			continue;
 		}
 		if (ice_add_candidate(&candidate, &agent->local)) {
-			JLOG_WARN("Failed to add candidate to local description");
+			JLOG_ERROR("Failed to add candidate to local description");
 			continue;
 		}
 	}
@@ -262,7 +264,7 @@ int juice_agent_gather_candidates(juice_agent_t *agent) {
 	for (int i = 0; i < agent->local.candidates_count; ++i) {
 		ice_candidate_t *candidate = agent->local.candidates + i;
 		if (ice_generate_candidate_sdp(candidate, buffer, BUFFER_SIZE) < 0) {
-			JLOG_WARN("Failed to generate SDP for local candidate");
+			JLOG_ERROR("Failed to generate SDP for local candidate");
 			continue;
 		}
 
@@ -286,11 +288,24 @@ int juice_agent_get_local_description(juice_agent_t *agent, char *buffer,
 }
 
 int juice_agent_set_remote_description(juice_agent_t *agent, const char *sdp) {
-	return -1;
+	if (ice_parse_sdp(sdp, &agent->remote) < 0) {
+		JLOG_ERROR("Failed to parse remote SDP description");
+		return -1;
+	}
+	return 0;
 }
 
 int juice_agent_add_remote_candidate(juice_agent_t *agent, const char *sdp) {
-	return -1;
+	ice_candidate_t candidate;
+	if (ice_parse_candidate_sdp(sdp, &candidate) < 0) {
+		JLOG_ERROR("Failed to parse remote SDP candidate");
+		return -1;
+	}
+	if (ice_add_candidate(&candidate, &agent->remote)) {
+		JLOG_ERROR("Failed to add candidate to local description");
+		return -1;
+	}
+	return 0;
 }
 
 int juice_agent_send(juice_agent_t *agent, const char *data, size_t size) {
