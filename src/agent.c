@@ -17,6 +17,7 @@
  */
 
 #include "agent.h"
+#include "addr.h"
 #include "ice.h"
 #include "juice.h"
 #include "log.h"
@@ -167,8 +168,8 @@ void agent_run(juice_agent_t *agent) {
 			}
 
 			if (record.addr.ss_family == AF_INET6)
-				inet6_addr_unmapv4((struct sockaddr *)&record.addr,
-				                   &record.len);
+				addr_unmap_inet6_v4mapped((struct sockaddr *)&record.addr,
+				                          &record.len);
 
 			bool is_server = false;
 			for (int i = 0; i < records_count; ++i) {
@@ -209,7 +210,7 @@ juice_agent_t *juice_agent_create(const juice_config_t *config) {
 	memset(agent, 0, sizeof(*agent));
 	ice_create_local_description(&agent->local);
 
-	agent->sock = juice_udp_create();
+	agent->sock = udp_create_socket();
 	if (agent->sock == INVALID_SOCKET) {
 		JLOG_FATAL("UDP socket creation for agent failed");
 		goto error;
@@ -232,7 +233,7 @@ int juice_agent_gather_candidates(juice_agent_t *agent) {
 
 	struct sockaddr_record records[ICE_MAX_CANDIDATES_COUNT - 1];
 	int records_count =
-	    juice_udp_get_addrs(agent->sock, records, ICE_MAX_CANDIDATES_COUNT - 1);
+	    udp_get_addrs(agent->sock, records, ICE_MAX_CANDIDATES_COUNT - 1);
 	if (records_count < 0) {
 		JLOG_WARN("Failed to gather local host candidates");
 		records_count = 0;

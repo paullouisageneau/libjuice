@@ -17,6 +17,7 @@
  */
 
 #include "udp.h"
+#include "addr.h"
 #include "log.h"
 
 #include <stdio.h>
@@ -29,111 +30,7 @@ static struct addrinfo *find_family(struct addrinfo *ai_list,
 	return ai;
 }
 
-static socklen_t get_addr_len(const struct sockaddr *sa) {
-	switch (sa->sa_family) {
-	case AF_INET:
-		return sizeof(struct sockaddr_in);
-	case AF_INET6:
-		return sizeof(struct sockaddr_in6);
-	default:
-		JLOG_WARN("Unknown address family %hu", sa->sa_family);
-		return 0;
-	}
-}
-
-static uint16_t get_addr_port(const struct sockaddr *sa) {
-	switch (sa->sa_family) {
-	case AF_INET:
-		return ntohs(((struct sockaddr_in *)sa)->sin_port);
-	case AF_INET6:
-		return ntohs(((struct sockaddr_in6 *)sa)->sin6_port);
-	default:
-		JLOG_WARN("Unknown address family %hu", sa->sa_family);
-		return 0;
-	}
-}
-
-static int set_addr_port(struct sockaddr *sa, uint16_t port) {
-	switch (sa->sa_family) {
-	case AF_INET:
-		((struct sockaddr_in *)sa)->sin_port = htons(port);
-		return 0;
-	case AF_INET6:
-		((struct sockaddr_in6 *)sa)->sin6_port = htons(port);
-		return 0;
-	default:
-		JLOG_WARN("Unknown address family %hu", sa->sa_family);
-		return -1;
-	}
-}
-
-static bool is_local_addr(struct sockaddr *sa) {
-	switch (sa->sa_family) {
-	case AF_INET: {
-		const struct sockaddr_in *sin = (const struct sockaddr_in *)sa;
-		const uint8_t *b = (const uint8_t *)&sin->sin_addr.s_addr;
-		if (b[0] == 127) // localhost
-			return true;
-		if (b[0] == 169 && b[1] == 254) // link-local
-			return true;
-		return false;
-	}
-	case AF_INET6: {
-		const struct sockaddr_in6 *sin6 = (const struct sockaddr_in6 *)sa;
-		const uint8_t *b = sin6->sin6_addr.s6_addr;
-		if (b[0] == 0xFE && b[1] == 0x80) // link-local
-			return true;
-		for (int i = 0; i < 9; ++i)
-			if (b[i] != 0)
-				return false;
-		if (b[10] == 0xFF && b[11] == 0xFF) { // IPv4-mapped
-			if (b[12] == 127)                 // localhost
-				return true;
-			if (b[12] == 169 && b[13] == 254) // link-local
-				return true;
-		}
-		for (int i = 10; i < 15; ++i)
-			if (b[i] != 0)
-				return false;
-		if (b[15] == 1) // localhost
-			return true;
-		return false;
-	}
-	default:
-		return false;
-	}
-}
-
-static bool is_temp_inet6_addr(struct sockaddr *sa) {
-	if (sa->sa_family != AF_INET6)
-		return false;
-	if (is_local_addr(sa))
-		return false;
-	const struct sockaddr_in6 *sin6 = (const struct sockaddr_in6 *)sa;
-	const uint8_t *b = sin6->sin6_addr.s6_addr;
-	return (b[8] & 0x02) ? false : true;
-}
-
-bool inet6_addr_unmapv4(struct sockaddr *sa, socklen_t *len) {
-	if (sa->sa_family != AF_INET6)
-		return false;
-
-	const struct sockaddr_in6 *sin6 = (const struct sockaddr_in6 *)sa;
-	if (!IN6_IS_ADDR_V4MAPPED(&sin6->sin6_addr))
-		return false;
-
-	struct sockaddr_in6 copy = *sin6;
-	sin6 = &copy;
-
-	struct sockaddr_in *sin = (struct sockaddr_in *)sa;
-	sin->sin_family = AF_INET;
-	sin->sin_port = sin6->sin6_port;
-	sin->sin_addr.s_addr = *((uint32_t *)(sin6->sin6_addr.s6_addr + 12));
-	*len = sizeof(*sin);
-	return true;
-}
-
-socket_t juice_udp_create(void) {
+socket_t udp_create_socket(void) {
 	// Obtain local Address
 	struct addrinfo *ai_list = NULL;
 	struct addrinfo hints;
@@ -207,11 +104,11 @@ uint16_t juice_udp_get_port(socket_t sock) {
 		return 0;
 	}
 
-	return get_addr_port((struct sockaddr *)&sa);
+	return addr_get_port((struct sockaddr *)&sa);
 }
 
-int juice_udp_get_addrs(socket_t sock, struct sockaddr_record *records,
-                        size_t count) {
+int udp_get_addrs(socket_t sock, struct sockaddr_record *records,
+                  size_t count) {
 	uint16_t port = juice_udp_get_port(sock);
 	if (port == 0) {
 		JLOG_ERROR("Getting UDP port failed");
@@ -246,7 +143,7 @@ int juice_udp_get_addrs(socket_t sock, struct sockaddr_record *records,
 	for (struct ifaddrs *ifa = ifas; ifa; ifa = ifa->ifa_next) {
 		if (!(ifa->ifa_flags & IFF_UP) || (ifa->ifa_flags & IFF_LOOPBACK))
 			continue;
-		if (ifa->ifa_addr && is_temp_inet6_addr(ifa->ifa_addr)) {
+		if (ifa->ifa_addr && addr_is_temp_inet6(ifa->ifa_addr)) {
 			has_temp_inet6 = true;
 		}
 	}
@@ -260,17 +157,17 @@ int juice_udp_get_addrs(socket_t sock, struct sockaddr_record *records,
 		struct sockaddr *sa = ifa->ifa_addr;
 		socklen_t len;
 		if (sa && (sa->sa_family == AF_INET || sa->sa_family == AF_INET6) &&
-		    !is_local_addr(sa) && (len = get_addr_len(sa))) {
+		    !addr_is_local(sa) && (len = addr_get_len(sa))) {
 
 			// Do not gather permanent addresses if a temporary one was found
 			if (sa->sa_family == AF_INET6 && has_temp_inet6 &&
-			    !is_temp_inet6_addr(sa))
+			    !addr_is_temp_inet6(sa))
 				continue;
 
 			++ret;
 			if (records != end) {
 				memcpy(&records->addr, sa, len);
-				set_addr_port((struct sockaddr *)&records->addr, port);
+				addr_set_port((struct sockaddr *)&records->addr, port);
 				records->len = len;
 				++records;
 			}

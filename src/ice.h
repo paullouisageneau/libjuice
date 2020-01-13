@@ -19,8 +19,8 @@
 #ifndef JUICE_ICE_H
 #define JUICE_ICE_H
 
+#include "addr.h"
 #include "juice.h"
-#include "socket.h" // for sockaddr stuff
 
 #include <stdbool.h>
 #include <stdint.h>

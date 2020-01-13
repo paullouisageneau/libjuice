@@ -16,14 +16,24 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#ifndef JUICE_UDP_H
-#define JUICE_UDP_H
+#ifndef JUICE_ADDR_H
+#define JUICE_ADDR_H
 
 #include "addr.h"
 #include "socket.h"
 
-socket_t udp_create_socket(void);
-uint16_t udp_get_port(socket_t sock);
-int udp_get_addrs(socket_t sock, struct sockaddr_record *records, size_t count);
+#include <stdbool.h>
 
-#endif // JUICE_UDP_H
+socklen_t addr_get_len(const struct sockaddr *sa);
+uint16_t addr_get_port(const struct sockaddr *sa);
+int addr_set_port(struct sockaddr *sa, uint16_t port);
+bool addr_is_local(struct sockaddr *sa);
+bool addr_is_temp_inet6(struct sockaddr *sa);
+bool addr_unmap_inet6_v4mapped(struct sockaddr *sa, socklen_t *len);
+
+struct sockaddr_record {
+	struct sockaddr_storage addr;
+	socklen_t len;
+} sockaddr_record_t;
+
+#endif // JUICE_ADDR_H

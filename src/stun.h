@@ -19,7 +19,7 @@
 #ifndef JUICE_STUN_H
 #define JUICE_STUN_H
 
-#include "socket.h" // for sockaddr stuff
+#include "addr.h"
 
 #include <stdbool.h>
 #include <stdint.h>

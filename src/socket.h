@@ -92,11 +92,6 @@ typedef int ctl_t;
 
 #endif // _WIN32
 
-struct sockaddr_record {
-	struct sockaddr_storage addr;
-	socklen_t len;
-} sockaddr_record_t;
-
 #ifndef IN6_IS_ADDR_V4MAPPED
 #define IN6_IS_ADDR_V4MAPPED(a)                                                \
 	((((a)->s6_words[0]) == 0) && (((a)->s6_words[1]) == 0) &&                 \

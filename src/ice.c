@@ -19,7 +19,6 @@
 #include "ice.h"
 #include "log.h"
 #include "random.h"
-#include "socket.h" // for sockaddr stuff
 
 #include <assert.h>
 #include <ctype.h>
