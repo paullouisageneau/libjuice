@@ -52,7 +52,8 @@ juice_agent_t *juice_agent_create(const juice_config_t *config);
 void juice_agent_destroy(juice_agent_t *agent);
 
 int juice_agent_gather_candidates(juice_agent_t *agent);
-const char *juice_agent_get_local_description(juice_agent_t *agent);
+int juice_agent_get_local_description(juice_agent_t *agent, char *buffer,
+                                      size_t size);
 int juice_agent_set_remote_description(juice_agent_t *agent, const char *sdp);
 int juice_agent_add_remote_candidate(juice_agent_t *agent, const char *sdp);
 

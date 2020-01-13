@@ -280,8 +280,9 @@ int juice_agent_gather_candidates(juice_agent_t *agent) {
 	return 0;
 }
 
-const char *juice_agent_get_local_description(juice_agent_t *agent) {
-	return NULL;
+int juice_agent_get_local_description(juice_agent_t *agent, char *buffer,
+                                      size_t size) {
+	return ice_generate_sdp(&agent->local, buffer, size);
 }
 
 int juice_agent_set_remote_description(juice_agent_t *agent, const char *sdp) {

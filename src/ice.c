@@ -366,7 +366,7 @@ int ice_generate_candidate_sdp(const ice_candidate_t *candidate, char *buffer,
 		return -1;
 	}
 
-	return snprintf(buffer, size, "%s %u UDP %u %s %s typ %s",
+	return snprintf(buffer, size, "a=candidate:%s %u UDP %u %s %s typ %s",
 	                candidate->foundation, candidate->component,
 	                candidate->priority, candidate->hostname,
 	                candidate->service, type);

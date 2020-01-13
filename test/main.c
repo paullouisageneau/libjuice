@@ -23,6 +23,8 @@
 #include <string.h>
 #include <unistd.h>
 
+#define BUFFER_SIZE 4096
+
 void on_state_changed(juice_agent_t *agent, juice_state_t state,
                       void *user_ptr) {}
 
@@ -43,8 +45,16 @@ int main(int argc, char **argv) {
 	config.cb_recv = on_recv;
 
 	juice_agent_t *agent = juice_agent_create(&config);
+
+	char buffer[BUFFER_SIZE];
+	juice_agent_get_local_description(agent, buffer, BUFFER_SIZE);
+	printf("Local description:\n%s\n", buffer);
+
 	juice_agent_gather_candidates(agent);
 
-	sleep(5);
+	sleep(2);
+
+	juice_agent_get_local_description(agent, buffer, BUFFER_SIZE);
+	printf("Local description:\n%s\n", buffer);
 	return 0;
 }
