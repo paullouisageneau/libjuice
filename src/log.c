@@ -26,6 +26,15 @@ static const char *log_level_names[] = {
   "VERBOSE", "DEBUG", "INFO", "WARN", "ERROR", "FATAL"
 };
 
+static const char *log_level_colors[] = {
+    "\x1B[90m",        // grey
+    "\x1B[96m",        // cyan
+    "\x1B[39m",        // default foreground
+    "\x1B[93m",        // yellow
+    "\x1B[91m",        // red
+    "\x1B[97m\x1B[41m" // white on red
+};
+
 static juice_log_level_t log_level = JUICE_LOG_LEVEL_WARN;
 
 void juice_log_set_level(juice_log_level_t level) { log_level = level; }
@@ -40,14 +49,16 @@ void juice_log_write(juice_log_level_t level, const char *file, int line,
 	if (strftime(buffer, 16, "%H:%M:%S", lt) == 0)
 		buffer[0] = '\0';
 
-	fprintf(stderr, "%s %-7s %s:%d: ", buffer, log_level_names[level], file,
+	fprintf(stdout, "%s", log_level_colors[level]);
+	fprintf(stdout, "%s %-7s %s:%d: ", buffer, log_level_names[level], file,
 	        line);
 
 	va_list args;
 	va_start(args, fmt);
-	vfprintf(stderr, fmt, args);
+	vfprintf(stdout, fmt, args);
 	va_end(args);
 
-	fprintf(stderr, "\n");
-	fflush(stderr);
+	fprintf(stdout, "%s", "\x1B[0m\x1B[0K");
+	fprintf(stdout, "\n");
+	fflush(stdout);
 }
