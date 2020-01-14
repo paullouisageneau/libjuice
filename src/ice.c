@@ -219,7 +219,7 @@ int ice_create_local_description(ice_description_t *description) {
 }
 
 int ice_create_local_candidate(ice_candidate_type_t type, int component,
-                               const struct sockaddr_record *record,
+                               const addr_record_t *record,
                                ice_candidate_t *candidate) {
 	memset(candidate, 0, sizeof(*candidate));
 	candidate->type = type;
@@ -298,7 +298,7 @@ void ice_sort_candidates(ice_description_t *description) {
 
 const ice_candidate_t *
 ice_find_candidate_from_addr(const ice_description_t *description,
-                             const struct sockaddr_record *record) {
+                             const addr_record_t *record) {
 	const ice_candidate_t *cur = description->candidates;
 	const ice_candidate_t *end = cur + description->candidates_count;
 	while (cur != end) {

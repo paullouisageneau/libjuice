@@ -26,7 +26,34 @@
 #include <pthread.h>
 #include <stdbool.h>
 
+// RFC 8445: Agents MUST NOT use an RTO value smaller than 500 ms.
+#define MIN_STUN_RETRANSMISSION_TIMEOUT 500 // msecs
+#define MAX_STUN_RETRANSMISSION_COUNT 3     // msecs
+
+// RFC 8445: ICE agents SHOULD use a default Ta value, 50 ms, but MAY use
+// another value based on the characteristics of the associated data.
+#define STUN_PACING_TIME 50 // msecs
+
 #define MAX_CANDIDATE_PAIRS_COUNT ICE_MAX_CANDIDATES_COUNT
+#define MAX_STUN_SERVER_RECORDS_COUNT 3
+#define MAX_STUN_ENTRIES_COUNT                                                 \
+	(MAX_CANDIDATE_PAIRS_COUNT + MAX_STUN_SERVER_RECORDS_COUNT)
+
+typedef int64_t timestamp_t;
+typedef timestamp_t timediff_t;
+
+typedef enum agent_stun_entry_type {
+	AGENT_STUN_ENTRY_TYPE_SERVER,
+	AGENT_STUN_ENTRY_TYPE_CHECK,
+} agent_stun_entry_type_t;
+
+typedef struct agent_stun_entry {
+	agent_stun_entry_type_t type;
+	ice_candidate_pair_t *pair;
+	addr_record_t record;
+	timestamp_t next_transmission;
+	int retransmissions;
+} agent_stun_entry_t;
 
 struct juice_agent {
 	juice_config_t config;
@@ -36,6 +63,8 @@ struct juice_agent {
 	ice_description_t remote;
 	ice_candidate_pair_t candidate_pairs[MAX_CANDIDATE_PAIRS_COUNT];
 	size_t candidate_pairs_count;
+	agent_stun_entry_t entries[MAX_STUN_ENTRIES_COUNT];
+	size_t entries_count;
 };
 
 #endif

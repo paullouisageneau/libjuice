@@ -107,7 +107,7 @@ uint16_t juice_udp_get_port(socket_t sock) {
 	return addr_get_port((struct sockaddr *)&sa);
 }
 
-int udp_get_addrs(socket_t sock, struct sockaddr_record *records,
+int udp_get_addrs(socket_t sock, addr_record_t *records,
                   size_t count) {
 	uint16_t port = juice_udp_get_port(sock);
 	if (port == 0) {
@@ -115,7 +115,7 @@ int udp_get_addrs(socket_t sock, struct sockaddr_record *records,
 		return -1;
 	}
 
-	struct sockaddr_record *end = records + count;
+	addr_record_t *end = records + count;
 	int ret = 0;
 
 #ifndef NO_IFADDRS

@@ -121,8 +121,8 @@ bool addr_unmap_inet6_v4mapped(struct sockaddr *sa, socklen_t *len) {
 }
 
 int addr_resolve(const char *hostname, const char *service,
-                 struct sockaddr_record *records, size_t count) {
-	struct sockaddr_record *end = records + count;
+                 addr_record_t *records, size_t count) {
+	addr_record_t *end = records + count;
 
 	struct addrinfo hints;
 	memset(&hints, 0, sizeof(hints));

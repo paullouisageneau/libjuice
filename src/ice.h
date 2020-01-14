@@ -50,7 +50,7 @@ typedef struct ice_candidate {
 	char transport[32 + 1];
 	char hostname[256 + 1];
 	char service[32 + 1];
-	struct sockaddr_record resolved;
+	addr_record_t resolved;
 } ice_candidate_t;
 
 typedef struct ice_description {
@@ -84,7 +84,7 @@ int ice_parse_sdp(const char *sdp, ice_description_t *description);
 int ice_parse_candidate_sdp(const char *line, ice_candidate_t *candidate);
 int ice_create_local_description(ice_description_t *description);
 int ice_create_local_candidate(ice_candidate_type_t type, int component,
-                               const struct sockaddr_record *record,
+                               const addr_record_t *record,
                                ice_candidate_t *candidate);
 int ice_resolve_candidate(ice_candidate_t *candidate, ice_resolve_mode_t mode);
 int ice_add_candidate(const ice_candidate_t *candidate,
@@ -92,7 +92,7 @@ int ice_add_candidate(const ice_candidate_t *candidate,
 void ice_sort_candidates(ice_description_t *description);
 const ice_candidate_t *
 ice_find_candidate_from_addr(const ice_description_t *description,
-                             const struct sockaddr_record *record);
+                             const addr_record_t *record);
 int ice_generate_sdp(const ice_description_t *description, char *buffer,
                      size_t size);
 int ice_generate_candidate_sdp(const ice_candidate_t *candidate, char *buffer,

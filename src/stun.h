@@ -170,7 +170,7 @@ typedef struct stun_message {
 	bool use_candidate;
 	bool ice_controlling;
 	bool ice_controlled;
-	struct sockaddr_record mapped;
+	addr_record_t mapped;
 } stun_message_t;
 
 int stun_write(void *buf, size_t size, const stun_message_t *msg);
