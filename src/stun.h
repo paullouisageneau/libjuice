@@ -162,15 +162,19 @@ typedef struct stun_message {
 	stun_method_t msg_method;
 	uint8_t transaction_id[STUN_TRANSACTION_ID_SIZE];
 	unsigned int error_code;
-	bool has_integrity;
-	bool has_fingerprint;
-	const char *username;
-	const char *password;
 	uint32_t priority;
 	bool use_candidate;
 	bool ice_controlling;
 	bool ice_controlled;
 	addr_record_t mapped;
+
+	// Used only for reading
+	bool has_integrity;
+	bool has_fingerprint;
+
+	// When set for reading, trigger verification
+	const char *username;
+	const char *password;
 } stun_message_t;
 
 int stun_write(void *buf, size_t size, const stun_message_t *msg);

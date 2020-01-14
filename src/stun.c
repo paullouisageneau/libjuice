@@ -48,7 +48,7 @@ int stun_write(void *buf, size_t size, const stun_message_t *msg) {
 	size_t len = stun_write_header(pos, end - pos, msg->msg_class,
 	                               msg->msg_method, msg->transaction_id);
 	if (len <= 0)
-		goto no_space;
+		goto overflow;
 	pos += len;
 	uint8_t *attr_begin = pos;
 
@@ -60,7 +60,7 @@ int stun_write(void *buf, size_t size, const stun_message_t *msg) {
 		len = stun_write_attr(pos, end - pos, STUN_ATTR_ERROR_CODE, &error,
 		                      sizeof(error));
 		if (len <= 0)
-			goto no_space;
+			goto overflow;
 		pos += len;
 	}
 
@@ -77,7 +77,7 @@ int stun_write(void *buf, size_t size, const stun_message_t *msg) {
 			len = stun_write_attr(pos, end - pos, STUN_ATTR_XOR_MAPPED_ADDRESS,
 			                      value, value_len);
 			if (len <= 0)
-				goto no_space;
+				goto overflow;
 			pos += len;
 		}
 	}
@@ -86,14 +86,14 @@ int stun_write(void *buf, size_t size, const stun_message_t *msg) {
 		uint32_t priority = htonl(msg->priority);
 		len = stun_write_attr(pos, end - pos, STUN_ATTR_PRIORITY, &priority, 4);
 		if (len <= 0)
-			goto no_space;
+			goto overflow;
 		pos += len;
 	}
 
 	if (msg->use_candidate) {
 		len = stun_write_attr(pos, end - pos, STUN_ATTR_USE_CANDIDATE, NULL, 0);
 		if (len <= 0)
-			goto no_space;
+			goto overflow;
 		pos += len;
 	}
 
@@ -102,7 +102,7 @@ int stun_write(void *buf, size_t size, const stun_message_t *msg) {
 		len = stun_write_attr(pos, end - pos, STUN_ATTR_ICE_CONTROLLING,
 		                      &random, 8);
 		if (len <= 0)
-			goto no_space;
+			goto overflow;
 		pos += len;
 	}
 
@@ -111,16 +111,16 @@ int stun_write(void *buf, size_t size, const stun_message_t *msg) {
 		len = stun_write_attr(pos, end - pos, STUN_ATTR_ICE_CONTROLLED, &random,
 		                      8);
 		if (len <= 0)
-			goto no_space;
+			goto overflow;
 		pos += len;
 	}
 
 	if (msg->username) {
-		const char *username = msg->username;
-		len = stun_write_attr(pos, end - pos, STUN_ATTR_USERNAME, username,
-		                      strlen(username));
+		JLOG_VERBOSE("Writing username, username=\"%s\"", msg->username);
+		len = stun_write_attr(pos, end - pos, STUN_ATTR_USERNAME, msg->username,
+		                      strlen(msg->username));
 		if (len <= 0)
-			goto no_space;
+			goto overflow;
 		pos += len;
 	}
 
@@ -134,7 +134,7 @@ int stun_write(void *buf, size_t size, const stun_message_t *msg) {
 		len = stun_write_attr(pos, end - pos, STUN_ATTR_MESSAGE_INTEGRITY, hmac,
 		                      HMAC_SHA1_SIZE);
 		if (len <= 0)
-			goto no_space;
+			goto overflow;
 		pos += len;
 	}
 
@@ -146,11 +146,11 @@ int stun_write(void *buf, size_t size, const stun_message_t *msg) {
 	len =
 	    stun_write_attr(pos, end - pos, STUN_ATTR_FINGERPRINT, &fingerprint, 4);
 	if (len <= 0)
-		goto no_space;
+		goto overflow;
 	pos += len;
 	return pos - begin;
 
-no_space:
+overflow:
 	JLOG_ERROR("Not enough space in buffer for STUN message, size=%zu", size);
 	return -1;
 }
@@ -180,8 +180,8 @@ size_t stun_update_header_length(void *buf, size_t length) {
 
 int stun_write_attr(void *buf, size_t size, uint16_t type, const void *value,
                     size_t length) {
-	JLOG_DEBUG("Writing STUN attribute type %X, length=%zu", (unsigned int)type,
-	           length);
+	JLOG_VERBOSE("Writing STUN attribute type %X, length=%zu",
+	             (unsigned int)type, length);
 
 	if (size < sizeof(struct stun_attr) + length)
 		return -1;
@@ -191,6 +191,9 @@ int stun_write_attr(void *buf, size_t size, uint16_t type, const void *value,
 	attr->length = htons((uint16_t)length);
 	memcpy(attr->value, value, length);
 
+	// Pad to align on 4 bytes
+	while (length & 0x03)
+		attr->value[length++] = 0;
 	return sizeof(struct stun_attr) + length;
 }
 
@@ -234,7 +237,8 @@ int stun_write_value_mapped_address(void *buf, size_t size,
 }
 
 int stun_read(void *data, size_t size, stun_message_t *msg) {
-	memset(msg, 0, sizeof(*msg));
+	// username and password are not reset
+	memset(msg, 0, (char *)&msg->username - (char *)msg);
 
 	// RFC 5389: The most significant 2 bits of every STUN message MUST be
 	// zeroes.
@@ -260,8 +264,8 @@ int stun_read(void *data, size_t size, stun_message_t *msg) {
 	// always zero.
 	size_t length = ntohs(header->length);
 	if (length & 0x03) {
-		JLOG_VERBOSE(
-		    "Not a STUN message: invalid length %zu not multiple of 4");
+		JLOG_VERBOSE("Not a STUN message: invalid length %zu not multiple of 4",
+		             length);
 		return 0;
 	}
 	if (size != sizeof(struct stun_header) + length) {
@@ -328,6 +332,8 @@ int stun_read_attr(const void *data, size_t size, stun_message_t *msg,
 	if (msg->has_integrity && type != STUN_ATTR_FINGERPRINT) {
 		JLOG_DEBUG("Ignoring STUN attribute %X after message integrity",
 		           (unsigned int)type);
+		while (length & 0x03)
+			++length; // attributes are aligned on 4 bytes
 		return sizeof(struct stun_attr) + length;
 	}
 
@@ -363,49 +369,65 @@ int stun_read_attr(const void *data, size_t size, stun_message_t *msg,
 	}
 	case STUN_ATTR_USERNAME: {
 		JLOG_VERBOSE("Reading username");
-		const char *username = msg->username ? msg->username : "";
-		if (strncmp(username, (const char *)attr->value, attr->length) != 0) {
-			JLOG_DEBUG("STUN username check failed");
-			return -1;
+		if (msg->username) {
+			// The value of USERNAME is a variable-length value. It MUST contain
+			// a UTF-8 [RFC3629] encoded sequence of less than 513 bytes [...]
+			if (length > 513) {
+				JLOG_WARN("STUN username attribute value too long, length=%zu",
+				          length);
+				return -1;
+			}
+			if (strncmp(msg->username, (char *)attr->value, length) != 0) {
+				JLOG_DEBUG("STUN username check failed, expected=\"%s\"",
+				           msg->username);
+				return -1;
+			}
+			JLOG_VERBOSE("Matching usernames, username=\"%s\"", msg->username);
+		} else {
+			JLOG_VERBOSE("Ignoring unexpected username");
 		}
 		break;
 	}
 	case STUN_ATTR_MESSAGE_INTEGRITY: {
 		JLOG_VERBOSE("Reading message integrity");
-		if (attr->length != HMAC_SHA1_SIZE) {
+		if (length != HMAC_SHA1_SIZE) {
 			JLOG_DEBUG("STUN message integrity length invalid, length=%zu",
 			           length);
 			return -1;
 		}
-		size_t tmp_length =
-		    (uint8_t *)data - attr_begin + STUN_ATTR_SIZE + HMAC_SHA1_SIZE;
-		size_t prev_length = stun_update_header_length(begin, tmp_length);
+		if (msg->password) {
+			size_t tmp_length =
+			    (uint8_t *)data - attr_begin + STUN_ATTR_SIZE + HMAC_SHA1_SIZE;
+			size_t prev_length = stun_update_header_length(begin, tmp_length);
+			uint8_t hmac[HMAC_SHA1_SIZE];
+			hmac_sha1(begin, (uint8_t *)data - begin, msg->password,
+			          strlen(msg->password), hmac);
+			stun_update_header_length(begin, prev_length);
 
-		const char *password = msg->password ? msg->password : "";
-		uint8_t hmac[HMAC_SHA1_SIZE];
-		hmac_sha1(begin, (uint8_t *)data - begin, password, strlen(password),
-		          hmac);
-
-		stun_update_header_length(begin, prev_length);
-
-		if (memcmp(hmac, attr->value, HMAC_SHA1_SIZE) != 0) {
-			JLOG_DEBUG("STUN message integrity check failed");
-			return -1;
+			if (memcmp(hmac, attr->value, HMAC_SHA1_SIZE) != 0) {
+				JLOG_DEBUG("STUN message integrity check failed");
+				return -1;
+			}
+			JLOG_VERBOSE("STUN message integrity check succeeded");
+			msg->has_integrity = true;
+		} else {
+			JLOG_VERBOSE("Ignoring unexpected message integrity");
 		}
-		msg->has_integrity = true;
 		break;
 	}
 	case STUN_ATTR_FINGERPRINT: {
 		JLOG_VERBOSE("Reading fingerprint");
-		// No need to update header length since fingerprint must be the last
-		// attribute anyway
-		if (attr->length != 4) {
+		if (length != 4) {
 			JLOG_DEBUG("STUN fingerprint length invalid, length=%zu", length);
 			return -1;
 		}
-		uint32_t fingerprint = ntohl(*((uint32_t *)attr->value));
+		size_t tmp_length = (uint8_t *)data - attr_begin + STUN_ATTR_SIZE + 4;
+		size_t prev_length = stun_update_header_length(begin, tmp_length);
 		uint32_t expected =
 		    crc32(begin, (uint8_t *)data - begin) ^ STUN_FINGERPRINT_XOR;
+		stun_update_header_length(begin, prev_length);
+
+		uint32_t fingerprint = ntohl(*((uint32_t *)attr->value));
 		if (fingerprint != expected) {
 			JLOG_DEBUG("STUN fingerprint check failed, expected=%lX, found=%lX",
 			           (unsigned long)expected, (unsigned long)fingerprint);
@@ -445,6 +467,8 @@ int stun_read_attr(const void *data, size_t size, stun_message_t *msg,
 		break;
 	}
 	}
+	while (length & 0x03)
+		++length; // attributes are aligned on 4 bytes
 	return sizeof(struct stun_attr) + length;
 }
 

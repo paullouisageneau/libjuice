@@ -90,9 +90,8 @@ int ice_resolve_candidate(ice_candidate_t *candidate, ice_resolve_mode_t mode);
 int ice_add_candidate(const ice_candidate_t *candidate,
                       ice_description_t *description);
 void ice_sort_candidates(ice_description_t *description);
-const ice_candidate_t *
-ice_find_candidate_from_addr(const ice_description_t *description,
-                             const addr_record_t *record);
+ice_candidate_t *ice_find_candidate_from_addr(ice_description_t *description,
+                                              const addr_record_t *record);
 int ice_generate_sdp(const ice_description_t *description, char *buffer,
                      size_t size);
 int ice_generate_candidate_sdp(const ice_candidate_t *candidate, char *buffer,

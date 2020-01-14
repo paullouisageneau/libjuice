@@ -18,6 +18,7 @@
 
 #include "log.h"
 
+#include <pthread.h>
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
@@ -36,11 +37,17 @@ static const char *log_level_colors[] = {
 };
 
 static juice_log_level_t log_level = JUICE_LOG_LEVEL_WARN;
+static pthread_mutex_t log_mutex = PTHREAD_MUTEX_INITIALIZER;
 
-void juice_log_set_level(juice_log_level_t level) { log_level = level; }
+void juice_log_set_level(juice_log_level_t level) {
+	pthread_mutex_lock(&log_mutex);
+	log_level = level;
+	pthread_mutex_unlock(&log_mutex);
+}
 
 void juice_log_write(juice_log_level_t level, const char *file, int line,
                      const char *fmt, ...) {
+	pthread_mutex_lock(&log_mutex);
 	if (level < log_level) return;
 
 	time_t t = time(NULL);
@@ -61,4 +68,6 @@ void juice_log_write(juice_log_level_t level, const char *file, int line,
 	fprintf(stdout, "%s", "\x1B[0m\x1B[0K");
 	fprintf(stdout, "\n");
 	fflush(stdout);
+
+	pthread_mutex_unlock(&log_mutex);
 }

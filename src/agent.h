@@ -57,11 +57,13 @@ typedef struct agent_stun_entry {
 
 struct juice_agent {
 	juice_config_t config;
+	juice_state_t state;
 	socket_t sock;
 	pthread_t thread;
 	ice_description_t local;
 	ice_description_t remote;
 	ice_candidate_pair_t candidate_pairs[MAX_CANDIDATE_PAIRS_COUNT];
+	ice_candidate_pair_t *ordered_pairs[MAX_CANDIDATE_PAIRS_COUNT];
 	size_t candidate_pairs_count;
 	agent_stun_entry_t entries[MAX_STUN_ENTRIES_COUNT];
 	size_t entries_count;
