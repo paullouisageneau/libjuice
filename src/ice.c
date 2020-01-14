@@ -87,7 +87,7 @@ static int parse_sdp_candidate(const char *line, ice_candidate_t *candidate) {
 		return -1;
 	}
 
-	if (strcmp(transport, "UDP") != 0 || strcmp(transport, "udp") != 0) {
+	if (strcmp(transport, "UDP") != 0 && strcmp(transport, "udp") != 0) {
 		JLOG_INFO("Ignoring candidate with transport \"%s\"", transport);
 		return -1;
 	}
@@ -283,7 +283,7 @@ void ice_sort_candidates(ice_description_t *description) {
 	ice_candidate_t *end = begin + description->candidates_count;
 	ice_candidate_t *cur = begin;
 	ice_candidate_t tmp;
-	while (++cur != end) {
+	while (++cur < end) {
 		uint32_t priority = cur->priority;
 		ice_candidate_t *prev = cur;
 		while (--prev >= begin && prev->priority < priority) {
@@ -376,8 +376,10 @@ int ice_create_candidate_pair(ice_candidate_t *local, ice_candidate_t *remote,
 
 	// Compute pair priority according to RFC 8445
 	// See https://tools.ietf.org/html/rfc8445#section-6.1.2.3
-	uint64_t g = is_controlling ? local->priority : remote->priority;
-	uint64_t d = is_controlling ? remote->priority : local->priority;
+	uint64_t local_priority = local ? local->priority : 0;
+	uint64_t remote_priority = remote ? remote->priority : 0;
+	uint64_t g = is_controlling ? local_priority : remote_priority;
+	uint64_t d = is_controlling ? remote_priority : local_priority;
 	uint64_t min = g < d ? g : d;
 	uint64_t max = g > d ? g : d;
 	pair->priority = (min << 32) + (max << 1) + (g > d ? 1 : 0);
