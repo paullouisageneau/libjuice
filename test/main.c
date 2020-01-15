@@ -36,12 +36,12 @@ void on_state_changed2(juice_agent_t *agent, juice_state_t state,
 
 void on_candidate1(juice_agent_t *agent, const char *sdp, void *user_ptr) {
 	printf("Candidate 1: %s\n", sdp);
-	juice_agent_add_remote_candidate(agent2, sdp);
+	juice_add_remote_candidate(agent2, sdp);
 }
 
 void on_candidate2(juice_agent_t *agent, const char *sdp, void *user_ptr) {
 	printf("Candidate 2: %s\n", sdp);
-	juice_agent_add_remote_candidate(agent1, sdp);
+	juice_add_remote_candidate(agent1, sdp);
 }
 
 void on_recv1(juice_agent_t *agent, const char *data, size_t size,
@@ -51,7 +51,7 @@ void on_recv2(juice_agent_t *agent, const char *data, size_t size,
               void *user_ptr) {}
 
 int main(int argc, char **argv) {
-	juice_log_set_level(JUICE_LOG_LEVEL_VERBOSE);
+	juice_set_log_level(JUICE_LOG_LEVEL_VERBOSE);
 
 	juice_config_t config1;
 	config1.is_lite = false;
@@ -60,7 +60,7 @@ int main(int argc, char **argv) {
 	config1.cb_candidate = on_candidate1;
 	config1.cb_recv = on_recv1;
 	config1.user_ptr = NULL;
-	agent1 = juice_agent_create(&config1);
+	agent1 = juice_create(&config1);
 
 	juice_config_t config2;
 	config2.is_lite = false;
@@ -69,27 +69,27 @@ int main(int argc, char **argv) {
 	config2.cb_candidate = on_candidate2;
 	config2.cb_recv = on_recv2;
 	config2.user_ptr = NULL;
-	agent2 = juice_agent_create(&config2);
+	agent2 = juice_create(&config2);
 
 	char sdp1[BUFFER_SIZE];
-	juice_agent_get_local_description(agent1, sdp1, BUFFER_SIZE);
+	juice_get_local_description(agent1, sdp1, BUFFER_SIZE);
 	printf("Local description 1:\n%s\n", sdp1);
 
-	juice_agent_set_remote_description(agent2, sdp1);
+	juice_set_remote_description(agent2, sdp1);
 
 	char sdp2[BUFFER_SIZE];
-	juice_agent_get_local_description(agent2, sdp2, BUFFER_SIZE);
+	juice_get_local_description(agent2, sdp2, BUFFER_SIZE);
 	printf("Local description 2:\n%s\n", sdp2);
 
-	juice_agent_set_remote_description(agent1, sdp2);
+	juice_set_remote_description(agent1, sdp2);
 
-	juice_agent_gather_candidates(agent1);
+	juice_gather_candidates(agent1);
 	sleep(2);
-	juice_agent_gather_candidates(agent2);
+	juice_gather_candidates(agent2);
 	sleep(4);
 
-	juice_agent_destroy(agent1);
-	juice_agent_destroy(agent2);
+	juice_destroy(agent1);
+	juice_destroy(agent2);
 	sleep(2);
 	return 0;
 }

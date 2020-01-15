@@ -49,16 +49,20 @@ typedef struct juice_config {
 	void *user_ptr;
 } juice_config_t;
 
-juice_agent_t *juice_agent_create(const juice_config_t *config);
-void juice_agent_destroy(juice_agent_t *agent);
+juice_agent_t *juice_create(const juice_config_t *config);
+void juice_destroy(juice_agent_t *agent);
 
-int juice_agent_gather_candidates(juice_agent_t *agent);
-int juice_agent_get_local_description(juice_agent_t *agent, char *buffer,
-                                      size_t size);
-int juice_agent_set_remote_description(juice_agent_t *agent, const char *sdp);
-int juice_agent_add_remote_candidate(juice_agent_t *agent, const char *sdp);
+int juice_gather_candidates(juice_agent_t *agent);
+int juice_get_local_description(juice_agent_t *agent, char *buffer,
+                                size_t size);
+int juice_set_remote_description(juice_agent_t *agent, const char *sdp);
+int juice_add_remote_candidate(juice_agent_t *agent, const char *sdp);
 
-int juice_agent_send(juice_agent_t *agent, const char *data, size_t size);
+int juice_send(juice_agent_t *agent, const char *data, size_t size);
+
+const char *juice_state_to_string(juice_state_t state);
+
+// Logging
 
 typedef enum {
 	JUICE_LOG_LEVEL_VERBOSE,
@@ -69,7 +73,7 @@ typedef enum {
 	JUICE_LOG_LEVEL_FATAL
 } juice_log_level_t;
 
-void juice_log_set_level(juice_log_level_t level);
+void juice_set_log_level(juice_log_level_t level);
 
 #endif
 

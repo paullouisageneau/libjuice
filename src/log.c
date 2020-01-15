@@ -39,7 +39,7 @@ static const char *log_level_colors[] = {
 static juice_log_level_t log_level = JUICE_LOG_LEVEL_WARN;
 static pthread_mutex_t log_mutex = PTHREAD_MUTEX_INITIALIZER;
 
-void juice_log_set_level(juice_log_level_t level) {
+void juice_set_log_level(juice_log_level_t level) {
 	pthread_mutex_lock(&log_mutex);
 	log_level = level;
 	pthread_mutex_unlock(&log_mutex);
