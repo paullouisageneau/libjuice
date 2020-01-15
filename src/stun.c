@@ -37,6 +37,12 @@
 	((uint64_t)htonl(((uint64_t)(x)&0xFFFFFFFF) << 32) |                       \
 	 (uint64_t)htonl((uint64_t)(x) >> 32))
 
+static size_t align32(size_t len) {
+	while (len & 0x03)
+		++len;
+	return len;
+}
+
 int stun_write(void *buf, size_t size, const stun_message_t *msg) {
 	uint8_t *begin = buf;
 	uint8_t *pos = begin;
@@ -139,6 +145,12 @@ int stun_write(void *buf, size_t size, const stun_message_t *msg) {
 	}
 
 	size_t length = pos - attr_begin + STUN_ATTR_SIZE + 4;
+	if (length & 0x03) {
+		JLOG_ERROR(
+		    "Written STUN message length is not multiple of 4, length=%zu",
+		    length);
+		return -1;
+	}
 	stun_update_header_length(begin, length);
 
 	uint32_t fingerprint =
@@ -148,6 +160,7 @@ int stun_write(void *buf, size_t size, const stun_message_t *msg) {
 	if (len <= 0)
 		goto overflow;
 	pos += len;
+
 	return pos - begin;
 
 overflow:
@@ -428,12 +441,12 @@ int stun_read_attr(const void *data, size_t size, stun_message_t *msg,
 		stun_update_header_length(begin, prev_length);
 
 		uint32_t fingerprint = ntohl(*((uint32_t *)attr->value));
-		if (fingerprint != expected) {
-			JLOG_DEBUG("STUN fingerprint check failed, expected=%lX, found=%lX",
-			           (unsigned long)expected, (unsigned long)fingerprint);
-			return -1;
+		if (fingerprint == expected) {
+			msg->has_fingerprint = true;
+		} else {
+			JLOG_WARN("STUN fingerprint check failed, expected=%lX, found=%lX",
+			          (unsigned long)expected, (unsigned long)fingerprint);
 		}
-		msg->has_fingerprint = true;
 		break;
 	}
 	case STUN_ATTR_PRIORITY: {
@@ -467,9 +480,8 @@ int stun_read_attr(const void *data, size_t size, stun_message_t *msg,
 		break;
 	}
 	}
-	while (length & 0x03)
-		++length; // attributes are aligned on 4 bytes
-	return sizeof(struct stun_attr) + length;
+
+	return sizeof(struct stun_attr) + align32(length);
 }
 
 int stun_read_value_mapped_address(const void *data, size_t size,

@@ -59,6 +59,13 @@ const char *state_to_string(juice_state_t state) {
 	}
 }
 
+void agent_destroy(juice_agent_t *agent) {
+	JLOG_VERBOSE("Destroying agent");
+	close(agent->sock);
+	pthread_mutex_destroy(&agent->mutex);
+	free(agent);
+}
+
 void agent_change_state(juice_agent_t *agent, juice_state_t state) {
 	if (state != agent->state) {
 		JLOG_INFO("Changing state to %s", state_to_string(state));
@@ -444,6 +451,10 @@ void agent_run(juice_agent_t *agent) {
 			JLOG_ERROR("select failed, errno=%d", errno);
 			break;
 		}
+		if (agent->thread_destroyed) {
+			JLOG_VERBOSE("Agent destruction requested");
+			break;
+		}
 
 		if (FD_ISSET(agent->sock, &set)) {
 			char buffer[BUFFER_SIZE];
@@ -509,11 +520,9 @@ void agent_run(juice_agent_t *agent) {
 		}
 	}
 
-	JLOG_DEBUG("Finishing agent thread");
+	JLOG_DEBUG("Leaving agent thread");
 	agent_change_state(agent, JUICE_STATE_DISCONNECTED);
-	close(agent->sock);
-	agent->sock = INVALID_SOCKET;
-	pthread_mutex_unlock(&agent->mutex);
+	agent_destroy(agent);
 }
 
 void *agent_thread_entry(void *arg) {
@@ -522,6 +531,7 @@ void *agent_thread_entry(void *arg) {
 }
 
 juice_agent_t *juice_agent_create(const juice_config_t *config) {
+	JLOG_VERBOSE("Creating agent");
 	juice_agent_t *agent = malloc(sizeof(juice_agent_t));
 	if (!agent) {
 		JLOG_FATAL("malloc for agent failed");
@@ -531,18 +541,20 @@ juice_agent_t *juice_agent_create(const juice_config_t *config) {
 	agent->config = *config;
 	agent->state = JUICE_STATE_DISCONNECTED;
 	agent->sock = INVALID_SOCKET;
+	agent->thread_started = false;
+	agent->thread_destroyed = false;
 	pthread_mutex_init(&agent->mutex, NULL);
 	ice_create_local_description(&agent->local);
-
-	JLOG_VERBOSE("Agent created");
 	return agent;
 }
 
 void juice_agent_destroy(juice_agent_t *agent) {
-	// TODO: signal agent thread
-	pthread_join(agent->thread, NULL);
-	pthread_mutex_destroy(&agent->mutex);
-	free(agent);
+	if (!agent->thread_started) {
+		agent_destroy(agent);
+	} else {
+		JLOG_VERBOSE("Requesting agent destruction");
+		agent->thread_destroyed = true;
+	}
 }
 
 int juice_agent_gather_candidates(juice_agent_t *agent) {
@@ -604,6 +616,8 @@ int juice_agent_gather_candidates(juice_agent_t *agent) {
 		JLOG_FATAL("pthread_create for agent failed, error=%d", ret);
 		return -1;
 	}
+	pthread_detach(agent->thread);
+	agent->thread_started = true;
 	return 0;
 }
 

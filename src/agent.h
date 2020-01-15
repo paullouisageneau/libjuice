@@ -69,6 +69,8 @@ struct juice_agent {
 	size_t candidate_pairs_count;
 	agent_stun_entry_t entries[MAX_STUN_ENTRIES_COUNT];
 	size_t entries_count;
+	bool thread_started;
+	bool thread_destroyed;
 };
 
 #endif

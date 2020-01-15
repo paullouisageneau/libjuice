@@ -86,6 +86,10 @@ int main(int argc, char **argv) {
 	juice_agent_gather_candidates(agent1);
 	sleep(2);
 	juice_agent_gather_candidates(agent2);
-	sleep(300);
+	sleep(4);
+
+	juice_agent_destroy(agent1);
+	juice_agent_destroy(agent2);
+	sleep(2);
 	return 0;
 }
