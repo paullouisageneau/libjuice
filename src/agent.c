@@ -54,6 +54,17 @@ juice_agent_t *agent_create(const juice_config_t *config) {
 	agent->thread_destroyed = false;
 	pthread_mutex_init(&agent->mutex, NULL);
 	ice_create_local_description(&agent->local);
+
+	// RFC 8445: 16.1. Attributes
+	// The content of the [ICE-CONTROLLED/ICE-CONTROLLING] attribute is a 64-bit
+	// unsigned integer in network byte order, which contains a random number.
+	// The number is used for solving role conflicts, when it is referred to as
+	// the "tiebreaker value".  An ICE agent MUST use the same number for
+	// all Binding requests, for all streams, within an ICE session, unless
+	// it has received a 487 response, in which case it MUST change the
+	// number.
+	juice_random(&agent->ice_tiebreaker, sizeof(agent->ice_tiebreaker));
+
 	return agent;
 }
 
@@ -479,8 +490,10 @@ int agent_send_stun_binding(juice_agent_t *agent, agent_stun_entry_t *entry,
 		msg.username = username;
 		msg.password = agent->remote.ice_pwd;
 		msg.priority = local_priority;
-		msg.ice_controlling = agent->config.is_controlling;
-		msg.ice_controlled = !agent->config.is_controlling;
+		msg.ice_controlling =
+		    agent->config.is_controlling ? agent->ice_tiebreaker : 0;
+		msg.ice_controlled =
+		    !agent->config.is_controlling ? agent->ice_tiebreaker : 0;
 
 		// RFC 8445: 8.1.1. Nominating Pairs
 		// Once the controlling agent has picked a valid pair for nomination, it

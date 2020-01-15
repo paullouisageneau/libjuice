@@ -21,7 +21,6 @@
 #include "hmac.h"
 #include "juice.h"
 #include "log.h"
-#include "random.h"
 #include "udp.h"
 
 #include <assert.h>
@@ -36,6 +35,7 @@
 #define htonll(x)                                                              \
 	((uint64_t)htonl(((uint64_t)(x)&0xFFFFFFFF) << 32) |                       \
 	 (uint64_t)htonl((uint64_t)(x) >> 32))
+#define ntohll(x) htonll(x)
 
 static size_t align32(size_t len) {
 	while (len & 0x03)
@@ -104,18 +104,16 @@ int stun_write(void *buf, size_t size, const stun_message_t *msg) {
 	}
 
 	if (msg->ice_controlling) {
-		uint64_t random = htonll(juice_rand64());
 		len = stun_write_attr(pos, end - pos, STUN_ATTR_ICE_CONTROLLING,
-		                      &random, 8);
+		                      &msg->ice_controlling, 8);
 		if (len <= 0)
 			goto overflow;
 		pos += len;
 	}
 
 	if (msg->ice_controlled) {
-		uint64_t random = htonll(juice_rand64());
-		len = stun_write_attr(pos, end - pos, STUN_ATTR_ICE_CONTROLLED, &random,
-		                      8);
+		len = stun_write_attr(pos, end - pos, STUN_ATTR_ICE_CONTROLLED,
+		                      &msg->ice_controlled, 8);
 		if (len <= 0)
 			goto overflow;
 		pos += len;
@@ -464,13 +462,25 @@ int stun_read_attr(const void *data, size_t size, stun_message_t *msg,
 		break;
 	}
 	case STUN_ATTR_ICE_CONTROLLING: {
-		JLOG_VERBOSE("Found ICE controlling flag");
-		msg->ice_controlling = true;
+		JLOG_VERBOSE("Found ICE controlling attribute");
+		if (length != 8) {
+			JLOG_DEBUG(
+			    "STUN ICE controlling attribute length invalid, length=%zu",
+			    length);
+			return -1;
+		}
+		msg->ice_controlling = ntohll(*((uint64_t *)attr->value));
 		break;
 	}
 	case STUN_ATTR_ICE_CONTROLLED: {
-		JLOG_VERBOSE("Found ICE controlled flag");
-		msg->ice_controlled = true;
+		JLOG_VERBOSE("Found ICE controlled attribute");
+		if (length != 8) {
+			JLOG_DEBUG(
+			    "STUN ICE controlled attribute length invalid, length=%zu",
+			    length);
+			return -1;
+		}
+		msg->ice_controlled = ntohll(*((uint64_t *)attr->value));
 		break;
 	}
 	default: {

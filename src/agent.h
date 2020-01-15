@@ -66,6 +66,7 @@ struct juice_agent {
 	socket_t signal_sock;
 	pthread_t thread;
 	pthread_mutex_t mutex;
+	uint64_t ice_tiebreaker;
 	ice_description_t local;
 	ice_description_t remote;
 	ice_candidate_pair_t candidate_pairs[MAX_CANDIDATE_PAIRS_COUNT];

@@ -163,9 +163,9 @@ typedef struct stun_message {
 	uint8_t transaction_id[STUN_TRANSACTION_ID_SIZE];
 	unsigned int error_code;
 	uint32_t priority;
+	uint64_t ice_controlling;
+	uint64_t ice_controlled;
 	bool use_candidate;
-	bool ice_controlling;
-	bool ice_controlled;
 	addr_record_t mapped;
 
 	// Used only for reading
