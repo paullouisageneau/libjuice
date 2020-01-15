@@ -177,6 +177,8 @@ int udp_get_addrs(socket_t sock, addr_record_t *records,
 	freeifaddrs(ifas);
 
 #else // NO_IFADDRS defined
+	// TODO: use SIOCGIFCONF (WSAIoctl with SIO_GET_INTERFACE_LIST on Windows)
+
 	char hostname[HOST_NAME_MAX];
 	if (gethostname(hostname, HOST_NAME_MAX)) {
 		JLOG_ERROR("gethostname failed, errno=%d", errno);

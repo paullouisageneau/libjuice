@@ -73,6 +73,8 @@ typedef struct ice_candidate_pair {
 	ice_candidate_t *remote;
 	uint64_t priority;
 	ice_candidate_pair_state_t state;
+	bool nominated;
+	bool nomination_requested;
 } ice_candidate_pair_t;
 
 typedef enum ice_resolve_mode {

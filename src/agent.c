@@ -314,9 +314,9 @@ void agent_run(juice_agent_t *agent) {
 					if (memcmp(msg.transaction_id,
 					           agent->entries[i].transaction_id,
 					           STUN_TRANSACTION_ID_SIZE) == 0) {
-						JLOG_DEBUG("STUN entry %d: Processing incoming message "
-						           "(matched transaction ID)",
-						           i);
+						JLOG_DEBUG(
+						    "STUN entry %d matching incoming transaction ID",
+						    i);
 						entry = &agent->entries[i];
 						break;
 					}
@@ -326,8 +326,7 @@ void agent_run(juice_agent_t *agent) {
 					if (record.len == agent->entries[i].record.len &&
 					    memcmp(&record.addr, &agent->entries[i].record.addr,
 					           record.len) == 0) {
-						JLOG_DEBUG("STUN entry %d: Processing incoming message "
-						           "(matched candidate)",
+						JLOG_DEBUG("STUN entry %d matching incoming candidate",
 						           i);
 						entry = &agent->entries[i];
 						break;
@@ -362,8 +361,7 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 
 		if (entry->pair &&
 		    (entry->pair->state == ICE_CANDIDATE_PAIR_STATE_FROZEN ||
-		     entry->pair->state == ICE_CANDIDATE_PAIR_STATE_FAILED ||
-		     entry->pair->state == ICE_CANDIDATE_PAIR_STATE_SUCCEEDED))
+		     entry->pair->state == ICE_CANDIDATE_PAIR_STATE_FAILED))
 			continue;
 
 		if (entry->next_transmission && entry->next_transmission <= now) {
@@ -392,34 +390,41 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 	if (agent->candidate_pairs_count == 0)
 		return 0;
 
-	ice_candidate_pair_t *pending = NULL;
-	ice_candidate_pair_t *selected = NULL;
+	unsigned int pending_count = 0;
+	unsigned int nominated_count = 0;
+	ice_candidate_pair_t *selected_pair = NULL;
 	for (int i = 0; i < agent->candidate_pairs_count; ++i) {
 		ice_candidate_pair_t *pair = *(agent->ordered_pairs + i);
-		if (selected) {
-			// A higher-priority pair succeeded, we can stop checking this one
-			if (pair->state == ICE_CANDIDATE_PAIR_STATE_WAITING ||
-			    pair->state == ICE_CANDIDATE_PAIR_STATE_INPROGRESS) {
-				JLOG_VERBOSE("Cancelling checks for lower-priority pair");
+		if (pair->state == ICE_CANDIDATE_PAIR_STATE_WAITING ||
+		    pair->state == ICE_CANDIDATE_PAIR_STATE_INPROGRESS) {
+			if (nominated_count > 0) {
+				// A higher-priority pair was nominated, we can stop checking
+				JLOG_VERBOSE("Cancelling check for lower-priority pair");
 				pair->state = ICE_CANDIDATE_PAIR_STATE_FROZEN;
+
+			} else {
+				++pending_count;
 			}
-		} else {
-			if (pair->state == ICE_CANDIDATE_PAIR_STATE_SUCCEEDED)
-				selected = pair;
-			else if (pair->state == ICE_CANDIDATE_PAIR_STATE_WAITING ||
-			         pair->state == ICE_CANDIDATE_PAIR_STATE_INPROGRESS) {
-				pending = pair;
-			}
+		}
+		if (pair->nominated) {
+			++nominated_count;
+			if (!selected_pair)
+				selected_pair = pair;
 		}
 	}
 
-	if (selected) {
-		if (pending)
+	if (agent->selected_pair != selected_pair) {
+		JLOG_DEBUG("New selected pair");
+		agent->selected_pair = selected_pair;
+	}
+
+	if (nominated_count > 0) {
+		if (pending_count > 0)
 			agent_change_state(agent, JUICE_STATE_CONNECTED);
 		else
 			agent_change_state(agent, JUICE_STATE_COMPLETED);
 	} else {
-		if (!pending)
+		if (pending_count == 0)
 			agent_change_state(agent, JUICE_STATE_FAILED);
 	}
 	return 0;
@@ -457,6 +462,9 @@ int agent_send_stun_binding(juice_agent_t *agent, agent_stun_entry_t *entry,
 	const size_t username_size = 256 * 2 + 2;
 	char username[username_size];
 	if (entry->type == AGENT_STUN_ENTRY_TYPE_CHECK) {
+		ice_candidate_pair_t *pair = entry->pair;
+		if (!pair)
+			return -1;
 		// RFC 8445: A connectivity-check Binding request MUST utilize the STUN
 		// short-term credential mechanism. The username for the credential is
 		// formed by concatenating the username fragment provided by the peer
@@ -471,9 +479,16 @@ int agent_send_stun_binding(juice_agent_t *agent, agent_stun_entry_t *entry,
 		msg.username = username;
 		msg.password = agent->remote.ice_pwd;
 		msg.priority = local_priority;
-		msg.use_candidate = false; // TODO
 		msg.ice_controlling = agent->config.is_controlling;
 		msg.ice_controlled = !agent->config.is_controlling;
+
+		// RFC 8445: 8.1.1. Nominating Pairs
+		// Once the controlling agent has picked a valid pair for nomination, it
+		// repeats the connectivity check that produced this valid pair [...],
+		// this time with the USE-CANDIDATE attribute.
+		msg.use_candidate =
+		    agent->config.is_controlling && entry->pair->nomination_requested;
+
 		if (mapped)
 			msg.mapped = *mapped;
 	}
@@ -501,6 +516,27 @@ int agent_process_stun_binding(juice_agent_t *agent, const stun_message_t *msg,
 	switch (msg->msg_class) {
 	case STUN_CLASS_REQUEST: {
 		JLOG_DEBUG("Got STUN binding request");
+		ice_candidate_pair_t *pair = entry->pair;
+		if (entry->type != AGENT_STUN_ENTRY_TYPE_CHECK || !pair)
+			return -1;
+		if (msg->use_candidate) {
+			if (agent->config.is_controlling) {
+				JLOG_WARN("ICE role conflict");
+				// TODO: send error
+				return -1;
+			}
+			// RFC 8445: 7.3.1.5. Updating the Nominated Flag
+			// If the state of this pair is Succeeded, it means
+			// that the check previously sent by this pair produced a
+			// successful response and generated a valid pair.  The agent
+			// sets the nominated flag value of the valid pair to true.
+			if (pair->state == ICE_CANDIDATE_PAIR_STATE_SUCCEEDED) {
+				JLOG_DEBUG("Got a nominated pair (controlled)");
+				pair->nominated = true;
+			} else {
+				pair->nomination_requested = true;
+			}
+		}
 		if (agent_send_stun_binding(agent, entry, STUN_CLASS_RESP_SUCCESS,
 		                            msg->transaction_id, source)) {
 			JLOG_ERROR("Failed to send STUN binding response");
@@ -510,6 +546,10 @@ int agent_process_stun_binding(juice_agent_t *agent, const stun_message_t *msg,
 	}
 	case STUN_CLASS_RESP_SUCCESS: {
 		JLOG_DEBUG("Got STUN binding success response");
+		// Cancel next retransmissions
+		entry->next_transmission = 0;
+		entry->retransmissions = 0;
+
 		if (msg->mapped.len) {
 			ice_candidate_type_t type =
 			    (entry->type == AGENT_STUN_ENTRY_TYPE_SERVER)
@@ -521,26 +561,35 @@ int agent_process_stun_binding(juice_agent_t *agent, const stun_message_t *msg,
 				          "STUN mapped address");
 			}
 		}
-		if (entry->pair) {
+		if (entry->type == AGENT_STUN_ENTRY_TYPE_CHECK) {
 			ice_candidate_pair_t *pair = entry->pair;
+			if (!pair)
+				return -1;
 			if (!pair->local)
 				pair->local =
 				    ice_find_candidate_from_addr(&agent->local, source);
-			if (entry->type == AGENT_STUN_ENTRY_TYPE_CHECK) {
-				if (pair->state == ICE_CANDIDATE_PAIR_STATE_INPROGRESS) {
-					JLOG_DEBUG("Got a working pair");
-					pair->state = ICE_CANDIDATE_PAIR_STATE_SUCCEEDED;
+			if (pair->state == ICE_CANDIDATE_PAIR_STATE_INPROGRESS) {
+				JLOG_DEBUG("Got a working pair");
+				pair->state = ICE_CANDIDATE_PAIR_STATE_SUCCEEDED;
+			}
+			if (pair->state == ICE_CANDIDATE_PAIR_STATE_SUCCEEDED) {
+				// RFC 8445: 7.3.1.5. Updating the Nominated Flag
+				// [...] once the check is sent and if it generates a successful
+				// response, and generates a valid pair, the agent sets the
+				// nominated flag of the pair to true.
+				if (pair->nomination_requested) {
+					JLOG_DEBUG("Got a nominated pair");
+					pair->nominated = true;
+				} else if (agent->config.is_controlling) {
+					JLOG_VERBOSE("Requesting pair nomination (controlling)");
+					entry->next_transmission = current_timestamp();
+					entry->retransmissions = MAX_STUN_RETRANSMISSION_COUNT;
+					pair->nomination_requested = true;
+				} else {
+					JLOG_VERBOSE("Not requesting pair nomination (controlled)");
 				}
 			}
-		} else {
-			if (entry->type == AGENT_STUN_ENTRY_TYPE_SERVER)
-				JLOG_VERBOSE("Server entry has no pair");
-			else
-				JLOG_WARN("Candidate pair check entry has no pair");
 		}
-		// Cancel next retransmissions
-		entry->next_transmission = 0;
-		entry->retransmissions = 0;
 		break;
 	}
 	case STUN_CLASS_RESP_ERROR: {
