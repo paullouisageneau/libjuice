@@ -27,6 +27,7 @@
 
 #include <pthread.h>
 #include <stdbool.h>
+#include <stdint.h>
 
 // RFC 8445: Agents MUST NOT use an RTO value smaller than 500 ms.
 #define MIN_STUN_RETRANSMISSION_TIMEOUT 500 // msecs
@@ -53,6 +54,7 @@ typedef struct agent_stun_entry {
 	agent_stun_entry_type_t type;
 	ice_candidate_pair_t *pair;
 	addr_record_t record;
+	uint8_t transaction_id[STUN_TRANSACTION_ID_SIZE];
 	timestamp_t next_transmission;
 	int retransmissions;
 } agent_stun_entry_t;
@@ -88,7 +90,9 @@ int agent_send(juice_agent_t *agent, const char *data, size_t size);
 void agent_run(juice_agent_t *agent);
 int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp);
 int agent_send_stun_binding(juice_agent_t *agent, agent_stun_entry_t *entry,
-                            stun_class_t msg_class, addr_record_t *mapped);
+                            stun_class_t msg_class,
+                            const uint8_t *transaction_id,
+                            const addr_record_t *mapped);
 int agent_process_stun_binding(juice_agent_t *agent, const stun_message_t *msg,
                                agent_stun_entry_t *entry,
                                addr_record_t *source);

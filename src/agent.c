@@ -19,6 +19,7 @@
 #include "agent.h"
 #include "juice.h"
 #include "log.h"
+#include "random.h"
 #include "stun.h"
 #include "udp.h"
 
@@ -297,7 +298,6 @@ void agent_run(juice_agent_t *agent) {
 				JLOG_WARN("Unknown STUN method %X", msg.msg_method);
 				continue;
 			}
-
 			if (msg.has_integrity) { // this is a check from the remote peer
 				if (agent_add_remote_reflexive_candidate(
 				        agent, ICE_CANDIDATE_TYPE_PEER_REFLEXIVE, msg.priority,
@@ -309,13 +309,29 @@ void agent_run(juice_agent_t *agent) {
 			}
 
 			agent_stun_entry_t *entry = NULL;
-			for (int i = 0; i < agent->entries_count; ++i) {
-				if (record.len == agent->entries[i].record.len &&
-				    memcmp(&record.addr, &agent->entries[i].record.addr,
-				           record.len) == 0) {
-					entry = &agent->entries[i];
-					JLOG_DEBUG("STUN entry %d: Processing incoming message", i);
-					break;
+			if (msg.msg_class != STUN_CLASS_REQUEST) {
+				for (int i = 0; i < agent->entries_count; ++i) {
+					if (memcmp(msg.transaction_id,
+					           agent->entries[i].transaction_id,
+					           STUN_TRANSACTION_ID_SIZE) == 0) {
+						JLOG_DEBUG("STUN entry %d: Processing incoming message "
+						           "(matched transaction ID)",
+						           i);
+						entry = &agent->entries[i];
+						break;
+					}
+				}
+			} else {
+				for (int i = 0; i < agent->entries_count; ++i) {
+					if (record.len == agent->entries[i].record.len &&
+					    memcmp(&record.addr, &agent->entries[i].record.addr,
+					           record.len) == 0) {
+						JLOG_DEBUG("STUN entry %d: Processing incoming message "
+						           "(matched candidate)",
+						           i);
+						entry = &agent->entries[i];
+						break;
+					}
 				}
 			}
 			if (!entry) {
@@ -358,7 +374,8 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 					entry->pair->state = ICE_CANDIDATE_PAIR_STATE_INPROGRESS;
 
 				JLOG_DEBUG("STUN entry %d: Sending request", i);
-				agent_send_stun_binding(agent, entry, STUN_CLASS_REQUEST, NULL);
+				agent_send_stun_binding(agent, entry, STUN_CLASS_REQUEST, NULL,
+				                        NULL);
 			} else {
 				JLOG_DEBUG("STUN entry %d: Failed", i);
 				entry->next_transmission = 0;
@@ -383,7 +400,7 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 			// A higher-priority pair succeeded, we can stop checking this one
 			if (pair->state == ICE_CANDIDATE_PAIR_STATE_WAITING ||
 			    pair->state == ICE_CANDIDATE_PAIR_STATE_INPROGRESS) {
-				JLOG_DEBUG("Cancelling checks for lower-priority pair");
+				JLOG_VERBOSE("Cancelling checks for lower-priority pair");
 				pair->state = ICE_CANDIDATE_PAIR_STATE_FROZEN;
 			}
 		} else {
@@ -409,7 +426,9 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 }
 
 int agent_send_stun_binding(juice_agent_t *agent, agent_stun_entry_t *entry,
-                            stun_class_t msg_class, addr_record_t *mapped) {
+                            stun_class_t msg_class,
+                            const uint8_t *transaction_id,
+                            const addr_record_t *mapped) {
 	--entry->retransmissions;
 	entry->next_transmission =
 	    current_timestamp() + MIN_STUN_RETRANSMISSION_TIMEOUT;
@@ -418,10 +437,14 @@ int agent_send_stun_binding(juice_agent_t *agent, agent_stun_entry_t *entry,
 	JLOG_DEBUG("Sending STUN binding %s",
 	           msg_class == STUN_CLASS_REQUEST ? "request" : "response");
 
+	if (!transaction_id)
+		transaction_id = entry->transaction_id;
+
 	stun_message_t msg;
 	memset(&msg, 0, sizeof(msg));
 	msg.msg_class = msg_class;
 	msg.msg_method = STUN_METHOD_BINDING;
+	memcpy(msg.transaction_id, transaction_id, STUN_TRANSACTION_ID_SIZE);
 
 	// Local candidates are undifferentiated, always set the maximum priority
 	uint32_t local_priority = 0;
@@ -479,7 +502,7 @@ int agent_process_stun_binding(juice_agent_t *agent, const stun_message_t *msg,
 	case STUN_CLASS_REQUEST: {
 		JLOG_DEBUG("Got STUN binding request");
 		if (agent_send_stun_binding(agent, entry, STUN_CLASS_RESP_SUCCESS,
-		                            source)) {
+		                            msg->transaction_id, source)) {
 			JLOG_ERROR("Failed to send STUN binding response");
 			return -1;
 		}
@@ -638,6 +661,7 @@ int agent_add_candidate_pair(juice_agent_t *agent, ice_candidate_t *remote) {
 	entry->record = pos->remote->resolved;
 	entry->next_transmission = current_timestamp();
 	entry->retransmissions = MAX_STUN_RETRANSMISSION_COUNT;
+	juice_random(entry->transaction_id, STUN_TRANSACTION_ID_SIZE);
 
 	// Find a STUN transmission time slot
 	agent_stun_entry_t *other = agent->entries;
