@@ -59,7 +59,9 @@ struct juice_agent {
 	juice_config_t config;
 	juice_state_t state;
 	socket_t sock;
+	socket_t signal_sock;
 	pthread_t thread;
+	pthread_mutex_t mutex;
 	ice_description_t local;
 	ice_description_t remote;
 	ice_candidate_pair_t candidate_pairs[MAX_CANDIDATE_PAIRS_COUNT];

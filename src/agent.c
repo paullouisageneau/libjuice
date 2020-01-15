@@ -390,6 +390,9 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 }
 
 void agent_run(juice_agent_t *agent) {
+	pthread_mutex_lock(&agent->mutex);
+
+	// TODO
 	const char *stun_hostname = "stun.l.google.com";
 	const char *stun_service = "19302";
 
@@ -427,20 +430,19 @@ void agent_run(juice_agent_t *agent) {
 		if (timediff < 0)
 			timediff = 0;
 		JLOG_VERBOSE("Setting select timeout to %ld ms", (long)timediff);
-
 		struct timeval timeout;
 		timeout.tv_sec = timediff / 1000;
 		timeout.tv_usec = timediff * 1000;
-
 		fd_set set;
 		FD_ZERO(&set);
 		FD_SET(agent->sock, &set);
-
 		int n = SOCKET_TO_INT(agent->sock) + 1;
+		pthread_mutex_unlock(&agent->mutex);
 		int ret = select(n, &set, NULL, NULL, &timeout);
+		pthread_mutex_lock(&agent->mutex);
 		if (ret < 0) {
 			JLOG_ERROR("select failed, errno=%d", errno);
-			return;
+			break;
 		}
 
 		if (FD_ISSET(agent->sock, &set)) {
@@ -451,7 +453,7 @@ void agent_run(juice_agent_t *agent) {
 			                   (struct sockaddr *)&record.addr, &record.len);
 			if (ret < 0) {
 				JLOG_ERROR("recvfrom failed, errno=%d", errno);
-				return;
+				break;
 			}
 
 			if (record.addr.ss_family == AF_INET6)
@@ -507,7 +509,11 @@ void agent_run(juice_agent_t *agent) {
 		}
 	}
 
-	JLOG_DEBUG("Agent thread finished");
+	JLOG_DEBUG("Finishing agent thread");
+	agent_change_state(agent, JUICE_STATE_DISCONNECTED);
+	close(agent->sock);
+	agent->sock = INVALID_SOCKET;
+	pthread_mutex_unlock(&agent->mutex);
 }
 
 void *agent_thread_entry(void *arg) {
@@ -521,31 +527,35 @@ juice_agent_t *juice_agent_create(const juice_config_t *config) {
 		JLOG_FATAL("malloc for agent failed");
 		return NULL;
 	}
-
 	memset(agent, 0, sizeof(*agent));
 	agent->config = *config;
 	agent->state = JUICE_STATE_DISCONNECTED;
+	agent->sock = INVALID_SOCKET;
+	pthread_mutex_init(&agent->mutex, NULL);
 	ice_create_local_description(&agent->local);
-
-	agent->sock = udp_create_socket();
-	if (agent->sock == INVALID_SOCKET) {
-		JLOG_FATAL("UDP socket creation for agent failed");
-		goto error;
-	}
 
 	JLOG_VERBOSE("Agent created");
 	return agent;
-
-error:
-	if (agent->sock != INVALID_SOCKET)
-		close(agent->sock);
-	free(agent);
-	return NULL;
 }
 
-void juice_agent_destroy(juice_agent_t *agent) { free(agent); }
+void juice_agent_destroy(juice_agent_t *agent) {
+	// TODO: signal agent thread
+	pthread_join(agent->thread, NULL);
+	pthread_mutex_destroy(&agent->mutex);
+	free(agent);
+}
 
 int juice_agent_gather_candidates(juice_agent_t *agent) {
+	if (agent->sock != INVALID_SOCKET) {
+		JLOG_ERROR("Started candidates gathering twice");
+		return -1;
+	}
+	// No need to lock the mutex, the thread is not started yet
+	agent->sock = udp_create_socket();
+	if (agent->sock == INVALID_SOCKET) {
+		JLOG_FATAL("UDP socket creation for agent failed");
+		return -1;
+	}
 	agent_change_state(agent, JUICE_STATE_GATHERING);
 
 	addr_record_t records[ICE_MAX_CANDIDATES_COUNT - 1];
@@ -599,35 +609,57 @@ int juice_agent_gather_candidates(juice_agent_t *agent) {
 
 int juice_agent_get_local_description(juice_agent_t *agent, char *buffer,
                                       size_t size) {
-	return ice_generate_sdp(&agent->local, buffer, size);
+	pthread_mutex_lock(&agent->mutex);
+	int ret = ice_generate_sdp(&agent->local, buffer, size);
+	pthread_mutex_unlock(&agent->mutex);
+	return ret;
 }
 
 int juice_agent_set_remote_description(juice_agent_t *agent, const char *sdp) {
+	pthread_mutex_lock(&agent->mutex);
 	if (ice_parse_sdp(sdp, &agent->remote) < 0) {
 		JLOG_ERROR("Failed to parse remote SDP description");
+		pthread_mutex_unlock(&agent->mutex);
 		return -1;
 	}
-	for (size_t i = 0; i < agent->remote.candidates_count; ++i)
-		if (agent_add_candidate_pair(agent, agent->remote.candidates + i))
+	for (size_t i = 0; i < agent->remote.candidates_count; ++i) {
+		if (agent_add_candidate_pair(agent, agent->remote.candidates + i)) {
+			pthread_mutex_unlock(&agent->mutex);
 			return -1;
+		}
+	}
+	pthread_mutex_unlock(&agent->mutex);
 	return 0;
 }
 
 int juice_agent_add_remote_candidate(juice_agent_t *agent, const char *sdp) {
+	pthread_mutex_lock(&agent->mutex);
 	ice_candidate_t candidate;
 	if (ice_parse_candidate_sdp(sdp, &candidate) < 0) {
 		JLOG_ERROR("Failed to parse remote SDP candidate");
+		pthread_mutex_unlock(&agent->mutex);
 		return -1;
 	}
 	if (ice_add_candidate(&candidate, &agent->remote)) {
 		JLOG_ERROR("Failed to add candidate to remote description");
+		pthread_mutex_unlock(&agent->mutex);
 		return -1;
 	}
 	ice_candidate_t *remote =
 	    agent->remote.candidates + agent->remote.candidates_count - 1;
-	return agent_add_candidate_pair(agent, remote);
+	int ret = agent_add_candidate_pair(agent, remote);
+	pthread_mutex_unlock(&agent->mutex);
+	return ret;
 }
 
 int juice_agent_send(juice_agent_t *agent, const char *data, size_t size) {
+	pthread_mutex_lock(&agent->mutex);
+	if (agent->state == JUICE_STATE_CONNECTED ||
+	    agent->state == JUICE_STATE_COMPLETED) {
+		// TODO: send on selected pair
+		pthread_mutex_unlock(&agent->mutex);
+		return 0;
+	}
+	pthread_mutex_unlock(&agent->mutex);
 	return -1;
 }
