@@ -41,7 +41,6 @@ typedef void (*juice_cb_recv_t)(juice_agent_t *agent, const char *data,
                                 size_t size, void *user_ptr);
 
 typedef struct juice_config {
-	bool is_lite;
 	bool is_controlling;
 	juice_cb_state_changed_t cb_state_changed;
 	juice_cb_candidate_t cb_candidate;
