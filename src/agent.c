@@ -638,7 +638,7 @@ int agent_process_stun_binding(juice_agent_t *agent, const stun_message_t *msg,
 			if (!pair->local)
 				pair->local =
 				    ice_find_candidate_from_addr(&agent->local, source);
-			if (pair->state == ICE_CANDIDATE_PAIR_STATE_INPROGRESS) {
+			if (pair->state != ICE_CANDIDATE_PAIR_STATE_SUCCEEDED) {
 				JLOG_DEBUG("Got a working pair");
 				pair->state = ICE_CANDIDATE_PAIR_STATE_SUCCEEDED;
 			}
