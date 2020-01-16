@@ -94,13 +94,15 @@ int agent_add_remote_candidate(juice_agent_t *agent, const char *sdp);
 int agent_send(juice_agent_t *agent, const char *data, size_t size);
 void agent_run(juice_agent_t *agent);
 int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp);
+int agent_stun_dispatch(juice_agent_t *agent, const stun_message_t *msg,
+                        const addr_record_t *source);
+int agent_process_stun_binding(juice_agent_t *agent, const stun_message_t *msg,
+                               agent_stun_entry_t *entry,
+                               const addr_record_t *source);
 int agent_send_stun_binding(juice_agent_t *agent, agent_stun_entry_t *entry,
                             stun_class_t msg_class, unsigned int error_code,
                             const uint8_t *transaction_id,
                             const addr_record_t *mapped);
-int agent_process_stun_binding(juice_agent_t *agent, const stun_message_t *msg,
-                               agent_stun_entry_t *entry,
-                               addr_record_t *source);
 int agent_add_local_reflexive_candidate(juice_agent_t *agent,
                                         ice_candidate_type_t type,
                                         const addr_record_t *record);

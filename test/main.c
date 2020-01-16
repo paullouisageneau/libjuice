@@ -29,10 +29,22 @@ juice_agent_t *agent1;
 juice_agent_t *agent2;
 
 void on_state_changed1(juice_agent_t *agent, juice_state_t state,
-                       void *user_ptr) {}
+                       void *user_ptr) {
+	printf("State 1: %s\n", juice_state_to_string(state));
+	if (state == JUICE_STATE_CONNECTED) {
+		const char *message = "Hello from 1";
+		juice_send(agent, message, strlen(message));
+	}
+}
 
 void on_state_changed2(juice_agent_t *agent, juice_state_t state,
-                       void *user_ptr) {}
+                       void *user_ptr) {
+	printf("State 2: %s\n", juice_state_to_string(state));
+	if (state == JUICE_STATE_CONNECTED) {
+		const char *message = "Hello from 2";
+		juice_send(agent, message, strlen(message));
+	}
+}
 
 void on_candidate1(juice_agent_t *agent, const char *sdp, void *user_ptr) {
 	printf("Candidate 1: %s\n", sdp);
@@ -45,10 +57,24 @@ void on_candidate2(juice_agent_t *agent, const char *sdp, void *user_ptr) {
 }
 
 void on_recv1(juice_agent_t *agent, const char *data, size_t size,
-              void *user_ptr) {}
+              void *user_ptr) {
+	char buffer[BUFFER_SIZE];
+	if (size > BUFFER_SIZE - 1)
+		size = BUFFER_SIZE - 1;
+	memcpy(buffer, data, size);
+	buffer[size] = '\0';
+	printf("Received 1: %s\n", buffer);
+}
 
 void on_recv2(juice_agent_t *agent, const char *data, size_t size,
-              void *user_ptr) {}
+              void *user_ptr) {
+	char buffer[BUFFER_SIZE];
+	if (size > BUFFER_SIZE - 1)
+		size = BUFFER_SIZE - 1;
+	memcpy(buffer, data, size);
+	buffer[size] = '\0';
+	printf("Received 2: %s\n", buffer);
+}
 
 int main(int argc, char **argv) {
 	juice_set_log_level(JUICE_LOG_LEVEL_VERBOSE);

@@ -52,7 +52,12 @@ juice_agent_t *agent_create(const juice_config_t *config) {
 	agent->sock = INVALID_SOCKET;
 	agent->thread_started = false;
 	agent->thread_destroyed = false;
-	pthread_mutex_init(&agent->mutex, NULL);
+
+	pthread_mutexattr_t mutexattr;
+	pthread_mutexattr_init(&mutexattr);
+	pthread_mutexattr_settype(&mutexattr, PTHREAD_MUTEX_RECURSIVE);
+	pthread_mutex_init(&agent->mutex, &mutexattr);
+
 	ice_create_local_description(&agent->local);
 
 	// RFC 8445: 16.1. Attributes
@@ -88,6 +93,9 @@ void agent_change_state(juice_agent_t *agent, juice_state_t state) {
 	if (state != agent->state) {
 		JLOG_INFO("Changing state to %s", juice_state_to_string(state));
 		agent->state = state;
+		if (agent->config.cb_state_changed)
+			agent->config.cb_state_changed(agent, state,
+			                               agent->config.user_ptr);
 	}
 }
 
@@ -207,14 +215,16 @@ int agent_add_remote_candidate(juice_agent_t *agent, const char *sdp) {
 
 int agent_send(juice_agent_t *agent, const char *data, size_t size) {
 	pthread_mutex_lock(&agent->mutex);
-	if (agent->state == JUICE_STATE_CONNECTED ||
-	    agent->state == JUICE_STATE_COMPLETED) {
-		// TODO: send on selected pair
+	if (!agent->selected_pair) {
+		JLOG_ERROR("Send called before ICE is connected");
 		pthread_mutex_unlock(&agent->mutex);
-		return 0;
+		return -1;
 	}
+	const addr_record_t *record = &agent->selected_pair->remote->resolved;
+	int ret = sendto(agent->sock, data, size, 0,
+	                 (const struct sockaddr *)&record->addr, record->len);
 	pthread_mutex_unlock(&agent->mutex);
-	return -1;
+	return ret;
 }
 
 void agent_run(juice_agent_t *agent) {
@@ -281,9 +291,9 @@ void agent_run(juice_agent_t *agent) {
 			char buffer[BUFFER_SIZE];
 			addr_record_t record;
 			record.len = sizeof(record.addr);
-			int ret = recvfrom(agent->sock, buffer, BUFFER_SIZE, 0,
+			int len = recvfrom(agent->sock, buffer, BUFFER_SIZE, 0,
 			                   (struct sockaddr *)&record.addr, &record.len);
-			if (ret < 0) {
+			if (len < 0) {
 				JLOG_ERROR("recvfrom failed, errno=%d", errno);
 				break;
 			}
@@ -301,60 +311,24 @@ void agent_run(juice_agent_t *agent) {
 			stun_message_t msg;
 			msg.username = username;
 			msg.password = agent->local.ice_pwd;
-			if (stun_read(buffer, ret, &msg) <= 0) {
+			int ret = stun_read(buffer, len, &msg);
+			if (ret < 0) {
 				JLOG_WARN("STUN message read failed");
 				continue;
-			}
-			if (msg.msg_method != STUN_METHOD_BINDING) {
-				JLOG_WARN("Unknown STUN method %X", msg.msg_method);
-				continue;
-			}
-			if (msg.has_integrity) { // this is a check from the remote peer
-				if (agent_add_remote_reflexive_candidate(
-				        agent, ICE_CANDIDATE_TYPE_PEER_REFLEXIVE, msg.priority,
-				        &record)) {
-					JLOG_WARN(
-					    "Failed to add remote peer reflexive candidate from "
-					    "STUN message");
-				}
-			}
-
-			agent_stun_entry_t *entry = NULL;
-			if (msg.msg_class != STUN_CLASS_REQUEST) {
-				for (int i = 0; i < agent->entries_count; ++i) {
-					if (memcmp(msg.transaction_id,
-					           agent->entries[i].transaction_id,
-					           STUN_TRANSACTION_ID_SIZE) == 0) {
-						JLOG_DEBUG(
-						    "STUN entry %d matching incoming transaction ID",
-						    i);
-						entry = &agent->entries[i];
-						break;
-					}
+			} else if (ret > 0) {
+				JLOG_DEBUG("Received a STUN message");
+				if (agent_stun_dispatch(agent, &msg, &record)) {
+					JLOG_ERROR("STUN message dispatching failed");
+					continue;
 				}
 			} else {
-				for (int i = 0; i < agent->entries_count; ++i) {
-					if (record.len == agent->entries[i].record.len &&
-					    memcmp(&record.addr, &agent->entries[i].record.addr,
-					           record.len) == 0) {
-						JLOG_DEBUG("STUN entry %d matching incoming candidate",
-						           i);
-						entry = &agent->entries[i];
-						break;
-					}
-				}
-			}
-			if (!entry) {
-				JLOG_ERROR("STUN entry for message processing not found");
-				continue;
-			}
-			if (agent_process_stun_binding(agent, &msg, entry, &record) < 0) {
-				JLOG_ERROR("STUN message processing failed");
-				continue;
+				JLOG_DEBUG("Received a non-STUN datagram");
+				if (agent->config.cb_recv)
+					agent->config.cb_recv(agent, buffer, len,
+					                      agent->config.user_ptr);
 			}
 		}
 	}
-
 	JLOG_DEBUG("Leaving agent thread");
 	agent_change_state(agent, JUICE_STATE_DISCONNECTED);
 	agent_do_destroy(agent);
@@ -431,6 +405,9 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 	if (nominated_count > 0) {
 		if (pending_count > 0)
 			agent_change_state(agent, JUICE_STATE_CONNECTED);
+		else if (agent->state != JUICE_STATE_CONNECTED &&
+		         agent->state != JUICE_STATE_COMPLETED)
+			agent_change_state(agent, JUICE_STATE_CONNECTED);
 		else
 			agent_change_state(agent, JUICE_STATE_COMPLETED);
 	} else if (pending_count > 0) {
@@ -447,94 +424,56 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 	return 0;
 }
 
-int agent_send_stun_binding(juice_agent_t *agent, agent_stun_entry_t *entry,
-                            stun_class_t msg_class, unsigned int error_code,
-                            const uint8_t *transaction_id,
-                            const addr_record_t *mapped) {
-	--entry->retransmissions;
-	entry->next_transmission =
-	    current_timestamp() + MIN_STUN_RETRANSMISSION_TIMEOUT;
-
-	// Send STUN binding request
-	JLOG_DEBUG("Sending STUN binding %s",
-	           msg_class == STUN_CLASS_REQUEST ? "request" : "response");
-
-	if (!transaction_id)
-		transaction_id = entry->transaction_id;
-
-	stun_message_t msg;
-	memset(&msg, 0, sizeof(msg));
-	msg.msg_class = msg_class;
-	msg.msg_method = STUN_METHOD_BINDING;
-	msg.error_code = error_code;
-	memcpy(msg.transaction_id, transaction_id, STUN_TRANSACTION_ID_SIZE);
-
-	const size_t username_size = 256 * 2 + 2;
-	char username[username_size];
-	if (entry->type == AGENT_STUN_ENTRY_TYPE_CHECK) {
-		ice_candidate_pair_t *pair = entry->pair;
-		if (!pair)
-			return -1;
-
-		// Local candidates are undifferentiated, always set the maximum
-		// priority
-		uint32_t local_priority = 0;
-		for (int i = 0; i < agent->local.candidates_count; ++i) {
-			ice_candidate_t *candidate = agent->local.candidates + i;
-			if (local_priority < candidate->priority)
-				local_priority = candidate->priority;
+int agent_stun_dispatch(juice_agent_t *agent, const stun_message_t *msg,
+                        const addr_record_t *source) {
+	if (msg->msg_method != STUN_METHOD_BINDING) {
+		JLOG_WARN("Unknown STUN method %X, ignoring", msg->msg_method);
+		return -1;
+	}
+	if (msg->has_integrity && source) { // this is a check from the remote peer
+		if (agent_add_remote_reflexive_candidate(
+		        agent, ICE_CANDIDATE_TYPE_PEER_REFLEXIVE, msg->priority,
+		        source)) {
+			JLOG_WARN("Failed to add remote peer reflexive candidate from "
+			          "STUN message");
 		}
-
-		// RFC 8445: A connectivity-check Binding request MUST utilize the STUN
-		// short-term credential mechanism. The username for the credential is
-		// formed by concatenating the username fragment provided by the peer
-		// with the username fragment of the ICE agent sending the request,
-		// separated by a colon (":"). The password is equal to the password
-		// provided by the peer.
-		snprintf(username, username_size, "%s:%s", agent->remote.ice_ufrag,
-		         agent->local.ice_ufrag);
-
-		msg.has_integrity = true;
-		msg.has_fingerprint = true;
-		msg.username = username;
-		msg.password = agent->remote.ice_pwd;
-		msg.priority = local_priority;
-		msg.ice_controlling =
-		    agent->config.is_controlling ? agent->ice_tiebreaker : 0;
-		msg.ice_controlled =
-		    !agent->config.is_controlling ? agent->ice_tiebreaker : 0;
-
-		// RFC 8445: 8.1.1. Nominating Pairs
-		// Once the controlling agent has picked a valid pair for nomination, it
-		// repeats the connectivity check that produced this valid pair [...],
-		// this time with the USE-CANDIDATE attribute.
-		msg.use_candidate =
-		    agent->config.is_controlling && entry->pair->nomination_requested;
-
-		if (mapped)
-			msg.mapped = *mapped;
 	}
 
-	char buffer[BUFFER_SIZE];
-	int size = stun_write(buffer, BUFFER_SIZE, &msg);
-	if (size <= 0) {
-		JLOG_ERROR("STUN message write failed");
+	agent_stun_entry_t *entry = NULL;
+	if (msg->msg_class != STUN_CLASS_REQUEST) {
+		for (int i = 0; i < agent->entries_count; ++i) {
+			if (memcmp(msg->transaction_id, agent->entries[i].transaction_id,
+			           STUN_TRANSACTION_ID_SIZE) == 0) {
+				JLOG_DEBUG("STUN entry %d matching incoming transaction ID", i);
+				entry = &agent->entries[i];
+				break;
+			}
+		}
+	} else if (source) {
+		for (int i = 0; i < agent->entries_count; ++i) {
+			if (source->len == agent->entries[i].record.len &&
+			    memcmp(&source->addr, &agent->entries[i].record.addr,
+			           source->len) == 0) {
+				JLOG_DEBUG("STUN entry %d matching incoming candidate", i);
+				entry = &agent->entries[i];
+				break;
+			}
+		}
+	}
+	if (!entry) {
+		JLOG_ERROR("STUN entry for message processing not found");
 		return -1;
 	}
-
-	if (sendto(agent->sock, buffer, size, 0,
-	           (struct sockaddr *)&entry->record.addr,
-	           entry->record.len) <= 0) {
-		JLOG_ERROR("STUN message send failed");
+	if (agent_process_stun_binding(agent, msg, entry, source)) {
+		JLOG_ERROR("STUN message processing failed");
 		return -1;
 	}
-
 	return 0;
 }
 
 int agent_process_stun_binding(juice_agent_t *agent, const stun_message_t *msg,
                                agent_stun_entry_t *entry,
-                               addr_record_t *source) {
+                               const addr_record_t *source) {
 	switch (msg->msg_class) {
 	case STUN_CLASS_REQUEST: {
 		JLOG_DEBUG("Got STUN binding request");
@@ -697,6 +636,91 @@ int agent_process_stun_binding(juice_agent_t *agent, const stun_message_t *msg,
 		return -1;
 	}
 	}
+	return 0;
+}
+
+int agent_send_stun_binding(juice_agent_t *agent, agent_stun_entry_t *entry,
+                            stun_class_t msg_class, unsigned int error_code,
+                            const uint8_t *transaction_id,
+                            const addr_record_t *mapped) {
+	--entry->retransmissions;
+	entry->next_transmission =
+	    current_timestamp() + MIN_STUN_RETRANSMISSION_TIMEOUT;
+
+	// Send STUN binding request
+	JLOG_DEBUG("Sending STUN binding %s",
+	           msg_class == STUN_CLASS_REQUEST ? "request" : "response");
+
+	if (!transaction_id)
+		transaction_id = entry->transaction_id;
+
+	stun_message_t msg;
+	memset(&msg, 0, sizeof(msg));
+	msg.msg_class = msg_class;
+	msg.msg_method = STUN_METHOD_BINDING;
+	msg.error_code = error_code;
+	memcpy(msg.transaction_id, transaction_id, STUN_TRANSACTION_ID_SIZE);
+
+	const size_t username_size = 256 * 2 + 2;
+	char username[username_size];
+	if (entry->type == AGENT_STUN_ENTRY_TYPE_CHECK) {
+		ice_candidate_pair_t *pair = entry->pair;
+		if (!pair)
+			return -1;
+
+		// Local candidates are undifferentiated, always set the maximum
+		// priority
+		uint32_t local_priority = 0;
+		for (int i = 0; i < agent->local.candidates_count; ++i) {
+			ice_candidate_t *candidate = agent->local.candidates + i;
+			if (local_priority < candidate->priority)
+				local_priority = candidate->priority;
+		}
+
+		// RFC 8445: A connectivity-check Binding request MUST utilize the STUN
+		// short-term credential mechanism. The username for the credential is
+		// formed by concatenating the username fragment provided by the peer
+		// with the username fragment of the ICE agent sending the request,
+		// separated by a colon (":"). The password is equal to the password
+		// provided by the peer.
+		snprintf(username, username_size, "%s:%s", agent->remote.ice_ufrag,
+		         agent->local.ice_ufrag);
+
+		msg.has_integrity = true;
+		msg.has_fingerprint = true;
+		msg.username = username;
+		msg.password = agent->remote.ice_pwd;
+		msg.priority = local_priority;
+		msg.ice_controlling =
+		    agent->config.is_controlling ? agent->ice_tiebreaker : 0;
+		msg.ice_controlled =
+		    !agent->config.is_controlling ? agent->ice_tiebreaker : 0;
+
+		// RFC 8445: 8.1.1. Nominating Pairs
+		// Once the controlling agent has picked a valid pair for nomination, it
+		// repeats the connectivity check that produced this valid pair [...],
+		// this time with the USE-CANDIDATE attribute.
+		msg.use_candidate =
+		    agent->config.is_controlling && entry->pair->nomination_requested;
+
+		if (mapped)
+			msg.mapped = *mapped;
+	}
+
+	char buffer[BUFFER_SIZE];
+	int size = stun_write(buffer, BUFFER_SIZE, &msg);
+	if (size <= 0) {
+		JLOG_ERROR("STUN message write failed");
+		return -1;
+	}
+
+	if (sendto(agent->sock, buffer, size, 0,
+	           (struct sockaddr *)&entry->record.addr,
+	           entry->record.len) <= 0) {
+		JLOG_ERROR("STUN message send failed");
+		return -1;
+	}
+
 	return 0;
 }
 
