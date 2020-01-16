@@ -52,25 +52,29 @@ int juice_set_remote_description(juice_agent_t *agent, const char *sdp) {
 }
 
 int juice_add_remote_candidate(juice_agent_t *agent, const char *sdp) {
-	if (!agent && !sdp)
+	if (!agent || !sdp)
 		return -1;
 	return agent_add_remote_candidate(agent, sdp);
 }
 
 int juice_send(juice_agent_t *agent, const char *data, size_t size) {
-	if (!agent && (!data && size))
+	if (!agent || (!data && size))
 		return -1;
 	return agent_send(agent, data, size);
 }
 
 int juice_get_selected_addresses(juice_agent_t *agent, char *local, size_t local_size, char *remote,
                                  size_t remote_size) {
+	if (!agent || (!local && local_size) || (!remote && remote_size))
+		return -1;
 	ice_candidate_t local_cand, remote_cand;
 	if (agent_get_selected_candidate_pair(agent, &local_cand, &remote_cand))
 		return -1;
-	if (snprintf(local, local_size, "%s:%s", local_cand.hostname, local_cand.service) < 0)
+	if (local_size &&
+	    snprintf(local, local_size, "%s:%s", local_cand.hostname, local_cand.service) < 0)
 		return -1;
-	if (snprintf(remote, remote_size, "%s:%s", remote_cand.hostname, remote_cand.service) < 0)
+	if (remote_size &&
+	    snprintf(remote, remote_size, "%s:%s", remote_cand.hostname, remote_cand.service) < 0)
 		return -1;
 	return 0;
 }
