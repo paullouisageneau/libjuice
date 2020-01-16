@@ -383,8 +383,8 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 					entry->pair->state = ICE_CANDIDATE_PAIR_STATE_INPROGRESS;
 
 				JLOG_DEBUG("STUN entry %d: Sending request", i);
-				agent_send_stun_binding(agent, entry, STUN_CLASS_REQUEST, NULL,
-				                        NULL);
+				agent_send_stun_binding(agent, entry, STUN_CLASS_REQUEST, 0,
+				                        NULL, NULL);
 			} else {
 				JLOG_DEBUG("STUN entry %d: Failed", i);
 				entry->next_transmission = 0;
@@ -412,7 +412,6 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 				// A higher-priority pair was nominated, we can stop checking
 				JLOG_VERBOSE("Cancelling check for lower-priority pair");
 				pair->state = ICE_CANDIDATE_PAIR_STATE_FROZEN;
-
 			} else {
 				++pending_count;
 			}
@@ -442,7 +441,7 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 }
 
 int agent_send_stun_binding(juice_agent_t *agent, agent_stun_entry_t *entry,
-                            stun_class_t msg_class,
+                            stun_class_t msg_class, unsigned int error_code,
                             const uint8_t *transaction_id,
                             const addr_record_t *mapped) {
 	--entry->retransmissions;
@@ -460,15 +459,8 @@ int agent_send_stun_binding(juice_agent_t *agent, agent_stun_entry_t *entry,
 	memset(&msg, 0, sizeof(msg));
 	msg.msg_class = msg_class;
 	msg.msg_method = STUN_METHOD_BINDING;
+	msg.error_code = error_code;
 	memcpy(msg.transaction_id, transaction_id, STUN_TRANSACTION_ID_SIZE);
-
-	// Local candidates are undifferentiated, always set the maximum priority
-	uint32_t local_priority = 0;
-	for (int i = 0; i < agent->local.candidates_count; ++i) {
-		ice_candidate_t *candidate = agent->local.candidates + i;
-		if (local_priority < candidate->priority)
-			local_priority = candidate->priority;
-	}
 
 	const size_t username_size = 256 * 2 + 2;
 	char username[username_size];
@@ -476,6 +468,16 @@ int agent_send_stun_binding(juice_agent_t *agent, agent_stun_entry_t *entry,
 		ice_candidate_pair_t *pair = entry->pair;
 		if (!pair)
 			return -1;
+
+		// Local candidates are undifferentiated, always set the maximum
+		// priority
+		uint32_t local_priority = 0;
+		for (int i = 0; i < agent->local.candidates_count; ++i) {
+			ice_candidate_t *candidate = agent->local.candidates + i;
+			if (local_priority < candidate->priority)
+				local_priority = candidate->priority;
+		}
+
 		// RFC 8445: A connectivity-check Binding request MUST utilize the STUN
 		// short-term credential mechanism. The username for the credential is
 		// formed by concatenating the username fragment provided by the peer
@@ -529,13 +531,63 @@ int agent_process_stun_binding(juice_agent_t *agent, const stun_message_t *msg,
 	switch (msg->msg_class) {
 	case STUN_CLASS_REQUEST: {
 		JLOG_DEBUG("Got STUN binding request");
-		ice_candidate_pair_t *pair = entry->pair;
-		if (entry->type != AGENT_STUN_ENTRY_TYPE_CHECK || !pair)
+		if (entry->type != AGENT_STUN_ENTRY_TYPE_CHECK)
 			return -1;
+		ice_candidate_pair_t *pair = entry->pair;
+		if (msg->ice_controlling == msg->ice_controlled) {
+			agent_send_stun_binding(agent, entry, STUN_CLASS_RESP_ERROR, 400,
+			                        msg->transaction_id, NULL);
+			return -1;
+		}
+		// RFC8445: 7.3.1.1. Detecting and Repairing Role Conflicts
+		// If the agent is in the controlling role, and the ICE-CONTROLLING
+		// attribute is present in the request:
+		//  * If the agent's tiebreaker value is larger than or equal to the
+		//  contents of the ICE-CONTROLLING attribute, the agent generates a
+		//  Binding error response and includes an ERROR-CODE attribute with a
+		//  value of 487 (Role Conflict) but retains its role.
+		//  * If the agent's tiebreaker value is less than the contents of the
+		//  ICE-CONTROLLING attribute, the agent switches to the controlled
+		//  role.
+		if (msg->ice_controlling && agent->config.is_controlling) {
+			JLOG_WARN("ICE role conflict (both controlling)");
+			if (agent->ice_tiebreaker >= msg->ice_controlling) {
+				JLOG_DEBUG("Asking remote peer to switch roles");
+				agent_send_stun_binding(agent, entry, STUN_CLASS_RESP_ERROR,
+				                        487, msg->transaction_id, NULL);
+			} else {
+				JLOG_DEBUG("Switching to controlled role");
+				agent->config.is_controlling = false;
+				agent_update_candidate_pairs(agent);
+			}
+			break;
+		}
+		// If the agent is in the controlled role, and the ICE-CONTROLLED
+		// attribute is present in the request:
+		//  * If the agent's tiebreaker value is larger than or equal to the
+		//  contents of the ICE-CONTROLLED attribute, the agent switches to the
+		//  controlling role.
+		//  * If the agent's tiebreaker value is less than the contents of the
+		//  ICE-CONTROLLED attribute, the agent generates a Binding error
+		//  response and includes an ERROR-CODE attribute with a value of 487
+		//  (Role Conflict) but retains its role.
+		if (msg->ice_controlled && !agent->config.is_controlling) {
+			JLOG_WARN("ICE role conflict (both controlled)");
+			if (agent->ice_tiebreaker >= msg->ice_controlling) {
+				JLOG_DEBUG("Switching to controlling role");
+				agent->config.is_controlling = true;
+				agent_update_candidate_pairs(agent);
+			} else {
+				JLOG_DEBUG("Asking remote peer to switch roles");
+				agent_send_stun_binding(agent, entry, STUN_CLASS_RESP_ERROR,
+				                        487, msg->transaction_id, NULL);
+			}
+			break;
+		}
 		if (msg->use_candidate) {
-			if (agent->config.is_controlling) {
-				JLOG_WARN("ICE role conflict");
-				// TODO: send error
+			if (!msg->ice_controlling) {
+				agent_send_stun_binding(agent, entry, STUN_CLASS_RESP_ERROR,
+				                        400, msg->transaction_id, NULL);
 				return -1;
 			}
 			// RFC 8445: 7.3.1.5. Updating the Nominated Flag
@@ -550,7 +602,7 @@ int agent_process_stun_binding(juice_agent_t *agent, const stun_message_t *msg,
 				pair->nomination_requested = true;
 			}
 		}
-		if (agent_send_stun_binding(agent, entry, STUN_CLASS_RESP_SUCCESS,
+		if (agent_send_stun_binding(agent, entry, STUN_CLASS_RESP_SUCCESS, 0,
 		                            msg->transaction_id, source)) {
 			JLOG_ERROR("Failed to send STUN binding response");
 			return -1;
@@ -576,8 +628,6 @@ int agent_process_stun_binding(juice_agent_t *agent, const stun_message_t *msg,
 		}
 		if (entry->type == AGENT_STUN_ENTRY_TYPE_CHECK) {
 			ice_candidate_pair_t *pair = entry->pair;
-			if (!pair)
-				return -1;
 			if (!pair->local)
 				pair->local =
 				    ice_find_candidate_from_addr(&agent->local, source);
@@ -608,7 +658,30 @@ int agent_process_stun_binding(juice_agent_t *agent, const stun_message_t *msg,
 	case STUN_CLASS_RESP_ERROR: {
 		JLOG_WARN("Got STUN error binding response, code=%u",
 		          (unsigned int)msg->error_code);
-		// TODO: handle it
+		if (entry->type == AGENT_STUN_ENTRY_TYPE_CHECK &&
+		    msg->error_code == 487) {
+			// RFC 8445 7.2.5.1. Role Conflict
+			// If the Binding request generates a 487 (Role Conflict) error
+			// response, and if the ICE agent included an ICE-CONTROLLED
+			// attribute in the request, the agent MUST switch to the
+			// controlling role. If the agent included an ICE-CONTROLLING
+			// attribute in the request, the agent MUST switch to the controlled
+			// role. Once the agent has switched its role, the agent MUST [...]
+			// set the candidate pair state to Waiting [and] change the
+			// tiebreaker value.
+			if (agent->config.is_controlling == msg->ice_controlling) {
+				JLOG_WARN("ICE role conflit");
+				agent->config.is_controlling = !msg->ice_controlling;
+				JLOG_DEBUG("Switching roles to %s as requested",
+				           agent->config.is_controlling ? "controlling"
+				                                        : "controlled");
+				agent_update_candidate_pairs(agent);
+			}
+			entry->pair->state = ICE_CANDIDATE_PAIR_STATE_WAITING;
+			entry->next_transmission = current_timestamp();
+			++entry->retransmissions;
+			juice_random(&agent->ice_tiebreaker, sizeof(agent->ice_tiebreaker));
+		}
 		break;
 	}
 	default: {
@@ -700,16 +773,9 @@ int agent_add_candidate_pair(juice_agent_t *agent, ice_candidate_t *remote) {
 	ice_candidate_pair_t *pos =
 	    agent->candidate_pairs + agent->candidate_pairs_count;
 	*pos = pair;
-
-	// Insert pair in ordered pairs
-	ice_candidate_pair_t **begin = agent->ordered_pairs;
-	ice_candidate_pair_t **end = begin + agent->candidate_pairs_count;
-	ice_candidate_pair_t **prev = end;
-	while (--prev >= begin && (*prev)->priority < pair.priority)
-		*(prev + 1) = *prev;
-	*(prev + 1) = pos;
-
 	++agent->candidate_pairs_count;
+
+	agent_update_ordered_pairs(agent);
 
 	// There is only one component, therefore we can unfreeze the pair
 	// and schedule it when possible !
@@ -740,4 +806,24 @@ int agent_add_candidate_pair(juice_agent_t *agent, ice_candidate_t *remote) {
 
 	++agent->entries_count;
 	return 0;
+}
+
+void agent_update_candidate_pairs(juice_agent_t *agent) {
+	bool is_controlling = agent->config.is_controlling;
+	for (int i = 0; i < agent->candidate_pairs_count; ++i)
+		ice_update_candidate_pair(is_controlling, agent->candidate_pairs + i);
+	agent_update_ordered_pairs(agent);
+}
+
+void agent_update_ordered_pairs(juice_agent_t *agent) {
+	JLOG_VERBOSE("Updated ordered candidate pairs");
+	for (int i = 0; i < agent->candidate_pairs_count; ++i) {
+		ice_candidate_pair_t **begin = agent->ordered_pairs;
+		ice_candidate_pair_t **end = begin + i;
+		ice_candidate_pair_t **prev = end;
+		uint32_t priority = agent->candidate_pairs[i].priority;
+		while (--prev >= begin && (*prev)->priority < priority)
+			*(prev + 1) = *prev;
+		*(prev + 1) = agent->candidate_pairs + i;
+	}
 }

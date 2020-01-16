@@ -92,7 +92,7 @@ int agent_send(juice_agent_t *agent, const char *data, size_t size);
 void agent_run(juice_agent_t *agent);
 int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp);
 int agent_send_stun_binding(juice_agent_t *agent, agent_stun_entry_t *entry,
-                            stun_class_t msg_class,
+                            stun_class_t msg_class, unsigned int error_code,
                             const uint8_t *transaction_id,
                             const addr_record_t *mapped);
 int agent_process_stun_binding(juice_agent_t *agent, const stun_message_t *msg,
@@ -106,5 +106,7 @@ int agent_add_remote_reflexive_candidate(juice_agent_t *agent,
                                          uint32_t priority,
                                          const addr_record_t *record);
 int agent_add_candidate_pair(juice_agent_t *agent, ice_candidate_t *remote);
+void agent_update_candidate_pairs(juice_agent_t *agent);
+void agent_update_ordered_pairs(juice_agent_t *agent);
 
 #endif
