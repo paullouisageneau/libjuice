@@ -80,6 +80,8 @@ int main(int argc, char **argv) {
 	juice_set_log_level(JUICE_LOG_LEVEL_VERBOSE);
 
 	juice_config_t config1;
+	// config1.stun_server_host = "stun.l.google.com";
+	// config1.stun_server_port = 19302;
 	config1.is_controlling = true;
 	config1.cb_state_changed = on_state_changed1;
 	config1.cb_candidate = on_candidate1;
@@ -88,6 +90,8 @@ int main(int argc, char **argv) {
 	agent1 = juice_create(&config1);
 
 	juice_config_t config2;
+	// config1.stun_server_host = "stun.l.google.com";
+	// config1.stun_server_port = 19302;
 	config2.is_controlling = false;
 	config2.cb_state_changed = on_state_changed2;
 	config2.cb_candidate = on_candidate2;

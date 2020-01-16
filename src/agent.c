@@ -229,39 +229,43 @@ int agent_send(juice_agent_t *agent, const char *data, size_t size) {
 
 void agent_run(juice_agent_t *agent) {
 	pthread_mutex_lock(&agent->mutex);
-
-	// TODO
-	const char *stun_hostname = "stun.l.google.com";
-	const char *stun_service = "19302";
-
 	agent_change_state(agent, JUICE_STATE_CONNECTING);
 
-	addr_record_t records[MAX_STUN_SERVER_RECORDS_COUNT];
-	int records_count = addr_resolve(stun_hostname, stun_service, records,
-	                                 MAX_STUN_SERVER_RECORDS_COUNT);
-	if (records_count <= 0) {
-		JLOG_ERROR("STUN address resolution failed");
-		return;
+	// STUN server handling
+	if (agent->config.stun_server_host) {
+		if (!agent->config.stun_server_port)
+			agent->config.stun_server_port = 3478;
+		char service[8];
+		snprintf(service, 8, "%d", agent->config.stun_server_port);
+		addr_record_t records[MAX_STUN_SERVER_RECORDS_COUNT];
+		int records_count =
+		    addr_resolve(agent->config.stun_server_host, service, records,
+		                 MAX_STUN_SERVER_RECORDS_COUNT);
+		if (records_count <= 0) {
+			JLOG_ERROR("STUN address resolution failed");
+			return;
+		}
+
+		JLOG_VERBOSE("Sending STUN binding request to %zu server addresses",
+		             records_count);
+
+		for (int i = 0; i < records_count; ++i) {
+			if (agent->entries_count >= MAX_STUN_ENTRIES_COUNT)
+				break;
+			JLOG_VERBOSE("Registering STUN entry %d for server request",
+			             agent->entries_count);
+			agent_stun_entry_t *entry = agent->entries + agent->entries_count;
+			entry->type = AGENT_STUN_ENTRY_TYPE_SERVER;
+			entry->pair = NULL;
+			entry->record = records[i];
+			entry->next_transmission =
+			    current_timestamp() + STUN_PACING_TIME * agent->entries_count;
+			entry->retransmissions = MAX_STUN_RETRANSMISSION_COUNT;
+			++agent->entries_count;
+		}
 	}
 
-	JLOG_VERBOSE("Sending STUN binding request to %zu server addresses",
-	             records_count);
-
-	for (int i = 0; i < records_count; ++i) {
-		if (agent->entries_count >= MAX_STUN_ENTRIES_COUNT)
-			break;
-		JLOG_VERBOSE("Registering STUN entry %d for server request",
-		             agent->entries_count);
-		agent_stun_entry_t *entry = agent->entries + agent->entries_count;
-		entry->type = AGENT_STUN_ENTRY_TYPE_SERVER;
-		entry->pair = NULL;
-		entry->record = records[i];
-		entry->next_transmission =
-		    current_timestamp() + STUN_PACING_TIME * agent->entries_count;
-		entry->retransmissions = MAX_STUN_RETRANSMISSION_COUNT;
-		++agent->entries_count;
-	}
-
+	// Main loop
 	timestamp_t next_timestamp;
 	while (agent_bookkeeping(agent, &next_timestamp) == 0) {
 		timediff_t timediff = next_timestamp - current_timestamp();
