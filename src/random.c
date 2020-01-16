@@ -34,8 +34,7 @@ static int random_bytes(void *buf, size_t size) {
 		return -1;
 	}
 	if ((size_t)ret < size) {
-		JLOG_WARN("getrandom returned too few bytes, size=%zu, returned=%zu",
-		          size, (size_t)ret);
+		JLOG_WARN("getrandom returned too few bytes, size=%zu, returned=%zu", size, (size_t)ret);
 		return -1;
 	}
 	return 0;
@@ -61,9 +60,7 @@ static int random_bytes(void *buf, size_t size) {
 }
 
 #else
-static int random_bytes(void *buf, size_t size) {
-	return -1;
-}
+static int random_bytes(void *buf, size_t size) { return -1; }
 #endif
 
 void juice_random(void *buf, size_t size) {

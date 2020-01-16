@@ -33,12 +33,10 @@ typedef enum juice_state {
 	JUICE_STATE_FAILED
 } juice_state_t;
 
-typedef void (*juice_cb_state_changed_t)(juice_agent_t *agent,
-                                         juice_state_t state, void *user_ptr);
-typedef void (*juice_cb_candidate_t)(juice_agent_t *agent, const char *sdp,
-                                     void *user_ptr);
-typedef void (*juice_cb_recv_t)(juice_agent_t *agent, const char *data,
-                                size_t size, void *user_ptr);
+typedef void (*juice_cb_state_changed_t)(juice_agent_t *agent, juice_state_t state, void *user_ptr);
+typedef void (*juice_cb_candidate_t)(juice_agent_t *agent, const char *sdp, void *user_ptr);
+typedef void (*juice_cb_recv_t)(juice_agent_t *agent, const char *data, size_t size,
+                                void *user_ptr);
 
 typedef struct juice_config {
 	const char *stun_server_host;
@@ -54,8 +52,7 @@ juice_agent_t *juice_create(const juice_config_t *config);
 void juice_destroy(juice_agent_t *agent);
 
 int juice_gather_candidates(juice_agent_t *agent);
-int juice_get_local_description(juice_agent_t *agent, char *buffer,
-                                size_t size);
+int juice_get_local_description(juice_agent_t *agent, char *buffer, size_t size);
 int juice_set_remote_description(juice_agent_t *agent, const char *sdp);
 int juice_add_remote_candidate(juice_agent_t *agent, const char *sdp);
 
@@ -77,4 +74,3 @@ typedef enum {
 void juice_set_log_level(juice_log_level_t level);
 
 #endif
-

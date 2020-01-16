@@ -26,4 +26,3 @@ void hmac_sha1(const void *message, size_t size, const void *key, size_t key_siz
 	hmac_sha1_update(&ctx, size, message);
 	hmac_sha1_digest(&ctx, HMAC_SHA1_SIZE, digest);
 }
-

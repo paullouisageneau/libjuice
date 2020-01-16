@@ -23,9 +23,7 @@
 #include <string.h>
 #include <time.h>
 
-static const char *log_level_names[] = {
-  "VERBOSE", "DEBUG", "INFO", "WARN", "ERROR", "FATAL"
-};
+static const char *log_level_names[] = {"VERBOSE", "DEBUG", "INFO", "WARN", "ERROR", "FATAL"};
 
 static const char *log_level_colors[] = {
     "\x1B[90m",        // grey
@@ -45,10 +43,10 @@ void juice_set_log_level(juice_log_level_t level) {
 	pthread_mutex_unlock(&log_mutex);
 }
 
-void juice_log_write(juice_log_level_t level, const char *file, int line,
-                     const char *fmt, ...) {
+void juice_log_write(juice_log_level_t level, const char *file, int line, const char *fmt, ...) {
 	pthread_mutex_lock(&log_mutex);
-	if (level < log_level) return;
+	if (level < log_level)
+		return;
 
 	time_t t = time(NULL);
 	struct tm *lt = localtime(&t);
@@ -57,8 +55,7 @@ void juice_log_write(juice_log_level_t level, const char *file, int line,
 		buffer[0] = '\0';
 
 	fprintf(stdout, "%s", log_level_colors[level]);
-	fprintf(stdout, "%s %-7s %s:%d: ", buffer, log_level_names[level], file,
-	        line);
+	fprintf(stdout, "%s %-7s %s:%d: ", buffer, log_level_names[level], file, line);
 
 	va_list args;
 	va_start(args, fmt);

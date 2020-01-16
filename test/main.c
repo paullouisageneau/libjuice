@@ -28,8 +28,7 @@
 juice_agent_t *agent1;
 juice_agent_t *agent2;
 
-void on_state_changed1(juice_agent_t *agent, juice_state_t state,
-                       void *user_ptr) {
+void on_state_changed1(juice_agent_t *agent, juice_state_t state, void *user_ptr) {
 	printf("State 1: %s\n", juice_state_to_string(state));
 	if (state == JUICE_STATE_CONNECTED) {
 		const char *message = "Hello from 1";
@@ -37,8 +36,7 @@ void on_state_changed1(juice_agent_t *agent, juice_state_t state,
 	}
 }
 
-void on_state_changed2(juice_agent_t *agent, juice_state_t state,
-                       void *user_ptr) {
+void on_state_changed2(juice_agent_t *agent, juice_state_t state, void *user_ptr) {
 	printf("State 2: %s\n", juice_state_to_string(state));
 	if (state == JUICE_STATE_CONNECTED) {
 		const char *message = "Hello from 2";
@@ -56,8 +54,7 @@ void on_candidate2(juice_agent_t *agent, const char *sdp, void *user_ptr) {
 	juice_add_remote_candidate(agent1, sdp);
 }
 
-void on_recv1(juice_agent_t *agent, const char *data, size_t size,
-              void *user_ptr) {
+void on_recv1(juice_agent_t *agent, const char *data, size_t size, void *user_ptr) {
 	char buffer[BUFFER_SIZE];
 	if (size > BUFFER_SIZE - 1)
 		size = BUFFER_SIZE - 1;
@@ -66,8 +63,7 @@ void on_recv1(juice_agent_t *agent, const char *data, size_t size,
 	printf("Received 1: %s\n", buffer);
 }
 
-void on_recv2(juice_agent_t *agent, const char *data, size_t size,
-              void *user_ptr) {
+void on_recv2(juice_agent_t *agent, const char *data, size_t size, void *user_ptr) {
 	char buffer[BUFFER_SIZE];
 	if (size > BUFFER_SIZE - 1)
 		size = BUFFER_SIZE - 1;

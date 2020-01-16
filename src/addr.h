@@ -36,7 +36,6 @@ typedef struct addr_record {
 	socklen_t len;
 } addr_record_t;
 
-int addr_resolve(const char *hostname, const char *service,
-                 addr_record_t *records, size_t count);
+int addr_resolve(const char *hostname, const char *service, addr_record_t *records, size_t count);
 
 #endif // JUICE_ADDR_H

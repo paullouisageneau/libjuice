@@ -36,8 +36,7 @@ int juice_gather_candidates(juice_agent_t *agent) {
 	return agent_gather_candidates(agent);
 }
 
-int juice_get_local_description(juice_agent_t *agent, char *buffer,
-                                size_t size) {
+int juice_get_local_description(juice_agent_t *agent, char *buffer, size_t size) {
 	if (!agent || (!buffer && size))
 		return -1;
 	return agent_get_local_description(agent, buffer, size);

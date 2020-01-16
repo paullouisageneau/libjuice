@@ -28,16 +28,14 @@
 
 #define BUFFER_SIZE 1024
 
-#define CLAMP(x, low, high)                                                    \
-	(((x) > (high)) ? (high) : (((x) < (low)) ? (low) : (x)))
+#define CLAMP(x, low, high) (((x) > (high)) ? (high) : (((x) < (low)) ? (low) : (x)))
 
 static const char *skip_prefix(const char *str, const char *prefix) {
 	size_t len = strlen(prefix);
 	return strncmp(str, prefix, len) == 0 ? str + len : str;
 }
 
-static bool match_prefix(const char *str, const char *prefix,
-                         const char **end) {
+static bool match_prefix(const char *str, const char *prefix, const char **end) {
 	*end = skip_prefix(str, prefix);
 	return *end != str || !*prefix;
 }
@@ -68,10 +66,9 @@ static int parse_sdp_candidate(const char *line, ice_candidate_t *candidate) {
 
 	char transport[32 + 1];
 	char type[32 + 1];
-	if (sscanf(line, "%32s %u %32s %u %256s %32s typ %32s",
-	           candidate->foundation, &candidate->component, transport,
-	           &candidate->priority, candidate->hostname, candidate->service,
-	           type) != 7) {
+	if (sscanf(line, "%32s %u %32s %u %256s %32s typ %32s", candidate->foundation,
+	           &candidate->component, transport, &candidate->priority, candidate->hostname,
+	           candidate->service, type) != 7) {
 		JLOG_WARN("Failed to parse candidate: %s", line);
 		return -1;
 	}
@@ -219,8 +216,7 @@ int ice_create_local_description(ice_description_t *description) {
 }
 
 int ice_create_local_candidate(ice_candidate_type_t type, int component,
-                               const addr_record_t *record,
-                               ice_candidate_t *candidate) {
+                               const addr_record_t *record, ice_candidate_t *candidate) {
 	memset(candidate, 0, sizeof(*candidate));
 	candidate->type = type;
 	candidate->component = component;
@@ -229,9 +225,8 @@ int ice_create_local_candidate(ice_candidate_type_t type, int component,
 	compute_candidate_foundation(candidate);
 	compute_candidate_priority(candidate);
 
-	if (getnameinfo((struct sockaddr *)&record->addr, record->len,
-	                candidate->hostname, 256, candidate->service, 32,
-	                NI_NUMERICHOST | NI_NUMERICSERV | NI_DGRAM)) {
+	if (getnameinfo((struct sockaddr *)&record->addr, record->len, candidate->hostname, 256,
+	                candidate->service, 32, NI_NUMERICHOST | NI_NUMERICSERV | NI_DGRAM)) {
 		JLOG_ERROR("getnameinfo failed");
 		return -1;
 	}
@@ -248,10 +243,8 @@ int ice_resolve_candidate(ice_candidate_t *candidate, ice_resolve_mode_t mode) {
 	if (mode != ICE_RESOLVE_MODE_LOOKUP)
 		hints.ai_flags |= AI_NUMERICHOST | AI_NUMERICSERV;
 	struct addrinfo *ai_list = NULL;
-	if (getaddrinfo(candidate->hostname, candidate->service, &hints,
-	                &ai_list)) {
-		JLOG_INFO("Failed to resolve address: %s:%s", candidate->hostname,
-		          candidate->service);
+	if (getaddrinfo(candidate->hostname, candidate->service, &hints, &ai_list)) {
+		JLOG_INFO("Failed to resolve address: %s:%s", candidate->hostname, candidate->service);
 		candidate->resolved.len = 0;
 		return -1;
 	}
@@ -266,12 +259,10 @@ int ice_resolve_candidate(ice_candidate_t *candidate, ice_resolve_mode_t mode) {
 	return 0;
 }
 
-int ice_add_candidate(const ice_candidate_t *candidate,
-                      ice_description_t *description) {
+int ice_add_candidate(const ice_candidate_t *candidate, ice_description_t *description) {
 	if (description->candidates_count >= ICE_MAX_CANDIDATES_COUNT)
 		return -1;
-	ice_candidate_t *pos =
-	    description->candidates + description->candidates_count;
+	ice_candidate_t *pos = description->candidates + description->candidates_count;
 	*pos = *candidate;
 	++description->candidates_count;
 	return 0;
@@ -309,8 +300,7 @@ ice_candidate_t *ice_find_candidate_from_addr(ice_description_t *description,
 	return NULL;
 }
 
-int ice_generate_sdp(const ice_description_t *description, char *buffer,
-                     size_t size) {
+int ice_generate_sdp(const ice_description_t *description, char *buffer, size_t size) {
 	if (!*description->ice_ufrag || !*description->ice_pwd)
 		return -1;
 
@@ -322,13 +312,12 @@ int ice_generate_sdp(const ice_description_t *description, char *buffer,
 	for (size_t i = 0; i < description->candidates_count + 1; ++i) {
 		int ret;
 		if (i == 0) {
-			ret = snprintf(begin, end - begin,
-			               "a=ice-ufrag:%s\r\na=ice-pwd:%s\r\n",
+			ret = snprintf(begin, end - begin, "a=ice-ufrag:%s\r\na=ice-pwd:%s\r\n",
 			               description->ice_ufrag, description->ice_pwd);
 		} else {
 			char buffer[BUFFER_SIZE];
-			if (ice_generate_candidate_sdp(description->candidates + i - 1,
-			                               buffer, BUFFER_SIZE) < 0)
+			if (ice_generate_candidate_sdp(description->candidates + i - 1, buffer, BUFFER_SIZE) <
+			    0)
 				continue;
 			ret = snprintf(begin, end - begin, "%s\r\n", buffer);
 		}
@@ -340,8 +329,7 @@ int ice_generate_sdp(const ice_description_t *description, char *buffer,
 	return len;
 }
 
-int ice_generate_candidate_sdp(const ice_candidate_t *candidate, char *buffer,
-                               size_t size) {
+int ice_generate_candidate_sdp(const ice_candidate_t *candidate, char *buffer, size_t size) {
 	const char *type;
 	switch (candidate->type) {
 	case ICE_CANDIDATE_TYPE_HOST:
@@ -360,14 +348,13 @@ int ice_generate_candidate_sdp(const ice_candidate_t *candidate, char *buffer,
 		JLOG_ERROR("Unknown candidate type");
 		return -1;
 	}
-	return snprintf(buffer, size, "a=candidate:%s %u UDP %u %s %s typ %s",
-	                candidate->foundation, candidate->component,
-	                candidate->priority, candidate->hostname,
+	return snprintf(buffer, size, "a=candidate:%s %u UDP %u %s %s typ %s", candidate->foundation,
+	                candidate->component, candidate->priority, candidate->hostname,
 	                candidate->service, type);
 }
 
-int ice_create_candidate_pair(ice_candidate_t *local, ice_candidate_t *remote,
-                              bool is_controlling, ice_candidate_pair_t *pair) {
+int ice_create_candidate_pair(ice_candidate_t *local, ice_candidate_t *remote, bool is_controlling,
+                              ice_candidate_pair_t *pair) {
 	memset(pair, 0, sizeof(*pair));
 	pair->local = local;
 	pair->remote = remote;

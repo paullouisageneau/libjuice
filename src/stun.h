@@ -178,19 +178,17 @@ typedef struct stun_message {
 } stun_message_t;
 
 int stun_write(void *buf, size_t size, const stun_message_t *msg);
-int stun_write_header(void *buf, size_t size, stun_class_t class,
-                      stun_method_t method, const uint8_t *transaction_id);
+int stun_write_header(void *buf, size_t size, stun_class_t class, stun_method_t method,
+                      const uint8_t *transaction_id);
 size_t stun_update_header_length(void *buf, size_t length);
-int stun_write_attr(void *buf, size_t size, uint16_t type, const void *value,
-                    size_t length);
-int stun_write_value_mapped_address(void *buf, size_t size,
-                                    const struct sockaddr *addr,
+int stun_write_attr(void *buf, size_t size, uint16_t type, const void *value, size_t length);
+int stun_write_value_mapped_address(void *buf, size_t size, const struct sockaddr *addr,
                                     socklen_t addrlen, const uint8_t *mask);
 
 int stun_read(void *data, size_t size, stun_message_t *msg);
-int stun_read_attr(const void *data, size_t size, stun_message_t *msg,
-                   uint8_t *begin, uint8_t *attr_begin);
-int stun_read_value_mapped_address(const void *data, size_t size,
-                                   stun_message_t *msg, const uint8_t *mask);
+int stun_read_attr(const void *data, size_t size, stun_message_t *msg, uint8_t *begin,
+                   uint8_t *attr_begin);
+int stun_read_value_mapped_address(const void *data, size_t size, stun_message_t *msg,
+                                   const uint8_t *mask);
 
 #endif
