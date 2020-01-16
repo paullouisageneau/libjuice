@@ -112,6 +112,17 @@ int main(int argc, char **argv) {
 	juice_gather_candidates(agent2);
 	sleep(4);
 
+	char local[256];
+	char remote[256];
+	if (juice_get_selected_addresses(agent1, local, 256, remote, 256) == 0) {
+		printf("Local address  1: %s\r\n", local);
+		printf("Remote address 1: %s\r\n", remote);
+	}
+	if (juice_get_selected_addresses(agent2, local, 256, remote, 256) == 0) {
+		printf("Local address  2: %s\r\n", local);
+		printf("Remote address 2: %s\r\n", remote);
+	}
+
 	juice_destroy(agent1);
 	juice_destroy(agent2);
 	sleep(2);

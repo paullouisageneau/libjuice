@@ -55,8 +55,9 @@ int juice_gather_candidates(juice_agent_t *agent);
 int juice_get_local_description(juice_agent_t *agent, char *buffer, size_t size);
 int juice_set_remote_description(juice_agent_t *agent, const char *sdp);
 int juice_add_remote_candidate(juice_agent_t *agent, const char *sdp);
-
 int juice_send(juice_agent_t *agent, const char *data, size_t size);
+int juice_get_selected_addresses(juice_agent_t *agent, char *local, size_t local_size, char *remote,
+                                 size_t remote_size);
 
 const char *juice_state_to_string(juice_state_t state);
 

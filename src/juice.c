@@ -18,6 +18,9 @@
 
 #include "juice.h"
 #include "agent.h"
+#include "ice.h"
+
+#include <stdio.h>
 
 juice_agent_t *juice_create(const juice_config_t *config) {
 	if (!config)
@@ -58,6 +61,18 @@ int juice_send(juice_agent_t *agent, const char *data, size_t size) {
 	if (!agent && (!data && size))
 		return -1;
 	return agent_send(agent, data, size);
+}
+
+int juice_get_selected_addresses(juice_agent_t *agent, char *local, size_t local_size, char *remote,
+                                 size_t remote_size) {
+	ice_candidate_t local_cand, remote_cand;
+	if (agent_get_selected_candidate_pair(agent, &local_cand, &remote_cand))
+		return -1;
+	if (snprintf(local, local_size, "%s:%s", local_cand.hostname, local_cand.service) < 0)
+		return -1;
+	if (snprintf(remote, remote_size, "%s:%s", remote_cand.hostname, remote_cand.service) < 0)
+		return -1;
+	return 0;
 }
 
 const char *juice_state_to_string(juice_state_t state) {

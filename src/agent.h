@@ -84,13 +84,16 @@ struct juice_agent {
 juice_agent_t *agent_create(const juice_config_t *config);
 void agent_destroy(juice_agent_t *agent);
 
-void agent_change_state(juice_agent_t *agent, juice_state_t state);
 int agent_gather_candidates(juice_agent_t *agent);
 int agent_get_local_description(juice_agent_t *agent, char *buffer, size_t size);
 int agent_set_remote_description(juice_agent_t *agent, const char *sdp);
 int agent_add_remote_candidate(juice_agent_t *agent, const char *sdp);
 int agent_send(juice_agent_t *agent, const char *data, size_t size);
+int agent_get_selected_candidate_pair(juice_agent_t *agent, ice_candidate_t *local,
+                                      ice_candidate_t *remote);
+
 void agent_run(juice_agent_t *agent);
+void agent_change_state(juice_agent_t *agent, juice_state_t state);
 int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp);
 int agent_stun_dispatch(juice_agent_t *agent, const stun_message_t *msg,
                         const addr_record_t *source);
@@ -106,6 +109,6 @@ int agent_add_remote_reflexive_candidate(juice_agent_t *agent, ice_candidate_typ
 int agent_add_candidate_pair(juice_agent_t *agent, ice_candidate_t *remote);
 void agent_update_candidate_pairs(juice_agent_t *agent);
 void agent_update_ordered_pairs(juice_agent_t *agent);
-agent_stun_entry_t *agent_get_entry_from_record(juice_agent_t *agent, const addr_record_t *record);
+agent_stun_entry_t *agent_find_entry_from_record(juice_agent_t *agent, const addr_record_t *record);
 
 #endif

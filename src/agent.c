@@ -17,6 +17,7 @@
  */
 
 #include "agent.h"
+#include "ice.h"
 #include "juice.h"
 #include "log.h"
 #include "random.h"
@@ -86,15 +87,6 @@ void agent_destroy(juice_agent_t *agent) {
 	} else {
 		JLOG_VERBOSE("Requesting agent destruction");
 		agent->thread_destroyed = true;
-	}
-}
-
-void agent_change_state(juice_agent_t *agent, juice_state_t state) {
-	if (state != agent->state) {
-		JLOG_INFO("Changing state to %s", juice_state_to_string(state));
-		agent->state = state;
-		if (agent->config.cb_state_changed)
-			agent->config.cb_state_changed(agent, state, agent->config.user_ptr);
 	}
 }
 
@@ -222,6 +214,20 @@ int agent_send(juice_agent_t *agent, const char *data, size_t size) {
 	return ret;
 }
 
+int agent_get_selected_candidate_pair(juice_agent_t *agent, ice_candidate_t *local,
+                                      ice_candidate_t *remote) {
+	pthread_mutex_lock(&agent->mutex);
+	ice_candidate_pair_t *pair = agent->selected_pair;
+	if (!pair) {
+		pthread_mutex_unlock(&agent->mutex);
+		return -1;
+	}
+	*local = pair->local ? *pair->local : agent->local.candidates[0];
+	*remote = *pair->remote;
+	pthread_mutex_unlock(&agent->mutex);
+	return 0;
+}
+
 void agent_run(juice_agent_t *agent) {
 	pthread_mutex_lock(&agent->mutex);
 	agent_change_state(agent, JUICE_STATE_CONNECTING);
@@ -318,7 +324,7 @@ void agent_run(juice_agent_t *agent) {
 				}
 			} else {
 				JLOG_DEBUG("Received a non-STUN datagram");
-				agent_stun_entry_t *entry = agent_get_entry_from_record(agent, &record);
+				agent_stun_entry_t *entry = agent_find_entry_from_record(agent, &record);
 				if (!entry || !entry->pair) {
 					JLOG_WARN("Received a datagram from unknown address, ignoring");
 					continue;
@@ -336,6 +342,15 @@ void agent_run(juice_agent_t *agent) {
 	JLOG_DEBUG("Leaving agent thread");
 	agent_change_state(agent, JUICE_STATE_DISCONNECTED);
 	agent_do_destroy(agent);
+}
+
+void agent_change_state(juice_agent_t *agent, juice_state_t state) {
+	if (state != agent->state) {
+		JLOG_INFO("Changing state to %s", juice_state_to_string(state));
+		agent->state = state;
+		if (agent->config.cb_state_changed)
+			agent->config.cb_state_changed(agent, state, agent->config.user_ptr);
+	}
 }
 
 int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
@@ -449,7 +464,7 @@ int agent_stun_dispatch(juice_agent_t *agent, const stun_message_t *msg,
 			}
 		}
 	} else if (source) {
-		entry = agent_get_entry_from_record(agent, source);
+		entry = agent_find_entry_from_record(agent, source);
 	}
 	if (!entry) {
 		JLOG_ERROR("STUN entry for message processing not found");
@@ -558,7 +573,7 @@ int agent_process_stun_binding(juice_agent_t *agent, const stun_message_t *msg,
 		if (entry->type == AGENT_STUN_ENTRY_TYPE_CHECK) {
 			ice_candidate_pair_t *pair = entry->pair;
 			if (!pair->local)
-				pair->local = ice_find_candidate_from_addr(&agent->local, source);
+				pair->local = ice_find_candidate_from_addr(&agent->local, &msg->mapped);
 			if (pair->state != ICE_CANDIDATE_PAIR_STATE_SUCCEEDED) {
 				JLOG_DEBUG("Got a working pair");
 				pair->state = ICE_CANDIDATE_PAIR_STATE_SUCCEEDED;
@@ -768,7 +783,6 @@ int agent_add_candidate_pair(juice_agent_t *agent, ice_candidate_t *remote) {
 	agent_update_ordered_pairs(agent);
 
 	// There is only one component, therefore we can unfreeze the pair and schedule it when possible
-	// !
 	pos->state = ICE_CANDIDATE_PAIR_STATE_WAITING;
 
 	JLOG_VERBOSE("Registering STUN entry %d for candidate pair checking", agent->entries_count);
@@ -816,7 +830,8 @@ void agent_update_ordered_pairs(juice_agent_t *agent) {
 	}
 }
 
-agent_stun_entry_t *agent_get_entry_from_record(juice_agent_t *agent, const addr_record_t *record) {
+agent_stun_entry_t *agent_find_entry_from_record(juice_agent_t *agent,
+                                                 const addr_record_t *record) {
 	for (int i = 0; i < agent->entries_count; ++i) {
 		if (record->len == agent->entries[i].record.len &&
 		    memcmp(&record->addr, &agent->entries[i].record.addr, record->len) == 0) {
