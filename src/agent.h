@@ -42,6 +42,8 @@
 #define MAX_STUN_ENTRIES_COUNT                                                 \
 	(MAX_CANDIDATE_PAIRS_COUNT + MAX_STUN_SERVER_RECORDS_COUNT)
 
+#define ICE_FAIL_TIMEOUT 30000 // msecs
+
 typedef int64_t timestamp_t;
 typedef timestamp_t timediff_t;
 
@@ -75,6 +77,7 @@ struct juice_agent {
 	size_t candidate_pairs_count;
 	agent_stun_entry_t entries[MAX_STUN_ENTRIES_COUNT];
 	size_t entries_count;
+	timestamp_t fail_timestamp;
 	bool thread_started;
 	bool thread_destroyed;
 };

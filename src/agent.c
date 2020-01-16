@@ -433,9 +433,16 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 			agent_change_state(agent, JUICE_STATE_CONNECTED);
 		else
 			agent_change_state(agent, JUICE_STATE_COMPLETED);
+	} else if (pending_count > 0) {
+		agent->fail_timestamp = 0;
 	} else {
-		if (pending_count == 0)
+		if (!agent->fail_timestamp)
+			agent->fail_timestamp = now + ICE_FAIL_TIMEOUT;
+		// Note timeout can be 0 hance the new check
+		if (agent->fail_timestamp && now >= agent->fail_timestamp)
 			agent_change_state(agent, JUICE_STATE_FAILED);
+		else if (*next_timestamp > agent->fail_timestamp)
+			*next_timestamp = agent->fail_timestamp;
 	}
 	return 0;
 }
