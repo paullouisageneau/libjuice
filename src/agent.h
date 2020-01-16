@@ -113,5 +113,7 @@ int agent_add_remote_reflexive_candidate(juice_agent_t *agent,
 int agent_add_candidate_pair(juice_agent_t *agent, ice_candidate_t *remote);
 void agent_update_candidate_pairs(juice_agent_t *agent);
 void agent_update_ordered_pairs(juice_agent_t *agent);
+agent_stun_entry_t *agent_get_entry_from_record(juice_agent_t *agent,
+                                                const addr_record_t *record);
 
 #endif

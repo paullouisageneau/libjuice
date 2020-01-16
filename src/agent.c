@@ -323,6 +323,18 @@ void agent_run(juice_agent_t *agent) {
 				}
 			} else {
 				JLOG_DEBUG("Received a non-STUN datagram");
+				agent_stun_entry_t *entry =
+				    agent_get_entry_from_record(agent, &record);
+				if (!entry || !entry->pair) {
+					JLOG_WARN(
+					    "Received a datagram from unknown address, ignoring");
+					continue;
+				}
+				if (!entry->pair->nominated) {
+					JLOG_WARN("Received a datagram from a non-nominated "
+					          "candidate pair, ignoring");
+					continue;
+				}
 				if (agent->config.cb_recv)
 					agent->config.cb_recv(agent, buffer, len,
 					                      agent->config.user_ptr);
@@ -450,15 +462,7 @@ int agent_stun_dispatch(juice_agent_t *agent, const stun_message_t *msg,
 			}
 		}
 	} else if (source) {
-		for (int i = 0; i < agent->entries_count; ++i) {
-			if (source->len == agent->entries[i].record.len &&
-			    memcmp(&source->addr, &agent->entries[i].record.addr,
-			           source->len) == 0) {
-				JLOG_DEBUG("STUN entry %d matching incoming candidate", i);
-				entry = &agent->entries[i];
-				break;
-			}
-		}
+		entry = agent_get_entry_from_record(agent, source);
 	}
 	if (!entry) {
 		JLOG_ERROR("STUN entry for message processing not found");
@@ -857,4 +861,17 @@ void agent_update_ordered_pairs(juice_agent_t *agent) {
 			*(prev + 1) = *prev;
 		*(prev + 1) = agent->candidate_pairs + i;
 	}
+}
+
+agent_stun_entry_t *agent_get_entry_from_record(juice_agent_t *agent,
+                                                const addr_record_t *record) {
+	for (int i = 0; i < agent->entries_count; ++i) {
+		if (record->len == agent->entries[i].record.len &&
+		    memcmp(&record->addr, &agent->entries[i].record.addr,
+		           record->len) == 0) {
+			JLOG_DEBUG("STUN entry %d matching incoming candidate", i);
+			return agent->entries + i;
+		}
+	}
+	return NULL;
 }
