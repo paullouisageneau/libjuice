@@ -247,7 +247,7 @@ void agent_run(juice_agent_t *agent) {
 		if (!agent->config.stun_server_port)
 			agent->config.stun_server_port = 3478;
 		char service[8];
-		snprintf(service, 8, "%d", agent->config.stun_server_port);
+		snprintf(service, 8, "%hd", (uint16_t)agent->config.stun_server_port);
 		addr_record_t records[MAX_STUN_SERVER_RECORDS_COUNT];
 		int records_count = addr_resolve(agent->config.stun_server_host, service, records,
 		                                 MAX_STUN_SERVER_RECORDS_COUNT);

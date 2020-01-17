@@ -24,6 +24,9 @@
 
 // ICE Agent
 
+#define JUICE_MAX_ADDRESS_STRING_LEN 56
+#define JUICE_MAX_SDP_STRING_LEN 4096
+
 typedef struct juice_agent juice_agent_t;
 
 typedef enum juice_state {

@@ -80,6 +80,7 @@ int main(int argc, char **argv) {
 	juice_set_log_level(JUICE_LOG_LEVEL_VERBOSE);
 
 	juice_config_t config1;
+	memset(&config1, 0, sizeof(config1));
 	// config1.stun_server_host = "stun.l.google.com";
 	// config1.stun_server_port = 19302;
 	config1.cb_state_changed = on_state_changed1;
@@ -90,6 +91,7 @@ int main(int argc, char **argv) {
 	agent1 = juice_create(&config1);
 
 	juice_config_t config2;
+	memset(&config2, 0, sizeof(config2));
 	// config2.stun_server_host = "stun.l.google.com";
 	// config2.stun_server_port = 19302;
 	config2.cb_state_changed = on_state_changed2;
@@ -99,14 +101,14 @@ int main(int argc, char **argv) {
 	config2.user_ptr = NULL;
 	agent2 = juice_create(&config2);
 
-	char sdp1[BUFFER_SIZE];
-	juice_get_local_description(agent1, sdp1, BUFFER_SIZE);
+	char sdp1[JUICE_MAX_SDP_STRING_LEN];
+	juice_get_local_description(agent1, sdp1, JUICE_MAX_SDP_STRING_LEN);
 	printf("Local description 1:\n%s\n", sdp1);
 
 	juice_set_remote_description(agent2, sdp1);
 
-	char sdp2[BUFFER_SIZE];
-	juice_get_local_description(agent2, sdp2, BUFFER_SIZE);
+	char sdp2[JUICE_MAX_ADDRESS_STRING_LEN];
+	juice_get_local_description(agent2, sdp2, JUICE_MAX_SDP_STRING_LEN);
 	printf("Local description 2:\n%s\n", sdp2);
 
 	juice_set_remote_description(agent1, sdp2);
@@ -116,13 +118,15 @@ int main(int argc, char **argv) {
 	juice_gather_candidates(agent2);
 	sleep(4);
 
-	char local[256];
-	char remote[256];
-	if (juice_get_selected_addresses(agent1, local, 256, remote, 256) == 0) {
+	char local[JUICE_MAX_ADDRESS_STRING_LEN];
+	char remote[JUICE_MAX_ADDRESS_STRING_LEN];
+	if (juice_get_selected_addresses(agent1, local, JUICE_MAX_ADDRESS_STRING_LEN, remote,
+	                                 JUICE_MAX_ADDRESS_STRING_LEN) == 0) {
 		printf("Local address  1: %s\r\n", local);
 		printf("Remote address 1: %s\r\n", remote);
 	}
-	if (juice_get_selected_addresses(agent2, local, 256, remote, 256) == 0) {
+	if (juice_get_selected_addresses(agent2, local, JUICE_MAX_ADDRESS_STRING_LEN, remote,
+	                                 JUICE_MAX_ADDRESS_STRING_LEN) == 0) {
 		printf("Local address  2: %s\r\n", local);
 		printf("Remote address 2: %s\r\n", remote);
 	}
