@@ -51,8 +51,6 @@ juice_agent_t *agent_create(const juice_config_t *config) {
 	agent->config = *config;
 	agent->state = JUICE_STATE_DISCONNECTED;
 	agent->sock = INVALID_SOCKET;
-	agent->thread_started = false;
-	agent->thread_destroyed = false;
 
 	pthread_mutexattr_t mutexattr;
 	pthread_mutexattr_init(&mutexattr);
@@ -259,9 +257,12 @@ void agent_run(juice_agent_t *agent) {
 			entry->next_transmission =
 			    current_timestamp() + STUN_PACING_TIME * agent->entries_count;
 			entry->retransmissions = MAX_STUN_RETRANSMISSION_COUNT;
+			juice_random(entry->transaction_id, STUN_TRANSACTION_ID_SIZE);
 			++agent->entries_count;
 		}
 	}
+
+	agent_update_gathering_done(agent);
 
 	// Main loop
 	timestamp_t next_timestamp;
@@ -362,28 +363,27 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 
 	for (int i = 0; i < agent->entries_count; ++i) {
 		agent_stun_entry_t *entry = agent->entries + i;
-
 		if (entry->pair && (entry->pair->state == ICE_CANDIDATE_PAIR_STATE_FROZEN ||
 		                    entry->pair->state == ICE_CANDIDATE_PAIR_STATE_FAILED))
 			continue;
 
 		if (entry->next_transmission && entry->next_transmission <= now) {
 			JLOG_VERBOSE("STUN entry %d: Transmission time reached", i);
-
 			if (entry->retransmissions > 0) {
+				JLOG_DEBUG("STUN entry %d: Sending request", i);
 				if (entry->pair)
 					entry->pair->state = ICE_CANDIDATE_PAIR_STATE_INPROGRESS;
-
-				JLOG_DEBUG("STUN entry %d: Sending request", i);
 				agent_send_stun_binding(agent, entry, STUN_CLASS_REQUEST, 0, NULL, NULL);
 			} else {
 				JLOG_DEBUG("STUN entry %d: Failed", i);
-				entry->next_transmission = 0;
 				if (entry->pair)
 					entry->pair->state = ICE_CANDIDATE_PAIR_STATE_FAILED;
+				entry->next_transmission = 0;
+				entry->finished = true;
+				if (entry->type == AGENT_STUN_ENTRY_TYPE_SERVER)
+					agent_update_gathering_done(agent);
 			}
 		}
-
 		if (entry->next_transmission && *next_timestamp > entry->next_transmission)
 			*next_timestamp = entry->next_transmission;
 	}
@@ -446,6 +446,7 @@ int agent_stun_dispatch(juice_agent_t *agent, const stun_message_t *msg,
 		return -1;
 	}
 	if (msg->has_integrity && source) { // this is a check from the remote peer
+		JLOG_DEBUG("STUN message is from the remote peer");
 		if (agent_add_remote_reflexive_candidate(agent, ICE_CANDIDATE_TYPE_PEER_REFLEXIVE,
 		                                         msg->priority, source)) {
 			JLOG_WARN("Failed to add remote peer reflexive candidate from "
@@ -556,15 +557,16 @@ int agent_process_stun_binding(juice_agent_t *agent, const stun_message_t *msg,
 		break;
 	}
 	case STUN_CLASS_RESP_SUCCESS: {
-		JLOG_DEBUG("Got STUN binding success response");
-		// Cancel next retransmissions
-		entry->next_transmission = 0;
+		JLOG_DEBUG("Received STUN binding success response from %s",
+		           entry->type == AGENT_STUN_ENTRY_TYPE_CHECK ? "client" : "server");
+		entry->next_transmission = 0; // Cancel next retransmissions
 		entry->retransmissions = 0;
+		entry->finished = true;
 
 		if (msg->mapped.len) {
-			ice_candidate_type_t type = (entry->type == AGENT_STUN_ENTRY_TYPE_SERVER)
-			                                ? ICE_CANDIDATE_TYPE_SERVER_REFLEXIVE
-			                                : ICE_CANDIDATE_TYPE_PEER_REFLEXIVE;
+			ice_candidate_type_t type = (entry->type == AGENT_STUN_ENTRY_TYPE_CHECK)
+			                                ? ICE_CANDIDATE_TYPE_PEER_REFLEXIVE
+			                                : ICE_CANDIDATE_TYPE_SERVER_REFLEXIVE;
 			if (agent_add_local_reflexive_candidate(agent, type, &msg->mapped)) {
 				JLOG_WARN("Failed to add local peer reflexive candidate from "
 				          "STUN mapped address");
@@ -594,6 +596,8 @@ int agent_process_stun_binding(juice_agent_t *agent, const stun_message_t *msg,
 					JLOG_VERBOSE("Not requesting pair nomination (controlled)");
 				}
 			}
+		} else { // entry->type == AGENT_STUN_ENTRY_TYPE_SERVER
+			agent_update_gathering_done(agent);
 		}
 		break;
 	}
@@ -808,6 +812,22 @@ int agent_add_candidate_pair(juice_agent_t *agent, ice_candidate_t *remote) {
 	}
 	++agent->entries_count;
 	return 0;
+}
+
+void agent_update_gathering_done(juice_agent_t *agent) {
+	JLOG_VERBOSE("Updating gathering status");
+	for (int i = 0; i < agent->entries_count; ++i) {
+		if (agent->entries[i].type == AGENT_STUN_ENTRY_TYPE_SERVER && !agent->entries[i].finished) {
+			JLOG_VERBOSE("STUN server entry %d is not finished", i);
+			return;
+		}
+	}
+	if (!agent->gathering_done) {
+		JLOG_INFO("Candidate gathering done");
+		agent->gathering_done = true;
+		if (agent->config.cb_gathering_done)
+			agent->config.cb_gathering_done(agent, agent->config.user_ptr);
+	}
 }
 
 void agent_update_candidate_pairs(juice_agent_t *agent) {

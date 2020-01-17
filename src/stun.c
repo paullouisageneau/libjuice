@@ -448,7 +448,6 @@ int stun_read_attr(const void *data, size_t size, stun_message_t *msg, uint8_t *
 		break;
 	}
 	}
-
 	return sizeof(struct stun_attr) + align32(length);
 }
 

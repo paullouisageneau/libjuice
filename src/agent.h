@@ -58,6 +58,7 @@ typedef struct agent_stun_entry {
 	uint8_t transaction_id[STUN_TRANSACTION_ID_SIZE];
 	timestamp_t next_transmission;
 	int retransmissions;
+	bool finished;
 } agent_stun_entry_t;
 
 struct juice_agent {
@@ -77,6 +78,7 @@ struct juice_agent {
 	agent_stun_entry_t entries[MAX_STUN_ENTRIES_COUNT];
 	size_t entries_count;
 	timestamp_t fail_timestamp;
+	bool gathering_done;
 	bool thread_started;
 	bool thread_destroyed;
 };
@@ -107,6 +109,7 @@ int agent_add_local_reflexive_candidate(juice_agent_t *agent, ice_candidate_type
 int agent_add_remote_reflexive_candidate(juice_agent_t *agent, ice_candidate_type_t type,
                                          uint32_t priority, const addr_record_t *record);
 int agent_add_candidate_pair(juice_agent_t *agent, ice_candidate_t *remote);
+void agent_update_gathering_done(juice_agent_t *agent);
 void agent_update_candidate_pairs(juice_agent_t *agent);
 void agent_update_ordered_pairs(juice_agent_t *agent);
 agent_stun_entry_t *agent_find_entry_from_record(juice_agent_t *agent, const addr_record_t *record);

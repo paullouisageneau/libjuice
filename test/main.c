@@ -54,6 +54,10 @@ void on_candidate2(juice_agent_t *agent, const char *sdp, void *user_ptr) {
 	juice_add_remote_candidate(agent1, sdp);
 }
 
+void on_gathering_done1(juice_agent_t *agent, void *user_ptr) { printf("Gathering done 1\n"); }
+
+void on_gathering_done2(juice_agent_t *agent, void *user_ptr) { printf("Gathering done 2\n"); }
+
 void on_recv1(juice_agent_t *agent, const char *data, size_t size, void *user_ptr) {
 	char buffer[BUFFER_SIZE];
 	if (size > BUFFER_SIZE - 1)
@@ -81,16 +85,18 @@ int main(int argc, char **argv) {
 	config1.is_controlling = true;
 	config1.cb_state_changed = on_state_changed1;
 	config1.cb_candidate = on_candidate1;
+	config1.cb_gathering_done = on_gathering_done1;
 	config1.cb_recv = on_recv1;
 	config1.user_ptr = NULL;
 	agent1 = juice_create(&config1);
 
 	juice_config_t config2;
-	// config1.stun_server_host = "stun.l.google.com";
-	// config1.stun_server_port = 19302;
+	// config2.stun_server_host = "stun.l.google.com";
+	// config2.stun_server_port = 19302;
 	config2.is_controlling = false;
 	config2.cb_state_changed = on_state_changed2;
 	config2.cb_candidate = on_candidate2;
+	config2.cb_gathering_done = on_gathering_done2;
 	config2.cb_recv = on_recv2;
 	config2.user_ptr = NULL;
 	agent2 = juice_create(&config2);

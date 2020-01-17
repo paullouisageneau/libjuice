@@ -22,6 +22,8 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+// ICE Agent
+
 typedef struct juice_agent juice_agent_t;
 
 typedef enum juice_state {
@@ -35,6 +37,7 @@ typedef enum juice_state {
 
 typedef void (*juice_cb_state_changed_t)(juice_agent_t *agent, juice_state_t state, void *user_ptr);
 typedef void (*juice_cb_candidate_t)(juice_agent_t *agent, const char *sdp, void *user_ptr);
+typedef void (*juice_cb_gathering_done_t)(juice_agent_t *agent, void *user_ptr);
 typedef void (*juice_cb_recv_t)(juice_agent_t *agent, const char *data, size_t size,
                                 void *user_ptr);
 
@@ -44,6 +47,7 @@ typedef struct juice_config {
 	bool is_controlling;
 	juice_cb_state_changed_t cb_state_changed;
 	juice_cb_candidate_t cb_candidate;
+	juice_cb_gathering_done_t cb_gathering_done;
 	juice_cb_recv_t cb_recv;
 	void *user_ptr;
 } juice_config_t;
@@ -58,6 +62,8 @@ int juice_add_remote_candidate(juice_agent_t *agent, const char *sdp);
 int juice_send(juice_agent_t *agent, const char *data, size_t size);
 int juice_get_selected_addresses(juice_agent_t *agent, char *local, size_t local_size, char *remote,
                                  size_t remote_size);
+
+// Utils
 
 const char *juice_state_to_string(juice_state_t state);
 
