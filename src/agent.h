@@ -46,6 +46,12 @@
 typedef int64_t timestamp_t;
 typedef timestamp_t timediff_t;
 
+typedef enum agent_mode {
+	AGENT_MODE_UNKNOWN,
+	AGENT_MODE_CONTROLLED,
+	AGENT_MODE_CONTROLLING,
+} agent_mode_t;
+
 typedef enum agent_stun_entry_type {
 	AGENT_STUN_ENTRY_TYPE_SERVER,
 	AGENT_STUN_ENTRY_TYPE_CHECK,
@@ -64,6 +70,7 @@ typedef struct agent_stun_entry {
 struct juice_agent {
 	juice_config_t config;
 	juice_state_t state;
+	agent_mode_t mode;
 	socket_t sock;
 	socket_t signal_sock;
 	pthread_t thread;

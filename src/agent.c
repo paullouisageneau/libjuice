@@ -50,6 +50,7 @@ juice_agent_t *agent_create(const juice_config_t *config) {
 	memset(agent, 0, sizeof(*agent));
 	agent->config = *config;
 	agent->state = JUICE_STATE_DISCONNECTED;
+	agent->mode = AGENT_MODE_UNKNOWN;
 	agent->sock = INVALID_SOCKET;
 
 	pthread_mutexattr_t mutexattr;
@@ -116,7 +117,6 @@ int agent_gather_candidates(juice_agent_t *agent) {
 	}
 
 	JLOG_VERBOSE("Adding %d local host candidates", records_count);
-
 	for (int i = 0; i < records_count; ++i) {
 		ice_candidate_t candidate;
 		if (ice_create_local_candidate(ICE_CANDIDATE_TYPE_HOST, 1, records + i, &candidate)) {
@@ -128,7 +128,6 @@ int agent_gather_candidates(juice_agent_t *agent) {
 			continue;
 		}
 	}
-
 	ice_sort_candidates(&agent->local);
 
 	char buffer[BUFFER_SIZE];
@@ -145,6 +144,10 @@ int agent_gather_candidates(juice_agent_t *agent) {
 			agent->config.cb_candidate(agent, buffer, agent->config.user_ptr);
 	}
 
+	if (agent->mode == AGENT_MODE_UNKNOWN) {
+		JLOG_DEBUG("Assuming controlling mode");
+		agent->mode = AGENT_MODE_CONTROLLING;
+	}
 	int ret = pthread_create(&agent->thread, NULL, agent_thread_entry, agent);
 	if (ret) {
 		JLOG_FATAL("pthread_create for agent failed, error=%d", ret);
@@ -157,9 +160,14 @@ int agent_gather_candidates(juice_agent_t *agent) {
 
 int agent_get_local_description(juice_agent_t *agent, char *buffer, size_t size) {
 	pthread_mutex_lock(&agent->mutex);
-	int ret = ice_generate_sdp(&agent->local, buffer, size);
+	if (ice_generate_sdp(&agent->local, buffer, size) < 0)
+		return -1;
+	if (agent->mode == AGENT_MODE_UNKNOWN) {
+		JLOG_DEBUG("Assuming controlling mode");
+		agent->mode = AGENT_MODE_CONTROLLING;
+	}
 	pthread_mutex_unlock(&agent->mutex);
-	return ret;
+	return 0;
 }
 
 int agent_set_remote_description(juice_agent_t *agent, const char *sdp) {
@@ -174,6 +182,10 @@ int agent_set_remote_description(juice_agent_t *agent, const char *sdp) {
 			pthread_mutex_unlock(&agent->mutex);
 			return -1;
 		}
+	}
+	if (agent->mode == AGENT_MODE_UNKNOWN) {
+		JLOG_DEBUG("Assuming controlled mode");
+		agent->mode = AGENT_MODE_CONTROLLED;
 	}
 	pthread_mutex_unlock(&agent->mutex);
 	return 0;
@@ -245,7 +257,6 @@ void agent_run(juice_agent_t *agent) {
 		}
 
 		JLOG_VERBOSE("Sending STUN binding request to %zu server addresses", records_count);
-
 		for (int i = 0; i < records_count; ++i) {
 			if (agent->entries_count >= MAX_STUN_ENTRIES_COUNT)
 				break;
@@ -499,7 +510,7 @@ int agent_process_stun_binding(juice_agent_t *agent, const stun_message_t *msg,
 		//  ERROR-CODE attribute with a value of 487 (Role Conflict) but retains its role.
 		//  * If the agent's tiebreaker value is less than the contents of the ICE-CONTROLLING
 		//  attribute, the agent switches to the controlled role.
-		if (msg->ice_controlling && agent->config.is_controlling) {
+		if (msg->ice_controlling && agent->mode == AGENT_MODE_CONTROLLING) {
 			JLOG_WARN("ICE role conflict (both controlling)");
 			if (agent->ice_tiebreaker >= msg->ice_controlling) {
 				JLOG_DEBUG("Asking remote peer to switch roles");
@@ -507,7 +518,7 @@ int agent_process_stun_binding(juice_agent_t *agent, const stun_message_t *msg,
 				                        msg->transaction_id, NULL);
 			} else {
 				JLOG_DEBUG("Switching to controlled role");
-				agent->config.is_controlling = false;
+				agent->mode = AGENT_MODE_CONTROLLED;
 				agent_update_candidate_pairs(agent);
 			}
 			break;
@@ -519,11 +530,11 @@ int agent_process_stun_binding(juice_agent_t *agent, const stun_message_t *msg,
 		//  * If the agent's tiebreaker value is less than the contents of the ICE-CONTROLLED
 		//  attribute, the agent generates a Binding error response and includes an ERROR-CODE
 		//  attribute with a value of 487 (Role Conflict) but retains its role.
-		if (msg->ice_controlled && !agent->config.is_controlling) {
+		if (msg->ice_controlled && agent->mode == AGENT_MODE_CONTROLLED) {
 			JLOG_WARN("ICE role conflict (both controlled)");
 			if (agent->ice_tiebreaker >= msg->ice_controlling) {
 				JLOG_DEBUG("Switching to controlling role");
-				agent->config.is_controlling = true;
+				agent->mode = AGENT_MODE_CONTROLLING;
 				agent_update_candidate_pairs(agent);
 			} else {
 				JLOG_DEBUG("Asking remote peer to switch roles");
@@ -587,7 +598,7 @@ int agent_process_stun_binding(juice_agent_t *agent, const stun_message_t *msg,
 				if (pair->nomination_requested) {
 					JLOG_DEBUG("Got a nominated pair");
 					pair->nominated = true;
-				} else if (agent->config.is_controlling) {
+				} else if (agent->mode == AGENT_MODE_CONTROLLING) {
 					JLOG_VERBOSE("Requesting pair nomination (controlling)");
 					entry->next_transmission = current_timestamp();
 					entry->retransmissions = MAX_STUN_RETRANSMISSION_COUNT;
@@ -611,11 +622,12 @@ int agent_process_stun_binding(juice_agent_t *agent, const stun_message_t *msg,
 			// request, the agent MUST switch to the controlled role. Once the agent has switched
 			// its role, the agent MUST [...] set the candidate pair state to Waiting [and] change
 			// the tiebreaker value.
-			if (agent->config.is_controlling == msg->ice_controlling) {
+			if ((agent->mode == AGENT_MODE_CONTROLLING && msg->ice_controlling) ||
+			    (agent->mode == AGENT_MODE_CONTROLLED && msg->ice_controlled)) {
 				JLOG_WARN("ICE role conflit");
-				agent->config.is_controlling = !msg->ice_controlling;
 				JLOG_DEBUG("Switching roles to %s as requested",
-				           agent->config.is_controlling ? "controlling" : "controlled");
+				           msg->ice_controlling ? "controlled" : "controlling");
+				agent->mode = msg->ice_controlling ? AGENT_MODE_CONTROLLED : AGENT_MODE_CONTROLLING;
 				agent_update_candidate_pairs(agent);
 			}
 			entry->pair->state = ICE_CANDIDATE_PAIR_STATE_WAITING;
@@ -680,32 +692,30 @@ int agent_send_stun_binding(juice_agent_t *agent, agent_stun_entry_t *entry, stu
 		msg.username = username;
 		msg.password = agent->remote.ice_pwd;
 		msg.priority = local_priority;
-		msg.ice_controlling = agent->config.is_controlling ? agent->ice_tiebreaker : 0;
-		msg.ice_controlled = !agent->config.is_controlling ? agent->ice_tiebreaker : 0;
+		msg.ice_controlling = agent->mode == AGENT_MODE_CONTROLLING ? agent->ice_tiebreaker : 0;
+		msg.ice_controlled = agent->mode == AGENT_MODE_CONTROLLED ? agent->ice_tiebreaker : 0;
 
 		// RFC 8445 8.1.1. Nominating Pairs:
 		// Once the controlling agent has picked a valid pair for nomination, it repeats the
 		// connectivity check that produced this valid pair [...], this time with the USE-CANDIDATE
 		// attribute.
-		msg.use_candidate = agent->config.is_controlling && entry->pair->nomination_requested;
+		msg.use_candidate =
+		    agent->mode == AGENT_MODE_CONTROLLING && entry->pair->nomination_requested;
 
 		if (mapped)
 			msg.mapped = *mapped;
 	}
-
 	char buffer[BUFFER_SIZE];
 	int size = stun_write(buffer, BUFFER_SIZE, &msg);
 	if (size <= 0) {
 		JLOG_ERROR("STUN message write failed");
 		return -1;
 	}
-
 	if (sendto(agent->sock, buffer, size, 0, (struct sockaddr *)&entry->record.addr,
 	           entry->record.len) <= 0) {
 		JLOG_ERROR("STUN message send failed");
 		return -1;
 	}
-
 	return 0;
 }
 
@@ -769,7 +779,8 @@ int agent_add_candidate_pair(juice_agent_t *agent, ice_candidate_t *remote) {
 	// Here is the trick: local candidates are undifferentiated for sending. Therefore, we don't
 	// need to match remote candidates with local ones.
 	ice_candidate_pair_t pair;
-	if (ice_create_candidate_pair(NULL, remote, agent->config.is_controlling, &pair)) {
+	bool is_controlling = agent->mode == AGENT_MODE_CONTROLLING;
+	if (ice_create_candidate_pair(NULL, remote, is_controlling, &pair)) {
 		JLOG_ERROR("Failed to create candidate pair");
 		return -1;
 	}
@@ -831,7 +842,7 @@ void agent_update_gathering_done(juice_agent_t *agent) {
 }
 
 void agent_update_candidate_pairs(juice_agent_t *agent) {
-	bool is_controlling = agent->config.is_controlling;
+	bool is_controlling = agent->mode == AGENT_MODE_CONTROLLING;
 	for (int i = 0; i < agent->candidate_pairs_count; ++i)
 		ice_update_candidate_pair(is_controlling, agent->candidate_pairs + i);
 	agent_update_ordered_pairs(agent);
