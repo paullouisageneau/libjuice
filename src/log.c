@@ -46,7 +46,7 @@ void juice_set_log_level(juice_log_level_t level) {
 	pthread_mutex_unlock(&log_mutex);
 }
 
-void juice_set_log_callback(juice_log_cb_t cb) {
+void juice_set_log_handler(juice_log_cb_t cb) {
 	pthread_mutex_lock(&log_mutex);
 	log_cb = cb;
 	pthread_mutex_unlock(&log_mutex);
