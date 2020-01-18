@@ -1,6 +1,6 @@
 # libjuice - UDP Interactive Connectivity Establishment
 
-libjuice (JUICE is a UDP-only Interactive Connectivity Establishment library) allows to open bidirectionnal User Datagram Protocol (UDP) streams with Network Address Translator (NAT) traversal.
+libjuice :lemon::sweat_drops: (_JUICE is a UDP Interactive Connectivity Establishment library_) allows to open bidirectionnal User Datagram Protocol (UDP) streams with Network Address Translator (NAT) traversal.
 
 The library is a simplified implementation of the Interactive Connectivity Establishment (ICE) in C99 for POSIX platforms. It supports only a single component over UDP per session in a standard single-gateway network topology, as this should be sufficient for the majority of use cases nowadays.
 
