@@ -92,51 +92,6 @@ static int parse_sdp_candidate(const char *line, ice_candidate_t *candidate) {
 	return 0;
 }
 
-static void compute_candidate_foundation(ice_candidate_t *candidate) {
-	uint8_t blob[18];
-	memset(blob, 0, 18);
-
-	const struct sockaddr_storage *ss = &candidate->resolved.addr;
-	blob[0] = ((uint8_t)candidate->type) << 4;
-	int rounds = 6; // 6*3 = 18
-	switch (ss->ss_family) {
-	case AF_INET: {
-		blob[0] += 0x01;
-		const struct sockaddr_in *sin = (const struct sockaddr_in *)ss;
-		const uint8_t *bytes = (const uint8_t *)&sin->sin_addr.s_addr;
-		memcpy(blob + 1, bytes, 4);
-		rounds = 2; // 2*3 = 6
-		break;
-	}
-	case AF_INET6: {
-		blob[0] += 0x02;
-		const struct sockaddr_in6 *sin6 = (const struct sockaddr_in6 *)ss;
-		const uint8_t *bytes = (const uint8_t *)&sin6->sin6_addr;
-		memcpy(blob + 1, bytes, 16);
-		break;
-	}
-	default: {
-		JLOG_ERROR("Unknown candidate type");
-		juice_random(blob + 1, 16);
-		break;
-	}
-	}
-	// Generate a 24-char foundation string from blob
-	static const char mchars64[] =
-	    "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz+/";
-	char *out = candidate->foundation;
-	for (int i = 0; i < rounds; ++i) {
-		uint8_t b1 = blob[i * 3];
-		uint8_t b2 = blob[i * 3 + 1];
-		uint8_t b3 = blob[i * 3 + 2];
-		*(out++) = mchars64[(b1 & 0xFC) >> 2];
-		*(out++) = mchars64[((b1 & 0x03) << 4) | ((b2 & 0xF0) >> 2)];
-		*(out++) = mchars64[((b2 & 0x0F) << 2) | ((b3 & 0xC0) >> 4)];
-		*(out++) = mchars64[(b3 & 0x3F)];
-	}
-	*(out - 1) = '\0'; // last char is 0 since the last byte of the blob is 0
-}
-
 static void compute_candidate_priority(ice_candidate_t *candidate) {
 	uint32_t p = 0;
 	switch (candidate->type) {
@@ -221,8 +176,8 @@ int ice_create_local_candidate(ice_candidate_type_t type, int component,
 	candidate->type = type;
 	candidate->component = component;
 	candidate->resolved = *record;
+	strcpy(candidate->foundation, "0");
 
-	compute_candidate_foundation(candidate);
 	compute_candidate_priority(candidate);
 
 	if (getnameinfo((struct sockaddr *)&record->addr, record->len, candidate->hostname, 256,
@@ -265,6 +220,7 @@ int ice_add_candidate(const ice_candidate_t *candidate, ice_description_t *descr
 	ice_candidate_t *pos = description->candidates + description->candidates_count;
 	*pos = *candidate;
 	++description->candidates_count;
+	snprintf(pos->foundation, 32, "%u", (unsigned int)description->candidates_count);
 	return 0;
 }
 
