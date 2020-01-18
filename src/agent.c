@@ -260,31 +260,30 @@ void agent_run(juice_agent_t *agent) {
 	// STUN server handling
 	if (agent->config.stun_server_host) {
 		if (!agent->config.stun_server_port)
-			agent->config.stun_server_port = 3478;
+			agent->config.stun_server_port = 3478; // default STUN port
 		char service[8];
 		snprintf(service, 8, "%hd", (uint16_t)agent->config.stun_server_port);
 		addr_record_t records[MAX_STUN_SERVER_RECORDS_COUNT];
 		int records_count = addr_resolve(agent->config.stun_server_host, service, records,
 		                                 MAX_STUN_SERVER_RECORDS_COUNT);
-		if (records_count <= 0) {
+		if (records_count > 0) {
+			JLOG_VERBOSE("Sending STUN binding request to %zu server addresses", records_count);
+			for (int i = 0; i < records_count; ++i) {
+				if (agent->entries_count >= MAX_STUN_ENTRIES_COUNT)
+					break;
+				JLOG_VERBOSE("Registering STUN entry %d for server request", agent->entries_count);
+				agent_stun_entry_t *entry = agent->entries + agent->entries_count;
+				entry->type = AGENT_STUN_ENTRY_TYPE_SERVER;
+				entry->pair = NULL;
+				entry->record = records[i];
+				entry->next_transmission =
+				    current_timestamp() + STUN_PACING_TIME * agent->entries_count;
+				entry->retransmissions = MAX_STUN_RETRANSMISSION_COUNT;
+				juice_random(entry->transaction_id, STUN_TRANSACTION_ID_SIZE);
+				++agent->entries_count;
+			}
+		} else {
 			JLOG_ERROR("STUN address resolution failed");
-			return;
-		}
-
-		JLOG_VERBOSE("Sending STUN binding request to %zu server addresses", records_count);
-		for (int i = 0; i < records_count; ++i) {
-			if (agent->entries_count >= MAX_STUN_ENTRIES_COUNT)
-				break;
-			JLOG_VERBOSE("Registering STUN entry %d for server request", agent->entries_count);
-			agent_stun_entry_t *entry = agent->entries + agent->entries_count;
-			entry->type = AGENT_STUN_ENTRY_TYPE_SERVER;
-			entry->pair = NULL;
-			entry->record = records[i];
-			entry->next_transmission =
-			    current_timestamp() + STUN_PACING_TIME * agent->entries_count;
-			entry->retransmissions = MAX_STUN_RETRANSMISSION_COUNT;
-			juice_random(entry->transaction_id, STUN_TRANSACTION_ID_SIZE);
-			++agent->entries_count;
 		}
 	}
 
