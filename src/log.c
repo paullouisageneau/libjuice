@@ -58,9 +58,16 @@ void juice_log_write(juice_log_level_t level, const char *file, int line, const 
 		pthread_mutex_unlock(&log_mutex);
 		return;
 	}
+
+	const char *filename = strrchr(file, '/');
+	if (filename)
+		++filename;
+	else
+		filename = file;
+
 	if (log_cb) {
 		char message[BUFFER_SIZE];
-		int len = snprintf(message, BUFFER_SIZE, "%s:%d: ", file, line);
+		int len = snprintf(message, BUFFER_SIZE, "%s:%d: ", filename, line);
 		len = len >= 0 ? len : 0;
 
 		va_list args;
@@ -78,7 +85,7 @@ void juice_log_write(juice_log_level_t level, const char *file, int line, const 
 			buffer[0] = '\0';
 
 		fprintf(stdout, "%s", log_level_colors[level]);
-		fprintf(stdout, "%s %-7s %s:%d: ", buffer, log_level_names[level], file, line);
+		fprintf(stdout, "%s %-7s %s:%d: ", buffer, log_level_names[level], filename, line);
 
 		va_list args;
 		va_start(args, fmt);
