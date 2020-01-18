@@ -19,6 +19,10 @@
 #ifndef JUICE_H
 #define JUICE_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stdbool.h>
 #include <stddef.h>
 
@@ -84,5 +88,9 @@ typedef void (*juice_log_cb_t)(juice_log_level_t level, const char *message);
 
 void juice_set_log_level(juice_log_level_t level);
 void juice_set_log_handler(juice_log_cb_t cb);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif
