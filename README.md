@@ -8,7 +8,7 @@ Licensed under LGPLv2, see [LICENSE](https://github.com/paullouisageneau/libjuic
 
 ## Compatibility
 
-The library aims at implementing a fully compatible ICE agent ([RFC8445](https://tools.ietf.org/html/rfc8445), and [RFC5389](https://tools.ietf.org/html/rfc5389) for STUN) with an interface based on SDP ([RFC3264](https://tools.ietf.org/html/rfc3264)). It supports both IPv4 and IPv6.
+The library aims at implementing a fully compatible ICE agent ([RFC8445](https://tools.ietf.org/html/rfc8445), and [RFC5389](https://tools.ietf.org/html/rfc5389) for STUN) with an interface based on SDP ([RFC4566](https://tools.ietf.org/html/rfc4566)). It supports both IPv4 and IPv6.
 
 The limitations compared to a fully-featured ICE agent are:
 - Only UDP is supported as transport protocol. Other protocols are ignored.

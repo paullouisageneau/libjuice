@@ -210,6 +210,14 @@ int agent_add_remote_candidate(juice_agent_t *agent, const char *sdp) {
 	return ret;
 }
 
+int agent_set_remote_gathering_done(juice_agent_t *agent) {
+	pthread_mutex_lock(&agent->mutex);
+	agent->remote.finished = true;
+	agent->fail_timestamp = 0; // So the bookkeeping will recompute it and fail
+	pthread_mutex_unlock(&agent->mutex);
+	return 0;
+}
+
 int agent_send(juice_agent_t *agent, const char *data, size_t size) {
 	pthread_mutex_lock(&agent->mutex);
 	if (!agent->selected_pair) {
@@ -222,6 +230,13 @@ int agent_send(juice_agent_t *agent, const char *data, size_t size) {
 	    sendto(agent->sock, data, size, 0, (const struct sockaddr *)&record->addr, record->len);
 	pthread_mutex_unlock(&agent->mutex);
 	return ret;
+}
+
+juice_state_t agent_get_state(juice_agent_t *agent) {
+	pthread_mutex_lock(&agent->mutex);
+	juice_state_t state = agent->state;
+	pthread_mutex_unlock(&agent->mutex);
+	return state;
 }
 
 int agent_get_selected_candidate_pair(juice_agent_t *agent, ice_candidate_t *local,
@@ -430,6 +445,7 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 	}
 
 	if (nominated_count > 0) {
+		agent->fail_timestamp = 0;
 		if (pending_count > 0)
 			agent_change_state(agent, JUICE_STATE_CONNECTED);
 		else if (agent->state != JUICE_STATE_CONNECTED && agent->state != JUICE_STATE_COMPLETED)
@@ -440,8 +456,8 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 		agent->fail_timestamp = 0;
 	} else {
 		if (!agent->fail_timestamp)
-			agent->fail_timestamp = now + ICE_FAIL_TIMEOUT;
-		// Note timeout can be 0 hance the new check
+			agent->fail_timestamp = now + (agent->remote.finished ? 0 : ICE_FAIL_TIMEOUT);
+
 		if (agent->fail_timestamp && now >= agent->fail_timestamp)
 			agent_change_state(agent, JUICE_STATE_FAILED);
 		else if (*next_timestamp > agent->fail_timestamp)

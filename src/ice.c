@@ -30,6 +30,8 @@
 
 #define CLAMP(x, low, high) (((x) > (high)) ? (high) : (((x) < (low)) ? (low) : (x)))
 
+// See RFC4566 for SDP format: https://tools.ietf.org/html/rfc4566
+
 static const char *skip_prefix(const char *str, const char *prefix) {
 	size_t len = strlen(prefix);
 	return strncmp(str, prefix, len) == 0 ? str + len : str;
@@ -48,6 +50,10 @@ static int parse_sdp_line(const char *line, ice_description_t *description) {
 	}
 	if (match_prefix(line, "a=ice-pwd:", &arg)) {
 		sscanf(arg, "%256s", description->ice_pwd);
+		return 0;
+	}
+	if (match_prefix(line, "a=end-of-candidates:", &arg)) {
+		description->finished = true;
 		return 0;
 	}
 	ice_candidate_t candidate;
@@ -215,6 +221,10 @@ int ice_resolve_candidate(ice_candidate_t *candidate, ice_resolve_mode_t mode) {
 }
 
 int ice_add_candidate(const ice_candidate_t *candidate, ice_description_t *description) {
+	if (description->finished) {
+		JLOG_WARN("Trying to add candidate to finished description");
+		return -1;
+	}
 	if (description->candidates_count >= ICE_MAX_CANDIDATES_COUNT)
 		return -1;
 	ice_candidate_t *pos = description->candidates + description->candidates_count;
@@ -264,18 +274,25 @@ int ice_generate_sdp(const ice_description_t *description, char *buffer, size_t 
 	char *begin = buffer;
 	char *end = begin + size;
 
-	// Round 0 is for the description, round i with i>0 is for candidate i-1
-	for (size_t i = 0; i < description->candidates_count + 1; ++i) {
+	// Round 0: description
+	// Round i with i>0 and i<count+1: candidate i-1
+	// Round count + 1: ice-options:trickle/end-of-candidates line
+	for (size_t i = 0; i < description->candidates_count + 2; ++i) {
 		int ret;
 		if (i == 0) {
 			ret = snprintf(begin, end - begin, "a=ice-ufrag:%s\r\na=ice-pwd:%s\r\n",
 			               description->ice_ufrag, description->ice_pwd);
-		} else {
+		} else if (i < description->candidates_count + 1) {
 			char buffer[BUFFER_SIZE];
 			if (ice_generate_candidate_sdp(description->candidates + i - 1, buffer, BUFFER_SIZE) <
 			    0)
 				continue;
 			ret = snprintf(begin, end - begin, "%s\r\n", buffer);
+		} else { // i == description->candidates_count + 1
+			if (description->finished)
+				ret = snprintf(begin, end - begin, "a=end-of-candidates\r\n");
+			else
+				ret = snprintf(begin, end - begin, "a=ice-options:trickle\r\n");
 		}
 		if (ret < 0)
 			return -1;

@@ -57,6 +57,7 @@ typedef struct ice_description {
 	char ice_pwd[256 + 1];   // 22 to 256 characters
 	ice_candidate_t candidates[ICE_MAX_CANDIDATES_COUNT];
 	size_t candidates_count;
+	bool finished;
 } ice_description_t;
 
 typedef enum ice_candidate_pair_state {

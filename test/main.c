@@ -18,63 +18,25 @@
 
 #include "juice/juice.h"
 
+#include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
-#include <unistd.h>
+#include <unistd.h> // for sleep
 
 #define BUFFER_SIZE 4096
 
 juice_agent_t *agent1;
 juice_agent_t *agent2;
 
-void on_state_changed1(juice_agent_t *agent, juice_state_t state, void *user_ptr) {
-	printf("State 1: %s\n", juice_state_to_string(state));
-	if (state == JUICE_STATE_CONNECTED) {
-		const char *message = "Hello from 1";
-		juice_send(agent, message, strlen(message));
-	}
-}
-
-void on_state_changed2(juice_agent_t *agent, juice_state_t state, void *user_ptr) {
-	printf("State 2: %s\n", juice_state_to_string(state));
-	if (state == JUICE_STATE_CONNECTED) {
-		const char *message = "Hello from 2";
-		juice_send(agent, message, strlen(message));
-	}
-}
-
-void on_candidate1(juice_agent_t *agent, const char *sdp, void *user_ptr) {
-	printf("Candidate 1: %s\n", sdp);
-	juice_add_remote_candidate(agent2, sdp);
-}
-
-void on_candidate2(juice_agent_t *agent, const char *sdp, void *user_ptr) {
-	printf("Candidate 2: %s\n", sdp);
-	juice_add_remote_candidate(agent1, sdp);
-}
-
-void on_gathering_done1(juice_agent_t *agent, void *user_ptr) { printf("Gathering done 1\n"); }
-
-void on_gathering_done2(juice_agent_t *agent, void *user_ptr) { printf("Gathering done 2\n"); }
-
-void on_recv1(juice_agent_t *agent, const char *data, size_t size, void *user_ptr) {
-	char buffer[BUFFER_SIZE];
-	if (size > BUFFER_SIZE - 1)
-		size = BUFFER_SIZE - 1;
-	memcpy(buffer, data, size);
-	buffer[size] = '\0';
-	printf("Received 1: %s\n", buffer);
-}
-
-void on_recv2(juice_agent_t *agent, const char *data, size_t size, void *user_ptr) {
-	char buffer[BUFFER_SIZE];
-	if (size > BUFFER_SIZE - 1)
-		size = BUFFER_SIZE - 1;
-	memcpy(buffer, data, size);
-	buffer[size] = '\0';
-	printf("Received 2: %s\n", buffer);
-}
+void on_state_changed1(juice_agent_t *agent, juice_state_t state, void *user_ptr);
+void on_state_changed2(juice_agent_t *agent, juice_state_t state, void *user_ptr);
+void on_candidate1(juice_agent_t *agent, const char *sdp, void *user_ptr);
+void on_candidate2(juice_agent_t *agent, const char *sdp, void *user_ptr);
+void on_gathering_done1(juice_agent_t *agent, void *user_ptr);
+void on_gathering_done2(juice_agent_t *agent, void *user_ptr);
+void on_recv1(juice_agent_t *agent, const char *data, size_t size, void *user_ptr);
+void on_recv2(juice_agent_t *agent, const char *data, size_t size, void *user_ptr);
 
 int main(int argc, char **argv) {
 	juice_set_log_level(JUICE_LOG_LEVEL_VERBOSE);
@@ -118,21 +80,85 @@ int main(int argc, char **argv) {
 	juice_gather_candidates(agent2);
 	sleep(4);
 
+	bool success = juice_get_state(agent1) == JUICE_STATE_COMPLETED &&
+	               juice_get_state(agent2) == JUICE_STATE_COMPLETED;
+
 	char local[JUICE_MAX_ADDRESS_STRING_LEN];
 	char remote[JUICE_MAX_ADDRESS_STRING_LEN];
-	if (juice_get_selected_addresses(agent1, local, JUICE_MAX_ADDRESS_STRING_LEN, remote,
-	                                 JUICE_MAX_ADDRESS_STRING_LEN) == 0) {
-		printf("Local address  1: %s\r\n", local);
-		printf("Remote address 1: %s\r\n", remote);
+	if (success &= (juice_get_selected_addresses(agent1, local, JUICE_MAX_ADDRESS_STRING_LEN,
+	                                             remote, JUICE_MAX_ADDRESS_STRING_LEN) == 0)) {
+		printf("Local address  1: %s\n", local);
+		printf("Remote address 1: %s\n", remote);
 	}
-	if (juice_get_selected_addresses(agent2, local, JUICE_MAX_ADDRESS_STRING_LEN, remote,
-	                                 JUICE_MAX_ADDRESS_STRING_LEN) == 0) {
-		printf("Local address  2: %s\r\n", local);
-		printf("Remote address 2: %s\r\n", remote);
+	if (success &= (juice_get_selected_addresses(agent2, local, JUICE_MAX_ADDRESS_STRING_LEN,
+	                                             remote, JUICE_MAX_ADDRESS_STRING_LEN) == 0)) {
+		printf("Local address  2: %s\n", local);
+		printf("Remote address 2: %s\n", remote);
 	}
 
 	juice_destroy(agent1);
 	juice_destroy(agent2);
 	sleep(2);
-	return 0;
+
+	if (success) {
+		printf("Success\n");
+		return 0;
+	} else {
+		printf("Failure\n");
+		return -1;
+	}
+}
+
+void on_state_changed1(juice_agent_t *agent, juice_state_t state, void *user_ptr) {
+	printf("State 1: %s\n", juice_state_to_string(state));
+	if (state == JUICE_STATE_CONNECTED) {
+		const char *message = "Hello from 1";
+		juice_send(agent, message, strlen(message));
+	}
+}
+
+void on_state_changed2(juice_agent_t *agent, juice_state_t state, void *user_ptr) {
+	printf("State 2: %s\n", juice_state_to_string(state));
+	if (state == JUICE_STATE_CONNECTED) {
+		const char *message = "Hello from 2";
+		juice_send(agent, message, strlen(message));
+	}
+}
+
+void on_candidate1(juice_agent_t *agent, const char *sdp, void *user_ptr) {
+	printf("Candidate 1: %s\n", sdp);
+	juice_add_remote_candidate(agent2, sdp);
+}
+
+void on_candidate2(juice_agent_t *agent, const char *sdp, void *user_ptr) {
+	printf("Candidate 2: %s\n", sdp);
+	juice_add_remote_candidate(agent1, sdp);
+}
+
+void on_gathering_done1(juice_agent_t *agent, void *user_ptr) {
+	printf("Gathering done 1\n");
+	juice_set_remote_gathering_done(agent2); // optional
+}
+
+void on_gathering_done2(juice_agent_t *agent, void *user_ptr) {
+	printf("Gathering done 2\n");
+	juice_set_remote_gathering_done(agent1); // optional
+}
+
+void on_recv1(juice_agent_t *agent, const char *data, size_t size, void *user_ptr) {
+	char buffer[BUFFER_SIZE];
+	if (size > BUFFER_SIZE - 1)
+		size = BUFFER_SIZE - 1;
+	memcpy(buffer, data, size);
+	buffer[size] = '\0';
+	printf("Received 1: %s\n", buffer);
+}
+
+void on_recv2(juice_agent_t *agent, const char *data, size_t size, void *user_ptr) {
+	char buffer[BUFFER_SIZE];
+	if (size > BUFFER_SIZE - 1)
+		size = BUFFER_SIZE - 1;
+	memcpy(buffer, data, size);
+	buffer[size] = '\0';
+	printf("Received 2: %s\n", buffer);
 }

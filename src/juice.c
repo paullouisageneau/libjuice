@@ -57,11 +57,19 @@ int juice_add_remote_candidate(juice_agent_t *agent, const char *sdp) {
 	return agent_add_remote_candidate(agent, sdp);
 }
 
+int juice_set_remote_gathering_done(juice_agent_t *agent) {
+	if (!agent)
+		return -1;
+	return agent_set_remote_gathering_done(agent);
+}
+
 int juice_send(juice_agent_t *agent, const char *data, size_t size) {
 	if (!agent || (!data && size))
 		return -1;
 	return agent_send(agent, data, size);
 }
+
+juice_state_t juice_get_state(juice_agent_t *agent) { return agent_get_state(agent); }
 
 int juice_get_selected_addresses(juice_agent_t *agent, char *local, size_t local_size, char *remote,
                                  size_t remote_size) {
