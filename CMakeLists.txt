@@ -57,8 +57,8 @@ add_library(LibJuice::LibJuice ALIAS juice)
 add_library(LibJuice::LibJuiceStatic ALIAS juice-static)
 
 # Main Test
-add_executable(tests ${TESTS_SOURCES})
-set_target_properties(tests PROPERTIES VERSION ${PROJECT_VERSION})
-
-target_link_libraries(tests juice)
+add_executable(juice-tests ${TESTS_SOURCES})
+set_target_properties(juice-tests PROPERTIES VERSION ${PROJECT_VERSION})
+set_target_properties(juice-tests PROPERTIES OUTPUT_NAME tests)
+target_link_libraries(juice-tests juice)
 
