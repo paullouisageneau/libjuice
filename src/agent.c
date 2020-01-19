@@ -685,7 +685,6 @@ int agent_send_stun_binding(juice_agent_t *agent, agent_stun_entry_t *entry, stu
 	memset(&msg, 0, sizeof(msg));
 	msg.msg_class = msg_class;
 	msg.msg_method = STUN_METHOD_BINDING;
-	msg.error_code = error_code;
 	memcpy(msg.transaction_id, transaction_id, STUN_TRANSACTION_ID_SIZE);
 
 	const size_t username_size = 256 * 2 + 2;
@@ -715,19 +714,23 @@ int agent_send_stun_binding(juice_agent_t *agent, agent_stun_entry_t *entry, stu
 		msg.has_fingerprint = true;
 		msg.username = username;
 		msg.password = agent->remote.ice_pwd;
-		msg.priority = local_priority;
-		msg.ice_controlling = agent->mode == AGENT_MODE_CONTROLLING ? agent->ice_tiebreaker : 0;
-		msg.ice_controlled = agent->mode == AGENT_MODE_CONTROLLED ? agent->ice_tiebreaker : 0;
 
-		// RFC 8445 8.1.1. Nominating Pairs:
-		// Once the controlling agent has picked a valid pair for nomination, it repeats the
-		// connectivity check that produced this valid pair [...], this time with the USE-CANDIDATE
-		// attribute.
-		msg.use_candidate =
-		    agent->mode == AGENT_MODE_CONTROLLING && entry->pair->nomination_requested;
+		if (msg_class == STUN_CLASS_REQUEST) {
+			msg.priority = local_priority;
+			msg.ice_controlling = agent->mode == AGENT_MODE_CONTROLLING ? agent->ice_tiebreaker : 0;
+			msg.ice_controlled = agent->mode == AGENT_MODE_CONTROLLED ? agent->ice_tiebreaker : 0;
 
-		if (mapped)
-			msg.mapped = *mapped;
+			// RFC 8445 8.1.1. Nominating Pairs:
+			// Once the controlling agent has picked a valid pair for nomination, it repeats the
+			// connectivity check that produced this valid pair [...], this time with the
+			// USE-CANDIDATE attribute.
+			msg.use_candidate =
+			    agent->mode == AGENT_MODE_CONTROLLING && entry->pair->nomination_requested;
+		} else {
+			msg.error_code = error_code;
+			if (mapped)
+				msg.mapped = *mapped;
+		}
 	}
 	char buffer[BUFFER_SIZE];
 	int size = stun_write(buffer, BUFFER_SIZE, &msg);

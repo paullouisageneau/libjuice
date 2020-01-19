@@ -38,8 +38,16 @@ void on_gathering_done2(juice_agent_t *agent, void *user_ptr);
 void on_recv1(juice_agent_t *agent, const char *data, size_t size, void *user_ptr);
 void on_recv2(juice_agent_t *agent, const char *data, size_t size, void *user_ptr);
 
+uint32_t crc32(const void *data, size_t size);
+
 int main(int argc, char **argv) {
 	juice_set_log_level(JUICE_LOG_LEVEL_VERBOSE);
+
+	const char *test_crc32 = "The quick brown fox jumps over the lazy dog";
+	if (crc32(test_crc32, strlen(test_crc32)) != 0x414FA339) {
+		printf("CRC32 implementation check failed\n");
+		return -2;
+	}
 
 	juice_config_t config1;
 	memset(&config1, 0, sizeof(config1));
