@@ -345,15 +345,17 @@ void agent_run(juice_agent_t *agent) {
 			         agent->remote.ice_ufrag);
 
 			stun_message_t msg;
-			msg.username = username;
-			msg.password = agent->local.ice_pwd;
 			int ret = stun_read(buffer, len, &msg);
 			if (ret < 0) {
 				JLOG_WARN("STUN message read failed");
 				continue;
 			} else if (ret > 0) {
 				JLOG_DEBUG("Received a STUN message");
-				if (agent_stun_dispatch(agent, &msg, &record)) {
+				if (agent_verify_stun(agent, buffer, len, &msg)) {
+					JLOG_ERROR("STUN message verification failed");
+					continue;
+				}
+				if (agent_dispatch_stun(agent, &msg, &record)) {
 					JLOG_ERROR("STUN message dispatching failed");
 					continue;
 				}
@@ -474,36 +476,66 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 	return 0;
 }
 
-int agent_stun_dispatch(juice_agent_t *agent, const stun_message_t *msg,
+int agent_verify_stun(juice_agent_t *agent, void *buf, size_t size, const stun_message_t *msg) {
+	if (msg->has_integrity) {
+		char expected_username[STUN_MAX_USERNAME_LEN];
+		const char *password;
+		if (msg->msg_class == STUN_CLASS_REQUEST) {
+			snprintf(expected_username, STUN_MAX_USERNAME_LEN, "%s:%s", agent->local.ice_ufrag,
+			         agent->remote.ice_ufrag);
+			password = agent->local.ice_pwd;
+		} else {
+			snprintf(expected_username, STUN_MAX_USERNAME_LEN, "%s:%s", agent->remote.ice_ufrag,
+			         agent->local.ice_ufrag);
+			password = agent->remote.ice_pwd;
+		}
+		if (strcmp(msg->username, expected_username) != 0) {
+			JLOG_WARN("STUN username check failed, expected=\"%s\", actual=\'%s\"",
+			          expected_username, msg->username);
+			return -1;
+		}
+		if (!stun_check_integrity(buf, size, msg, password)) {
+			JLOG_WARN("STUN integrity check failed, password=\"%s\"", password);
+			return -1;
+		}
+	}
+	return 0;
+}
+
+int agent_dispatch_stun(juice_agent_t *agent, const stun_message_t *msg,
                         const addr_record_t *source) {
 	if (msg->msg_method != STUN_METHOD_BINDING) {
 		JLOG_WARN("Unknown STUN method %X, ignoring", msg->msg_method);
 		return -1;
 	}
-	if (msg->has_integrity && source) { // this is a check from the remote peer
-		JLOG_DEBUG("STUN message is from the remote peer");
+	agent_stun_entry_t *entry = NULL;
+	if (msg->has_integrity) { // this is a check from the remote peer
+		JLOG_VERBOSE("STUN message is from the remote peer");
 		if (agent_add_remote_reflexive_candidate(agent, ICE_CANDIDATE_TYPE_PEER_REFLEXIVE,
 		                                         msg->priority, source)) {
 			JLOG_WARN("Failed to add remote peer reflexive candidate from "
 			          "STUN message");
 		}
-	}
-
-	agent_stun_entry_t *entry = NULL;
-	if (msg->msg_class != STUN_CLASS_REQUEST) {
-		for (int i = 0; i < agent->entries_count; ++i) {
-			if (memcmp(msg->transaction_id, agent->entries[i].transaction_id,
-			           STUN_TRANSACTION_ID_SIZE) == 0) {
-				JLOG_DEBUG("STUN entry %d matching incoming transaction ID", i);
-				entry = &agent->entries[i];
-				break;
+		if (msg->msg_class != STUN_CLASS_REQUEST) {
+			for (int i = 0; i < agent->entries_count; ++i) {
+				if (memcmp(msg->transaction_id, agent->entries[i].transaction_id,
+				           STUN_TRANSACTION_ID_SIZE) == 0) {
+					JLOG_DEBUG("STUN entry %d matching incoming transaction ID", i);
+					entry = &agent->entries[i];
+					break;
+				}
 			}
 		}
-	} else if (source) {
-		entry = agent_find_entry_from_record(agent, source);
 	}
+	if (!entry)
+		entry = agent_find_entry_from_record(agent, source);
+
 	if (!entry) {
 		JLOG_ERROR("STUN entry for message processing not found");
+		return -1;
+	}
+	if (!msg->has_integrity && entry->type == AGENT_STUN_ENTRY_TYPE_CHECK) {
+		JLOG_WARN("STUN binding message from remote peer missing integrity");
 		return -1;
 	}
 	if (agent_process_stun_binding(agent, msg, entry, source)) {
@@ -687,35 +719,25 @@ int agent_send_stun_binding(juice_agent_t *agent, agent_stun_entry_t *entry, stu
 	msg.msg_method = STUN_METHOD_BINDING;
 	memcpy(msg.transaction_id, transaction_id, STUN_TRANSACTION_ID_SIZE);
 
-	const size_t username_size = 256 * 2 + 2;
-	char username[username_size];
 	if (entry->type == AGENT_STUN_ENTRY_TYPE_CHECK) {
-		ice_candidate_pair_t *pair = entry->pair;
-		if (!pair)
-			return -1;
-
-		// Local candidates are undifferentiated, always set the maximum priority
-		uint32_t local_priority = 0;
-		for (int i = 0; i < agent->local.candidates_count; ++i) {
-			ice_candidate_t *candidate = agent->local.candidates + i;
-			if (local_priority < candidate->priority)
-				local_priority = candidate->priority;
-		}
-
 		// RFC 8445 7.2.2. Forming Credentials:
 		// A connectivity-check Binding request MUST utilize the STUN short-term credential
 		// mechanism. The username for the credential is formed by concatenating the username
 		// fragment provided by the peer with the username fragment of the ICE agent sending the
 		// request, separated by a colon (":"). The password is equal to the password provided by
 		// the peer.
-		snprintf(username, username_size, "%s:%s", agent->remote.ice_ufrag, agent->local.ice_ufrag);
-
-		msg.has_integrity = true;
-		msg.has_fingerprint = true;
-		msg.username = username;
-		msg.password = agent->remote.ice_pwd;
-
-		if (msg_class == STUN_CLASS_REQUEST) {
+		switch (msg_class) {
+		case STUN_CLASS_REQUEST: {
+			// Local candidates are undifferentiated, always set the maximum priority
+			uint32_t local_priority = 0;
+			for (int i = 0; i < agent->local.candidates_count; ++i) {
+				ice_candidate_t *candidate = agent->local.candidates + i;
+				if (local_priority < candidate->priority)
+					local_priority = candidate->priority;
+			}
+			snprintf(msg.username, STUN_MAX_USERNAME_LEN, "%s:%s", agent->remote.ice_ufrag,
+			         agent->local.ice_ufrag);
+			msg.password = agent->remote.ice_pwd;
 			msg.priority = local_priority;
 			msg.ice_controlling = agent->mode == AGENT_MODE_CONTROLLING ? agent->ice_tiebreaker : 0;
 			msg.ice_controlled = agent->mode == AGENT_MODE_CONTROLLED ? agent->ice_tiebreaker : 0;
@@ -726,10 +748,25 @@ int agent_send_stun_binding(juice_agent_t *agent, agent_stun_entry_t *entry, stu
 			// USE-CANDIDATE attribute.
 			msg.use_candidate =
 			    agent->mode == AGENT_MODE_CONTROLLING && entry->pair->nomination_requested;
-		} else {
+			break;
+		}
+		case STUN_CLASS_RESP_SUCCESS:
+		case STUN_CLASS_RESP_ERROR: {
+			snprintf(msg.username, STUN_MAX_USERNAME_LEN, "%s:%s", agent->local.ice_ufrag,
+			         agent->remote.ice_ufrag);
+			msg.password = agent->local.ice_pwd;
 			msg.error_code = error_code;
 			if (mapped)
 				msg.mapped = *mapped;
+			break;
+		}
+		case STUN_CLASS_INDICATION: {
+			// RFC8445 11. Keepalives:
+			// When STUN is being used for keepalives, a STUN Binding Indication is used. The
+			// Indication MUST NOT utilize any authentication mechanism. It SHOULD contain the
+			// FINGERPRINT attribute to aid in demultiplexing, but it SHOULD NOT contain any other
+			// attributes.
+		}
 		}
 	}
 	char buffer[BUFFER_SIZE];

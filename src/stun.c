@@ -18,7 +18,6 @@
 
 #include "stun.h"
 #include "crc32.h"
-#include "hmac.h"
 #include "juice.h"
 #include "log.h"
 #include "udp.h"
@@ -107,8 +106,7 @@ int stun_write(void *buf, size_t size, const stun_message_t *msg) {
 			goto overflow;
 		pos += len;
 	}
-	if (msg->username) {
-		JLOG_VERBOSE("Writing username, username=\"%s\"", msg->username);
+	if (*msg->username != '\0') {
 		len = stun_write_attr(pos, end - pos, STUN_ATTR_USERNAME, msg->username,
 		                      strlen(msg->username));
 		if (len <= 0)
@@ -227,8 +225,7 @@ int stun_write_value_mapped_address(void *buf, size_t size, const struct sockadd
 }
 
 int stun_read(void *data, size_t size, stun_message_t *msg) {
-	// Note username and password are not reset since they are used as input
-	memset(msg, 0, (char *)&msg->username - (char *)msg);
+	memset(msg, 0, sizeof(*msg));
 
 	// RFC 5389: The most significant 2 bits of every STUN message MUST be zeroes.
 	if (!size || *((uint8_t *)data) & 0xC0) {
@@ -349,21 +346,12 @@ int stun_read_attr(const void *data, size_t size, stun_message_t *msg, uint8_t *
 	}
 	case STUN_ATTR_USERNAME: {
 		JLOG_VERBOSE("Reading username");
-		if (msg->username) {
-			// The value of USERNAME is a variable-length value. It MUST contain a UTF-8 [RFC3629]
-			// encoded sequence of less than 513 bytes [...]
-			if (length > 513) {
-				JLOG_WARN("STUN username attribute value too long, length=%zu", length);
-				return -1;
-			}
-			if (strncmp(msg->username, (char *)attr->value, length) != 0) {
-				JLOG_DEBUG("STUN username check failed, expected=\"%s\"", msg->username);
-				return -1;
-			}
-			JLOG_VERBOSE("Matching usernames, username=\"%s\"", msg->username);
-		} else {
-			JLOG_VERBOSE("Ignoring unexpected username");
+		if (length >= STUN_MAX_USERNAME_LEN) {
+			JLOG_WARN("STUN username attribute value too long, length=%zu", length);
+			return -1;
 		}
+		strncpy(msg->username, (const char *)attr->value, length);
+		JLOG_VERBOSE("Got username: %s", msg->username);
 		break;
 	}
 	case STUN_ATTR_MESSAGE_INTEGRITY: {
@@ -372,22 +360,7 @@ int stun_read_attr(const void *data, size_t size, stun_message_t *msg, uint8_t *
 			JLOG_DEBUG("STUN message integrity length invalid, length=%zu", length);
 			return -1;
 		}
-		if (msg->password) {
-			size_t tmp_length = (uint8_t *)data - attr_begin + STUN_ATTR_SIZE + HMAC_SHA1_SIZE;
-			size_t prev_length = stun_update_header_length(begin, tmp_length);
-			uint8_t hmac[HMAC_SHA1_SIZE];
-			hmac_sha1(begin, (uint8_t *)data - begin, msg->password, strlen(msg->password), hmac);
-			stun_update_header_length(begin, prev_length);
-
-			if (memcmp(hmac, attr->value, HMAC_SHA1_SIZE) != 0) {
-				JLOG_DEBUG("STUN message integrity check failed");
-				return -1;
-			}
-			JLOG_VERBOSE("STUN message integrity check succeeded");
-			msg->has_integrity = true;
-		} else {
-			JLOG_VERBOSE("Ignoring unexpected message integrity");
-		}
+		msg->has_integrity = true;
 		break;
 	}
 	case STUN_ATTR_FINGERPRINT: {
@@ -403,10 +376,11 @@ int stun_read_attr(const void *data, size_t size, stun_message_t *msg, uint8_t *
 
 		uint32_t fingerprint = ntohl(*((uint32_t *)attr->value));
 		if (fingerprint != expected) {
-			JLOG_ERROR("STUN fingerprint check failed, expected=%lX, found=%lX",
+			JLOG_ERROR("STUN fingerprint check failed, expected=%lX, actual=%lX",
 			           (unsigned long)expected, (unsigned long)fingerprint);
 			return -1;
 		}
+		JLOG_VERBOSE("STUN fingerprint check succeeded");
 		msg->has_fingerprint = true;
 		break;
 	}
@@ -417,6 +391,7 @@ int stun_read_attr(const void *data, size_t size, stun_message_t *msg, uint8_t *
 			return -1;
 		}
 		msg->priority = ntohl(*((uint32_t *)attr->value));
+		JLOG_VERBOSE("Got priority: %lu", (unsigned long)msg->priority);
 		break;
 	}
 	case STUN_ATTR_USE_CANDIDATE: {
@@ -500,4 +475,31 @@ int stun_read_value_mapped_address(const void *data, size_t size, stun_message_t
 	}
 	}
 	return len;
+}
+
+bool stun_check_integrity(void *buf, size_t size, const stun_message_t *msg, const char *password) {
+	if (!msg->has_integrity)
+		return false;
+
+	uint8_t *begin = buf;
+	uint8_t *attr_begin = begin + sizeof(struct stun_header);
+	uint8_t *end = begin + size - (STUN_ATTR_SIZE + HMAC_SHA1_SIZE) -
+	               (msg->has_fingerprint ? STUN_ATTR_SIZE + 4 : 0);
+
+	if (size < sizeof(struct stun_header))
+		return false;
+
+	size_t tmp_length = end - attr_begin + STUN_ATTR_SIZE + HMAC_SHA1_SIZE;
+	size_t prev_length = stun_update_header_length(begin, tmp_length);
+	uint8_t hmac[HMAC_SHA1_SIZE];
+	hmac_sha1(begin, end - begin, password, strlen(password), hmac);
+	stun_update_header_length(begin, prev_length);
+
+	const uint8_t *expected_hmac = end + STUN_ATTR_SIZE;
+	if (memcmp(hmac, expected_hmac, HMAC_SHA1_SIZE) != 0) {
+		JLOG_VERBOSE("STUN message integrity check failed");
+		return false;
+	}
+	JLOG_VERBOSE("STUN message integrity check succeeded");
+	return true;
 }

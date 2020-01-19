@@ -20,6 +20,7 @@
 #define JUICE_STUN_H
 
 #include "addr.h"
+#include "hmac.h"
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -157,6 +158,10 @@ struct stun_value_error_code {
 
 #pragma pack(pop)
 
+// The value of USERNAME is a variable-length value. It MUST contain a UTF-8 [RFC3629]
+// encoded sequence of less than 513 bytes [...]
+#define STUN_MAX_USERNAME_LEN 513 + 1
+
 typedef struct stun_message {
 	stun_class_t msg_class;
 	stun_method_t msg_method;
@@ -168,12 +173,12 @@ typedef struct stun_message {
 	bool use_candidate;
 	addr_record_t mapped;
 
-	// Used only for reading
+	// Only for reading
 	bool has_integrity;
 	bool has_fingerprint;
+	char username[STUN_MAX_USERNAME_LEN];
 
-	// When set for reading, trigger verification
-	const char *username;
+	// Only for writing
 	const char *password;
 } stun_message_t;
 
@@ -190,5 +195,7 @@ int stun_read_attr(const void *data, size_t size, stun_message_t *msg, uint8_t *
                    uint8_t *attr_begin);
 int stun_read_value_mapped_address(const void *data, size_t size, stun_message_t *msg,
                                    const uint8_t *mask);
+
+bool stun_check_integrity(void *buf, size_t size, const stun_message_t *msg, const char *password);
 
 #endif

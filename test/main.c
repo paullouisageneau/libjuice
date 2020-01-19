@@ -82,7 +82,7 @@ int main(int argc, char **argv) {
 	    0xe5, 0x7a, 0x3b, 0xcf, //
 	};
 	stun_message_t msg;
-	msg.username = "evtj:h6vY";
+	strcpy(msg.username, "evtj:h6vY");
 	msg.password = "VOkJxbRl1RmTxUk/WvJxBt";
 	if (stun_read(test_message, sizeof(test_message), &msg) <= 0) {
 		printf("STUN parsing implementation check failed\n");
