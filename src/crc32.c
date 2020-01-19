@@ -31,7 +31,7 @@ uint32_t crc32_byte(uint32_t crc) {
 	return crc;
 }
 
-uint32_t crc32_table(const char *p, size_t size, uint32_t *table) {
+uint32_t crc32_table(const uint8_t *p, size_t size, uint32_t *table) {
 	uint32_t crc = CRC32_INIT;
 	while (size--)
 		crc = table[(uint8_t)(crc & 0xFF) ^ *p++] ^ (crc >> 8);
