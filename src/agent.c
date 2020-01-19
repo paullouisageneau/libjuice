@@ -81,12 +81,16 @@ void agent_do_destroy(juice_agent_t *agent) {
 }
 
 void agent_destroy(juice_agent_t *agent) {
+	pthread_mutex_lock(&agent->mutex);
 	if (!agent->thread_started) {
+		pthread_mutex_unlock(&agent->mutex);
 		agent_do_destroy(agent);
-	} else {
-		JLOG_VERBOSE("Requesting agent destruction");
-		agent->thread_destroyed = true;
+		return;
 	}
+
+	JLOG_VERBOSE("Requesting agent destruction");
+	agent->thread_destroyed = true;
+	pthread_mutex_unlock(&agent->mutex);
 }
 
 void *agent_thread_entry(void *arg) {
@@ -95,14 +99,17 @@ void *agent_thread_entry(void *arg) {
 }
 
 int agent_gather_candidates(juice_agent_t *agent) {
+	pthread_mutex_lock(&agent->mutex);
 	if (agent->sock != INVALID_SOCKET) {
 		JLOG_ERROR("Started candidates gathering twice");
+		pthread_mutex_unlock(&agent->mutex);
 		return -1;
 	}
-	// No need to lock the mutex, the thread is not started yet
+
 	agent->sock = udp_create_socket();
 	if (agent->sock == INVALID_SOCKET) {
 		JLOG_FATAL("UDP socket creation for agent failed");
+		pthread_mutex_unlock(&agent->mutex);
 		return -1;
 	}
 	agent_change_state(agent, JUICE_STATE_GATHERING);
@@ -151,10 +158,12 @@ int agent_gather_candidates(juice_agent_t *agent) {
 	int ret = pthread_create(&agent->thread, NULL, agent_thread_entry, agent);
 	if (ret) {
 		JLOG_FATAL("pthread_create for agent failed, error=%d", ret);
+		pthread_mutex_unlock(&agent->mutex);
 		return -1;
 	}
 	pthread_detach(agent->thread);
 	agent->thread_started = true;
+	pthread_mutex_unlock(&agent->mutex);
 	return 0;
 }
 
