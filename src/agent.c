@@ -90,6 +90,7 @@ void agent_destroy(juice_agent_t *agent) {
 
 	JLOG_VERBOSE("Requesting agent destruction");
 	agent->thread_destroyed = true;
+	memset(&agent->config, 0, sizeof(agent->config));
 	pthread_mutex_unlock(&agent->mutex);
 }
 
