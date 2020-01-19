@@ -402,12 +402,12 @@ int stun_read_attr(const void *data, size_t size, stun_message_t *msg, uint8_t *
 		stun_update_header_length(begin, prev_length);
 
 		uint32_t fingerprint = ntohl(*((uint32_t *)attr->value));
-		if (fingerprint == expected) {
-			msg->has_fingerprint = true;
-		} else {
-			JLOG_WARN("STUN fingerprint check failed, expected=%lX, found=%lX",
-			          (unsigned long)expected, (unsigned long)fingerprint);
+		if (fingerprint != expected) {
+			JLOG_ERROR("STUN fingerprint check failed, expected=%lX, found=%lX",
+			           (unsigned long)expected, (unsigned long)fingerprint);
+			return -1;
 		}
+		msg->has_fingerprint = true;
 		break;
 	}
 	case STUN_ATTR_PRIORITY: {
