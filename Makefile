@@ -20,7 +20,7 @@ src/%.o: src/%.c
 	$(CC) $(CFLAGS) $(INCLUDES) -MMD -MP -o $@ -c $<
 
 test/%.o: test/%.c
-	$(CC) $(CFLAGS) $(INCLUDES) -MMD -MP -o $@ -c $<
+	$(CC) $(CFLAGS) $(INCLUDES) -Iinclude -Isrc -MMD -MP -o $@ -c $<
 
 -include $(subst .c,.d,$(SRCS))
 
