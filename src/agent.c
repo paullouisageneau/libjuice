@@ -517,20 +517,19 @@ int agent_dispatch_stun(juice_agent_t *agent, const stun_message_t *msg,
 			JLOG_WARN("Failed to add remote peer reflexive candidate from "
 			          "STUN message");
 		}
-		if (msg->msg_class != STUN_CLASS_REQUEST) {
-			for (int i = 0; i < agent->entries_count; ++i) {
-				if (memcmp(msg->transaction_id, agent->entries[i].transaction_id,
-				           STUN_TRANSACTION_ID_SIZE) == 0) {
-					JLOG_DEBUG("STUN entry %d matching incoming transaction ID", i);
-					entry = &agent->entries[i];
-					break;
-				}
+	}
+	if (msg->msg_class == STUN_CLASS_RESP_SUCCESS || msg->msg_class == STUN_CLASS_RESP_ERROR) {
+		for (int i = 0; i < agent->entries_count; ++i) {
+			if (memcmp(msg->transaction_id, agent->entries[i].transaction_id,
+			           STUN_TRANSACTION_ID_SIZE) == 0) {
+				JLOG_DEBUG("STUN entry %d matching incoming transaction ID", i);
+				entry = &agent->entries[i];
+				break;
 			}
 		}
-	}
-	if (!entry)
+	} else {
 		entry = agent_find_entry_from_record(agent, source);
-
+	}
 	if (!entry) {
 		JLOG_ERROR("STUN entry for message processing not found");
 		return -1;
@@ -931,7 +930,7 @@ agent_stun_entry_t *agent_find_entry_from_record(juice_agent_t *agent,
 	for (int i = 0; i < agent->entries_count; ++i) {
 		if (record->len == agent->entries[i].record.len &&
 		    memcmp(&record->addr, &agent->entries[i].record.addr, record->len) == 0) {
-			JLOG_DEBUG("STUN entry %d matching incoming candidate", i);
+			JLOG_DEBUG("STUN entry %d matching incoming address", i);
 			return agent->entries + i;
 		}
 	}
