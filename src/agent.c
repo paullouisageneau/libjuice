@@ -499,7 +499,7 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 
 int agent_verify_stun(juice_agent_t *agent, void *buf, size_t size, const stun_message_t *msg) {
 	if (!msg->has_integrity)
-		return true;
+		return 0;
 
 	// Check password
 	const char *password =
