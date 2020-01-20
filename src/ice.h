@@ -88,7 +88,7 @@ int ice_create_local_description(ice_description_t *description);
 int ice_create_local_candidate(ice_candidate_type_t type, int component,
                                const addr_record_t *record, ice_candidate_t *candidate);
 int ice_resolve_candidate(ice_candidate_t *candidate, ice_resolve_mode_t mode);
-int ice_add_candidate(const ice_candidate_t *candidate, ice_description_t *description);
+int ice_add_candidate(ice_candidate_t *candidate, ice_description_t *description);
 void ice_sort_candidates(ice_description_t *description);
 ice_candidate_t *ice_find_candidate_from_addr(ice_description_t *description,
                                               const addr_record_t *record);

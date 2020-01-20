@@ -220,17 +220,19 @@ int ice_resolve_candidate(ice_candidate_t *candidate, ice_resolve_mode_t mode) {
 	return 0;
 }
 
-int ice_add_candidate(const ice_candidate_t *candidate, ice_description_t *description) {
+int ice_add_candidate(ice_candidate_t *candidate, ice_description_t *description) {
 	if (description->finished) {
 		JLOG_WARN("Trying to add candidate to finished description");
 		return -1;
 	}
 	if (description->candidates_count >= ICE_MAX_CANDIDATES_COUNT)
 		return -1;
+
+	snprintf(candidate->foundation, 32, "%u", (unsigned int)(description->candidates_count + 1));
+
 	ice_candidate_t *pos = description->candidates + description->candidates_count;
 	*pos = *candidate;
 	++description->candidates_count;
-	snprintf(pos->foundation, 32, "%u", (unsigned int)description->candidates_count);
 	return 0;
 }
 
