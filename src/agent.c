@@ -478,27 +478,55 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 }
 
 int agent_verify_stun(juice_agent_t *agent, void *buf, size_t size, const stun_message_t *msg) {
-	if (msg->has_integrity) {
-		char expected_username[STUN_MAX_USERNAME_LEN];
-		const char *password;
-		if (msg->msg_class == STUN_CLASS_REQUEST) {
-			snprintf(expected_username, STUN_MAX_USERNAME_LEN, "%s:%s", agent->local.ice_ufrag,
-			         agent->remote.ice_ufrag);
-			password = agent->local.ice_pwd;
-		} else {
-			snprintf(expected_username, STUN_MAX_USERNAME_LEN, "%s:%s", agent->remote.ice_ufrag,
-			         agent->local.ice_ufrag);
-			password = agent->remote.ice_pwd;
+	if (!msg->has_integrity)
+		return true;
+
+	// Check password
+	const char *password =
+	    msg->msg_class == STUN_CLASS_REQUEST ? agent->local.ice_pwd : agent->remote.ice_pwd;
+	if (*password == '\0') {
+		JLOG_WARN("STUN integrity check failed, unknown password");
+		return -1;
+	}
+	if (!stun_check_integrity(buf, size, msg, password)) {
+		JLOG_WARN("STUN integrity check failed, password=\"%s\"", password);
+		return -1;
+	}
+
+	// Check username
+	char username[STUN_MAX_USERNAME_LEN];
+	strcpy(username, msg->username);
+	char *separator = strchr(username, ':');
+	if (!separator) {
+		JLOG_WARN("STUN username invalid, username=\"%s\"", msg->username);
+		return -1;
+	}
+	*separator = '\0';
+	const char *first_ufrag = username;
+	const char *second_ufrag = separator + 1;
+	const char *local_ufrag, *remote_ufrag;
+	if (STUN_IS_RESPONSE(msg->msg_class)) {
+		local_ufrag = second_ufrag;
+		remote_ufrag = first_ufrag;
+	} else {
+		local_ufrag = first_ufrag;
+		remote_ufrag = second_ufrag;
+		if (*agent->remote.ice_ufrag == '\0') {
+			// The password has been checked so we know it's the remote peer
+			JLOG_DEBUG("Learned remote ufrag: %s", remote_ufrag);
+			// remote.ice_ufrag is 256 + 1 so it will be null-terminated
+			strncpy(agent->remote.ice_ufrag, remote_ufrag, 256);
 		}
-		if (strcmp(msg->username, expected_username) != 0) {
-			JLOG_WARN("STUN username check failed, expected=\"%s\", actual=\'%s\"",
-			          expected_username, msg->username);
-			return -1;
-		}
-		if (!stun_check_integrity(buf, size, msg, password)) {
-			JLOG_WARN("STUN integrity check failed, password=\"%s\"", password);
-			return -1;
-		}
+	}
+	if (strcmp(local_ufrag, agent->local.ice_ufrag) != 0) {
+		JLOG_WARN("STUN local ufrag check failed, expected=\"%s\", actual=\"%s\"",
+		          agent->local.ice_ufrag, local_ufrag);
+		return -1;
+	}
+	if (strcmp(remote_ufrag, agent->remote.ice_ufrag) != 0) {
+		JLOG_WARN("STUN local ufrag check failed, expected=\"%s\", actual=\"%s\"",
+		          agent->remote.ice_ufrag, remote_ufrag);
+		return -1;
 	}
 	return 0;
 }
@@ -518,7 +546,7 @@ int agent_dispatch_stun(juice_agent_t *agent, const stun_message_t *msg,
 			          "STUN message");
 		}
 	}
-	if (msg->msg_class == STUN_CLASS_RESP_SUCCESS || msg->msg_class == STUN_CLASS_RESP_ERROR) {
+	if (STUN_IS_RESPONSE(msg->msg_class)) {
 		for (int i = 0; i < agent->entries_count; ++i) {
 			if (memcmp(msg->transaction_id, agent->entries[i].transaction_id,
 			           STUN_TRANSACTION_ID_SIZE) == 0) {

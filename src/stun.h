@@ -78,6 +78,8 @@ typedef enum stun_method {
 	STUN_METHOD_BINDING = 0x0001,
 } stun_method_t;
 
+#define STUN_IS_RESPONSE(msg_class) (msg_class & 0x0100)
+
 /*
  * STUN attribute header
  *
