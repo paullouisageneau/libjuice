@@ -31,14 +31,14 @@
 
 // RFC 8445: Agents MUST NOT use an RTO value smaller than 500 ms.
 #define MIN_STUN_RETRANSMISSION_TIMEOUT 500 // msecs
-#define MAX_STUN_RETRANSMISSION_COUNT 4     // count
+#define MAX_STUN_RETRANSMISSION_COUNT 5     // count (will give ~30s)
 
 // RFC 8445: ICE agents SHOULD use a default Ta value, 50 ms, but MAY use
 // another value based on the characteristics of the associated data.
 #define STUN_PACING_TIME 50 // msecs
 
 #define MAX_CANDIDATE_PAIRS_COUNT ICE_MAX_CANDIDATES_COUNT
-#define MAX_STUN_SERVER_RECORDS_COUNT 3
+#define MAX_STUN_SERVER_RECORDS_COUNT 4
 #define MAX_STUN_ENTRIES_COUNT (MAX_CANDIDATE_PAIRS_COUNT + MAX_STUN_SERVER_RECORDS_COUNT)
 
 #define ICE_FAIL_TIMEOUT 30000 // msecs
@@ -63,6 +63,7 @@ typedef struct agent_stun_entry {
 	addr_record_t record;
 	uint8_t transaction_id[STUN_TRANSACTION_ID_SIZE];
 	timestamp_t next_transmission;
+	timediff_t retransmission_timeout;
 	int retransmissions;
 	bool finished;
 } agent_stun_entry_t;
@@ -114,14 +115,18 @@ int agent_process_stun_binding(juice_agent_t *agent, const stun_message_t *msg,
 int agent_send_stun_binding(juice_agent_t *agent, agent_stun_entry_t *entry, stun_class_t msg_class,
                             unsigned int error_code, const uint8_t *transaction_id,
                             const addr_record_t *mapped);
+
 int agent_add_local_reflexive_candidate(juice_agent_t *agent, ice_candidate_type_t type,
                                         const addr_record_t *record);
 int agent_add_remote_reflexive_candidate(juice_agent_t *agent, ice_candidate_type_t type,
                                          uint32_t priority, const addr_record_t *record);
 int agent_add_candidate_pair(juice_agent_t *agent, ice_candidate_t *remote);
+
+void agent_arm_transmission(juice_agent_t *agent, agent_stun_entry_t *entry, timediff_t delay);
 void agent_update_gathering_done(juice_agent_t *agent);
 void agent_update_candidate_pairs(juice_agent_t *agent);
 void agent_update_ordered_pairs(juice_agent_t *agent);
+
 agent_stun_entry_t *agent_find_entry_from_record(juice_agent_t *agent, const addr_record_t *record);
 
 #endif

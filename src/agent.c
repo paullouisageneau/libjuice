@@ -286,11 +286,10 @@ void agent_run(juice_agent_t *agent) {
 				entry->type = AGENT_STUN_ENTRY_TYPE_SERVER;
 				entry->pair = NULL;
 				entry->record = records[i];
-				entry->next_transmission =
-				    current_timestamp() + STUN_PACING_TIME * agent->entries_count;
-				entry->retransmissions = MAX_STUN_RETRANSMISSION_COUNT;
 				juice_random(entry->transaction_id, STUN_TRANSACTION_ID_SIZE);
 				++agent->entries_count;
+
+				agent_arm_transmission(agent, entry, STUN_PACING_TIME * i);
 			}
 		} else {
 			JLOG_ERROR("STUN address resolution failed");
@@ -460,6 +459,9 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 			if (nominated_pair) {
 				// Finished
 				agent_change_state(agent, JUICE_STATE_COMPLETED);
+
+				for (int i = 0; i < agent->entries_count; ++i)
+					agent->entries[i].next_transmission = 0;
 			} else {
 				// Connected
 				agent_change_state(agent, JUICE_STATE_CONNECTED);
@@ -469,14 +471,10 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 					// Nominate selected
 					JLOG_VERBOSE("Requesting pair nomination (controlling)");
 					selected_pair->nomination_requested = true;
-					for (int i = 0; i < agent->entries_count; ++i) {
-						agent_stun_entry_t *entry = agent->entries + i;
-						if (entry->pair == selected_pair) {
-							entry->next_transmission = current_timestamp();
-							entry->retransmissions = MAX_STUN_RETRANSMISSION_COUNT;
-							break;
-						}
-					}
+
+					for (int i = 0; i < agent->entries_count; ++i)
+						if (agent->entries[i].pair == selected_pair)
+							agent_arm_transmission(agent, agent->entries + i, 0); // transmit now
 				}
 			}
 		} else {
@@ -663,8 +661,7 @@ int agent_process_stun_binding(juice_agent_t *agent, const stun_message_t *msg,
 			} else if (!pair->nomination_requested) {
 				pair->nomination_requested = true;
 				pair->state = ICE_CANDIDATE_PAIR_STATE_WAITING;
-				entry->next_transmission = current_timestamp() + STUN_PACING_TIME; // after response
-				entry->retransmissions = MAX_STUN_RETRANSMISSION_COUNT;
+				agent_arm_transmission(agent, entry, STUN_PACING_TIME); // transmit after response
 			}
 		}
 		if (agent_send_stun_binding(agent, entry, STUN_CLASS_RESP_SUCCESS, 0, msg->transaction_id,
@@ -731,9 +728,9 @@ int agent_process_stun_binding(juice_agent_t *agent, const stun_message_t *msg,
 				agent_update_candidate_pairs(agent);
 			}
 			entry->pair->state = ICE_CANDIDATE_PAIR_STATE_WAITING;
-			entry->next_transmission = current_timestamp();
-			++entry->retransmissions;
 			juice_random(&agent->ice_tiebreaker, sizeof(agent->ice_tiebreaker));
+
+			agent_arm_transmission(agent, entry, 0);
 		}
 		break;
 	}
@@ -749,7 +746,8 @@ int agent_send_stun_binding(juice_agent_t *agent, agent_stun_entry_t *entry, stu
                             unsigned int error_code, const uint8_t *transaction_id,
                             const addr_record_t *mapped) {
 	--entry->retransmissions;
-	entry->next_transmission = current_timestamp() + MIN_STUN_RETRANSMISSION_TIMEOUT;
+	entry->next_transmission = current_timestamp() + entry->retransmission_timeout;
+	entry->retransmission_timeout *= 2;
 
 	// Send STUN binding request
 	JLOG_DEBUG("Sending STUN binding %s", msg_class == STUN_CLASS_REQUEST ? "request" : "response");
@@ -911,24 +909,33 @@ int agent_add_candidate_pair(juice_agent_t *agent, ice_candidate_t *remote) {
 	entry->type = AGENT_STUN_ENTRY_TYPE_CHECK;
 	entry->pair = pos;
 	entry->record = pos->remote->resolved;
-	entry->next_transmission = current_timestamp();
-	entry->retransmissions = MAX_STUN_RETRANSMISSION_COUNT;
 	juice_random(entry->transaction_id, STUN_TRANSACTION_ID_SIZE);
+	++agent->entries_count;
 
-	// Find a STUN transmission time slot
+	agent_arm_transmission(agent, entry, 0); // transmit now
+	return 0;
+}
+
+void agent_arm_transmission(juice_agent_t *agent, agent_stun_entry_t *entry, timediff_t delay) {
+	// Arm transmission
+	entry->next_transmission = current_timestamp() + delay;
+	entry->retransmissions = MAX_STUN_RETRANSMISSION_COUNT;
+	entry->retransmission_timeout = MIN_STUN_RETRANSMISSION_TIMEOUT;
+
+	// Find a time slot
 	agent_stun_entry_t *other = agent->entries;
 	while (other != agent->entries + agent->entries_count) {
-		timestamp_t other_transmission = other->next_transmission;
-		timediff_t timediff = entry->next_transmission - other_transmission;
-		if (other_transmission && abs((int)timediff) < STUN_PACING_TIME) {
-			entry->next_transmission = other_transmission + STUN_PACING_TIME;
-			other = agent->entries;
-		} else {
-			++other;
+		if (other != entry) {
+			timestamp_t other_transmission = other->next_transmission;
+			timediff_t timediff = entry->next_transmission - other_transmission;
+			if (other_transmission && abs((int)timediff) < STUN_PACING_TIME) {
+				entry->next_transmission = other_transmission + STUN_PACING_TIME;
+				other = agent->entries;
+				continue;
+			}
 		}
+		++other;
 	}
-	++agent->entries_count;
-	return 0;
 }
 
 void agent_update_gathering_done(juice_agent_t *agent) {
