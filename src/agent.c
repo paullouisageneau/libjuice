@@ -501,6 +501,42 @@ int agent_verify_stun(juice_agent_t *agent, void *buf, size_t size, const stun_m
 	if (!msg->has_integrity)
 		return 0;
 
+	// Check username (The USERNAME attribute is not present in responses)
+	if (msg->msg_class == STUN_CLASS_REQUEST) {
+		char username[STUN_MAX_USERNAME_LEN];
+		strcpy(username, msg->username);
+		char *separator = strchr(username, ':');
+		if (!separator) {
+			JLOG_WARN("STUN username invalid, username=\"%s\"", username);
+			return -1;
+		}
+		*separator = '\0';
+		const char *first_ufrag = username;
+		const char *second_ufrag = separator + 1;
+		const char *local_ufrag, *remote_ufrag;
+		if (STUN_IS_RESPONSE(msg->msg_class)) {
+			local_ufrag = second_ufrag;
+			remote_ufrag = first_ufrag;
+		} else {
+			local_ufrag = first_ufrag;
+			remote_ufrag = second_ufrag;
+		}
+		if (strcmp(local_ufrag, agent->local.ice_ufrag) != 0) {
+			JLOG_WARN("STUN local ufrag check failed, expected=\"%s\", actual=\"%s\"",
+			          agent->local.ice_ufrag, local_ufrag);
+			return -1;
+		}
+		// RFC 8445 7.3. STUN Server Procedures:
+		// It is possible (and in fact very likely) that the initiating agent will receive a Binding
+		// request prior to receiving the candidates from its peer.  If this happens, the agent MUST
+		// immediately generate a response.
+		if (*agent->remote.ice_ufrag != '\0' &&
+		    strcmp(remote_ufrag, agent->remote.ice_ufrag) != 0) {
+			JLOG_WARN("STUN remote ufrag check failed, expected=\"%s\", actual=\"%s\"",
+			          agent->remote.ice_ufrag, remote_ufrag);
+			return -1;
+		}
+	}
 	// Check password
 	const char *password =
 	    msg->msg_class == STUN_CLASS_REQUEST ? agent->local.ice_pwd : agent->remote.ice_pwd;
@@ -510,42 +546,6 @@ int agent_verify_stun(juice_agent_t *agent, void *buf, size_t size, const stun_m
 	}
 	if (!stun_check_integrity(buf, size, msg, password)) {
 		JLOG_WARN("STUN integrity check failed, password=\"%s\"", password);
-		return -1;
-	}
-
-	// Check username
-	char username[STUN_MAX_USERNAME_LEN];
-	strcpy(username, msg->username);
-	char *separator = strchr(username, ':');
-	if (!separator) {
-		JLOG_WARN("STUN username invalid, username=\"%s\"", msg->username);
-		return -1;
-	}
-	*separator = '\0';
-	const char *first_ufrag = username;
-	const char *second_ufrag = separator + 1;
-	const char *local_ufrag, *remote_ufrag;
-	if (STUN_IS_RESPONSE(msg->msg_class)) {
-		local_ufrag = second_ufrag;
-		remote_ufrag = first_ufrag;
-	} else {
-		local_ufrag = first_ufrag;
-		remote_ufrag = second_ufrag;
-		if (*agent->remote.ice_ufrag == '\0') {
-			// The password has been checked so we know it's the remote peer
-			JLOG_DEBUG("Learned remote ufrag: %s", remote_ufrag);
-			// remote.ice_ufrag is 256 + 1 so it will be null-terminated
-			strncpy(agent->remote.ice_ufrag, remote_ufrag, 256);
-		}
-	}
-	if (strcmp(local_ufrag, agent->local.ice_ufrag) != 0) {
-		JLOG_WARN("STUN local ufrag check failed, expected=\"%s\", actual=\"%s\"",
-		          agent->local.ice_ufrag, local_ufrag);
-		return -1;
-	}
-	if (strcmp(remote_ufrag, agent->remote.ice_ufrag) != 0) {
-		JLOG_WARN("STUN local ufrag check failed, expected=\"%s\", actual=\"%s\"",
-		          agent->remote.ice_ufrag, remote_ufrag);
 		return -1;
 	}
 	return 0;
@@ -796,8 +796,6 @@ int agent_send_stun_binding(juice_agent_t *agent, agent_stun_entry_t *entry, stu
 		}
 		case STUN_CLASS_RESP_SUCCESS:
 		case STUN_CLASS_RESP_ERROR: {
-			snprintf(msg.username, STUN_MAX_USERNAME_LEN, "%s:%s", agent->local.ice_ufrag,
-			         agent->remote.ice_ufrag);
 			msg.password = agent->local.ice_pwd;
 			msg.error_code = error_code;
 			if (mapped)
