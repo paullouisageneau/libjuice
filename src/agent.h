@@ -37,6 +37,10 @@
 // another value based on the characteristics of the associated data.
 #define STUN_PACING_TIME 50 // msecs
 
+// RFC 8445: Agents SHOULD use a Tr value of 15 seconds.  Agents MAY use a bigger value but MUST NOT
+// use a value smaller than 15 seconds.
+#define STUN_KEEPALIVE_PERIOD 15000 // msecs
+
 #define MAX_CANDIDATE_PAIRS_COUNT ICE_MAX_CANDIDATES_COUNT
 #define MAX_STUN_SERVER_RECORDS_COUNT 4
 #define MAX_STUN_ENTRIES_COUNT (MAX_CANDIDATE_PAIRS_COUNT + MAX_STUN_SERVER_RECORDS_COUNT)
@@ -112,9 +116,9 @@ int agent_dispatch_stun(juice_agent_t *agent, const stun_message_t *msg,
                         const addr_record_t *source);
 int agent_process_stun_binding(juice_agent_t *agent, const stun_message_t *msg,
                                agent_stun_entry_t *entry, const addr_record_t *source);
-int agent_send_stun_binding(juice_agent_t *agent, agent_stun_entry_t *entry, stun_class_t msg_class,
-                            unsigned int error_code, const uint8_t *transaction_id,
-                            const addr_record_t *mapped);
+int agent_send_stun_binding(juice_agent_t *agent, const agent_stun_entry_t *entry,
+                            stun_class_t msg_class, unsigned int error_code,
+                            const uint8_t *transaction_id, const addr_record_t *mapped);
 
 int agent_add_local_reflexive_candidate(juice_agent_t *agent, ice_candidate_type_t type,
                                         const addr_record_t *record);

@@ -394,29 +394,32 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 
 	for (int i = 0; i < agent->entries_count; ++i) {
 		agent_stun_entry_t *entry = agent->entries + i;
-		if (entry->pair && (entry->pair->state == ICE_CANDIDATE_PAIR_STATE_FROZEN ||
-		                    entry->pair->state == ICE_CANDIDATE_PAIR_STATE_FAILED))
+		if (!entry->next_transmission || entry->next_transmission > now)
 			continue;
 
-		if (entry->next_transmission && entry->next_transmission <= now) {
-			JLOG_VERBOSE("STUN entry %d: Transmission time reached", i);
-			if (entry->retransmissions > 0) {
-				JLOG_DEBUG("STUN entry %d: Sending request", i);
-				if (entry->pair)
-					entry->pair->state = ICE_CANDIDATE_PAIR_STATE_INPROGRESS;
-				agent_send_stun_binding(agent, entry, STUN_CLASS_REQUEST, 0, NULL, NULL);
-			} else {
-				JLOG_DEBUG("STUN entry %d: Failed", i);
-				if (entry->pair)
-					entry->pair->state = ICE_CANDIDATE_PAIR_STATE_FAILED;
-				entry->next_transmission = 0;
-				entry->finished = true;
-				if (entry->type == AGENT_STUN_ENTRY_TYPE_SERVER)
-					agent_update_gathering_done(agent);
-			}
+		JLOG_VERBOSE("STUN entry %d: Transmission time reached", i);
+		if (entry->finished) {
+			// RFC 8445 11. Keepalives: All endpoints MUST send keepalives for each data session.
+			JLOG_DEBUG("STUN entry %d: Sending keepalive", i);
+			agent_send_stun_binding(agent, entry, STUN_CLASS_INDICATION, 0, NULL, NULL);
+			agent_arm_transmission(agent, entry, STUN_KEEPALIVE_PERIOD);
+		} else if (entry->retransmissions > 0) {
+			// Request transmission or retransmission
+			JLOG_DEBUG("STUN entry %d: Sending request", i);
+			agent_send_stun_binding(agent, entry, STUN_CLASS_REQUEST, 0, NULL, NULL);
+			--entry->retransmissions;
+			entry->next_transmission = now + entry->retransmission_timeout;
+			entry->retransmission_timeout *= 2;
+		} else {
+			// End of request retransmissions
+			JLOG_DEBUG("STUN entry %d: Failed", i);
+			entry->finished = true;
+			entry->next_transmission = 0; // No keepalive
+			if (entry->pair)
+				entry->pair->state = ICE_CANDIDATE_PAIR_STATE_FAILED;
+			if (entry->type == AGENT_STUN_ENTRY_TYPE_SERVER)
+				agent_update_gathering_done(agent);
 		}
-		if (entry->next_transmission && *next_timestamp > entry->next_transmission)
-			*next_timestamp = entry->next_transmission;
 	}
 
 	if (agent->candidate_pairs_count == 0)
@@ -435,8 +438,7 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 		} else if (pair->state == ICE_CANDIDATE_PAIR_STATE_SUCCEEDED) {
 			if (!selected_pair)
 				selected_pair = pair;
-		} else if (pair->state == ICE_CANDIDATE_PAIR_STATE_WAITING ||
-		           pair->state == ICE_CANDIDATE_PAIR_STATE_INPROGRESS) {
+		} else if (pair->state == ICE_CANDIDATE_PAIR_STATE_PENDING) {
 			if (nominated_pair || (selected_pair && agent->mode == AGENT_MODE_CONTROLLING)) {
 				// A higher-priority pair will be used, we can stop checking
 				JLOG_VERBOSE("Cancelling check for lower-priority pair");
@@ -459,9 +461,12 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 			if (nominated_pair) {
 				// Finished
 				agent_change_state(agent, JUICE_STATE_COMPLETED);
-
-				for (int i = 0; i < agent->entries_count; ++i)
-					agent->entries[i].next_transmission = 0;
+				// Disable transmissions for other entries
+				for (int i = 0; i < agent->entries_count; ++i) {
+					agent_stun_entry_t *entry = agent->entries + i;
+					if (entry->pair != nominated_pair)
+						entry->next_transmission = 0;
+				}
 			} else {
 				// Connected
 				agent_change_state(agent, JUICE_STATE_CONNECTED);
@@ -471,10 +476,14 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 					// Nominate selected
 					JLOG_VERBOSE("Requesting pair nomination (controlling)");
 					selected_pair->nomination_requested = true;
-
-					for (int i = 0; i < agent->entries_count; ++i)
-						if (agent->entries[i].pair == selected_pair)
-							agent_arm_transmission(agent, agent->entries + i, 0); // transmit now
+					for (int i = 0; i < agent->entries_count; ++i) {
+						agent_stun_entry_t *entry = agent->entries + i;
+						if (entry->pair == selected_pair) {
+							entry->finished = false; // We don't want to send keepalives
+							agent_arm_transmission(agent, entry, 0); // transmit now
+							break;
+						}
+					}
 				}
 			}
 		} else {
@@ -491,6 +500,12 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 		// Pending
 		if (selected_pair)
 			agent_change_state(agent, JUICE_STATE_CONNECTED);
+	}
+
+	for (int i = 0; i < agent->entries_count; ++i) {
+		agent_stun_entry_t *entry = agent->entries + i;
+		if (entry->next_transmission && *next_timestamp > entry->next_transmission)
+			*next_timestamp = entry->next_transmission;
 	}
 	return 0;
 }
@@ -580,7 +595,8 @@ int agent_dispatch_stun(juice_agent_t *agent, const stun_message_t *msg,
 		JLOG_ERROR("STUN entry for message processing not found");
 		return -1;
 	}
-	if (!msg->has_integrity && entry->type == AGENT_STUN_ENTRY_TYPE_CHECK) {
+	if (entry->type == AGENT_STUN_ENTRY_TYPE_CHECK && msg->msg_class != STUN_CLASS_INDICATION &&
+	    !msg->has_integrity) {
 		JLOG_WARN("STUN binding message from remote peer missing integrity");
 		return -1;
 	}
@@ -660,7 +676,7 @@ int agent_process_stun_binding(juice_agent_t *agent, const stun_message_t *msg,
 				pair->nominated = true;
 			} else if (!pair->nomination_requested) {
 				pair->nomination_requested = true;
-				pair->state = ICE_CANDIDATE_PAIR_STATE_WAITING;
+				pair->state = ICE_CANDIDATE_PAIR_STATE_PENDING;
 				agent_arm_transmission(agent, entry, STUN_PACING_TIME); // transmit after response
 			}
 		}
@@ -674,9 +690,8 @@ int agent_process_stun_binding(juice_agent_t *agent, const stun_message_t *msg,
 	case STUN_CLASS_RESP_SUCCESS: {
 		JLOG_DEBUG("Received STUN binding success response from %s",
 		           entry->type == AGENT_STUN_ENTRY_TYPE_CHECK ? "client" : "server");
-		entry->next_transmission = 0; // Cancel next retransmissions
-		entry->retransmissions = 0;
 		entry->finished = true;
+		agent_arm_transmission(agent, entry, STUN_KEEPALIVE_PERIOD);
 
 		if (msg->mapped.len) {
 			ice_candidate_type_t type = (entry->type == AGENT_STUN_ENTRY_TYPE_CHECK)
@@ -727,11 +742,15 @@ int agent_process_stun_binding(juice_agent_t *agent, const stun_message_t *msg,
 				agent->mode = msg->ice_controlling ? AGENT_MODE_CONTROLLED : AGENT_MODE_CONTROLLING;
 				agent_update_candidate_pairs(agent);
 			}
-			entry->pair->state = ICE_CANDIDATE_PAIR_STATE_WAITING;
+			entry->pair->state = ICE_CANDIDATE_PAIR_STATE_PENDING;
 			juice_random(&agent->ice_tiebreaker, sizeof(agent->ice_tiebreaker));
 
 			agent_arm_transmission(agent, entry, 0);
 		}
+		break;
+	}
+	case STUN_CLASS_INDICATION: {
+		JLOG_VERBOSE("Received STUN indication");
 		break;
 	}
 	default: {
@@ -742,13 +761,9 @@ int agent_process_stun_binding(juice_agent_t *agent, const stun_message_t *msg,
 	return 0;
 }
 
-int agent_send_stun_binding(juice_agent_t *agent, agent_stun_entry_t *entry, stun_class_t msg_class,
-                            unsigned int error_code, const uint8_t *transaction_id,
-                            const addr_record_t *mapped) {
-	--entry->retransmissions;
-	entry->next_transmission = current_timestamp() + entry->retransmission_timeout;
-	entry->retransmission_timeout *= 2;
-
+int agent_send_stun_binding(juice_agent_t *agent, const agent_stun_entry_t *entry,
+                            stun_class_t msg_class, unsigned int error_code,
+                            const uint8_t *transaction_id, const addr_record_t *mapped) {
 	// Send STUN binding request
 	JLOG_DEBUG("Sending STUN binding %s", msg_class == STUN_CLASS_REQUEST ? "request" : "response");
 
@@ -902,7 +917,7 @@ int agent_add_candidate_pair(juice_agent_t *agent, ice_candidate_t *remote) {
 	agent_update_ordered_pairs(agent);
 
 	// There is only one component, therefore we can unfreeze the pair and schedule it when possible
-	pos->state = ICE_CANDIDATE_PAIR_STATE_WAITING;
+	pos->state = ICE_CANDIDATE_PAIR_STATE_PENDING;
 
 	JLOG_VERBOSE("Registering STUN entry %d for candidate pair checking", agent->entries_count);
 	agent_stun_entry_t *entry = agent->entries + agent->entries_count;
