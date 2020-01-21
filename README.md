@@ -8,12 +8,12 @@ Licensed under LGPLv2, see [LICENSE](https://github.com/paullouisageneau/libjuic
 
 ## Compatibility
 
-The library aims at implementing a fully compatible ICE agent ([RFC8445](https://tools.ietf.org/html/rfc8445), and [RFC5389](https://tools.ietf.org/html/rfc5389) for STUN) with an interface based on SDP ([RFC4566](https://tools.ietf.org/html/rfc4566)). It supports both IPv4 and IPv6.
+The library aims at implementing a simplified but fully compatible ICE agent ([RFC8445](https://tools.ietf.org/html/rfc8445), and [RFC5389](https://tools.ietf.org/html/rfc5389) for STUN) with an interface based on SDP ([RFC4566](https://tools.ietf.org/html/rfc4566)). It supports both IPv4 and IPv6.
 
 The limitations compared to a fully-featured ICE agent are:
 - Only UDP is supported as transport protocol. Other protocols are ignored.
 - Only one component is supported. This is sufficient for WebRTC Data Channels or multiplexed RTP/RTCP ([RFC5731](https://tools.ietf.org/html/rfc5761)).
-- Only the default gateway is used when gathering candidates. This should behave identically as the full implementation on most client systems and allows to greatly reduce complexity.
+- Only the default gateway is used when gathering candidates. This should behave identically to the full implementation on most client systems and allows to greatly reduce complexity.
 
 ## Dependencies
 
@@ -34,7 +34,7 @@ $ make
 ### Building directly with Make
 
 ```bash
-$ make
+$ make USE_NETTLE=1
 ```
 
 ## Example
