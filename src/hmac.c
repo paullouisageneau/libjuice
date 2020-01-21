@@ -18,11 +18,19 @@
 
 #include "hmac.h"
 
+#if USE_NETTLE
 #include <nettle/hmac.h>
+#else
+#include <openssl/hmac.h>
+#endif
 
 void hmac_sha1(const void *message, size_t size, const void *key, size_t key_size, void *digest) {
+#if USE_NETTLE
 	struct hmac_sha1_ctx ctx;
 	hmac_sha1_set_key(&ctx, key_size, key);
 	hmac_sha1_update(&ctx, size, message);
 	hmac_sha1_digest(&ctx, HMAC_SHA1_SIZE, digest);
+#else
+	HMAC(EVP_sha1(), key, key_size, message, size, digest, NULL);
+#endif
 }

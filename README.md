@@ -17,7 +17,7 @@ The limitations compared to a fully-featured ICE agent are:
 
 ## Dependencies
 
-- Nettle (https://www.lysator.liu.se/~nisse/nettle/) for HMAC-SHA1
+- Nettle (https://www.lysator.liu.se/~nisse/nettle/) or OpenSSL (https://www.openssl.org/) for HMAC-SHA1
 - That's it!
 
 ## Building
@@ -27,7 +27,7 @@ The limitations compared to a fully-featured ICE agent are:
 ```bash
 $ mkdir build
 $ cd build
-$ cmake ..
+$ cmake -DUSE_NETTLE=1 ..
 $ make
 ```
 

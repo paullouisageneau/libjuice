@@ -91,7 +91,7 @@ int main(int argc, char **argv) {
 
 	// Connectivity test
 
-	juice_set_log_level(JUICE_LOG_LEVEL_VERBOSE);
+	juice_set_log_level(JUICE_LOG_LEVEL_DEBUG);
 
 	juice_config_t config1;
 	memset(&config1, 0, sizeof(config1));

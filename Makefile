@@ -6,10 +6,22 @@ AR=$(CROSS)ar
 RM=rm -f
 CFLAGS=-g -O0 -pthread -fPIC -Wall -Wno-address-of-packed-member
 LDFLAGS=-pthread
-LIBS=nettle
+LIBS=
 
-LDLIBS= $(shell pkg-config --libs $(LIBS))
-INCLUDES=-Iinclude/juice $(shell pkg-config --cflags $(LIBS))
+INCLUDES=-Iinclude/juice
+LDLIBS=
+
+USE_NETTLE ?= 0
+ifneq ($(USE_NETTLE), 0)
+        CFLAGS+=-DUSE_NETTLE=1
+        LIBS+=nettle
+else
+        CFLAGS+=-DUSE_NETTLE=0
+        LIBS+=openssl
+endif
+
+INCLUDES+=$(shell pkg-config --cflags $(LIBS))
+LDLIBS+=$(shell pkg-config --libs $(LIBS))
 
 SRCS=$(shell printf "%s " src/*.c)
 OBJS=$(subst .c,.o,$(SRCS))
