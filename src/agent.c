@@ -765,7 +765,10 @@ int agent_send_stun_binding(juice_agent_t *agent, const agent_stun_entry_t *entr
                             stun_class_t msg_class, unsigned int error_code,
                             const uint8_t *transaction_id, const addr_record_t *mapped) {
 	// Send STUN binding request
-	JLOG_DEBUG("Sending STUN binding %s", msg_class == STUN_CLASS_REQUEST ? "request" : "response");
+	JLOG_DEBUG("Sending STUN binding %s",
+	           msg_class == STUN_CLASS_REQUEST
+	               ? "request"
+	               : (msg_class == STUN_CLASS_INDICATION ? "indication" : "response"));
 
 	if (!transaction_id)
 		transaction_id = entry->transaction_id;
