@@ -1,7 +1,7 @@
 cmake_minimum_required (VERSION 3.7)
 project (libjuice
 	DESCRIPTION "JUICE is an UDP-only ICE library"
-	VERSION 0.2.0
+	VERSION 0.2.1
 	LANGUAGES C)
 
 option(USE_NETTLE "Use Nettle instead of OpenSSL for HMAC computation" OFF)
