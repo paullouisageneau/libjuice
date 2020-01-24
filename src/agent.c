@@ -238,6 +238,18 @@ int agent_send(juice_agent_t *agent, const char *data, size_t size) {
 	const addr_record_t *record = &agent->selected_pair->remote->resolved;
 	int ret =
 	    sendto(agent->sock, data, size, 0, (const struct sockaddr *)&record->addr, record->len);
+
+	if (ret >= 0) {
+		// Reset keepalive
+		for (int i = 0; i < agent->entries_count; ++i) {
+			agent_stun_entry_t *entry = agent->entries + i;
+			if (entry->pair == agent->selected_pair) {
+				if (entry->finished)
+					agent_arm_transmission(agent, entry, STUN_KEEPALIVE_PERIOD);
+				break;
+			}
+		}
+	}
 	pthread_mutex_unlock(&agent->mutex);
 	return ret;
 }
