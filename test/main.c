@@ -16,8 +16,10 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include "crc32.h"
 #include "juice/juice.h"
+
+// for preliminary tests
+#include "crc32.h"
 #include "stun.h"
 
 #include <stdbool.h>
