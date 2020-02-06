@@ -4,7 +4,7 @@ NAME=libjuice
 CC=$(CROSS)gcc
 AR=$(CROSS)ar
 RM=rm -f
-CFLAGS=-g -O0 -pthread -fPIC -Wall -Wno-address-of-packed-member
+CFLAGS=-O2 -pthread -fPIC -Wall -Wno-address-of-packed-member
 LDFLAGS=-pthread
 LIBS=
 
