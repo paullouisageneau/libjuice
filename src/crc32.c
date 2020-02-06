@@ -22,7 +22,7 @@
 #define CRC32_INIT 0xFFFFFFFF
 #define CRC32_XOR 0xFFFFFFFF
 
-uint32_t crc32_byte(uint32_t crc) {
+static uint32_t crc32_byte(uint32_t crc) {
 	for (int i = 0; i < 8; ++i)
 		if (crc & 1)
 			crc = (crc >> 1) ^ CRC32_REVERSED_POLY;
@@ -31,14 +31,14 @@ uint32_t crc32_byte(uint32_t crc) {
 	return crc;
 }
 
-uint32_t crc32_table(const uint8_t *p, size_t size, uint32_t *table) {
+static uint32_t crc32_table(const uint8_t *p, size_t size, uint32_t *table) {
 	uint32_t crc = CRC32_INIT;
 	while (size--)
 		crc = table[(uint8_t)(crc & 0xFF) ^ *p++] ^ (crc >> 8);
 	return crc ^ CRC32_XOR;
 }
 
-uint32_t crc32(const void *data, size_t size) {
+uint32_t juice_crc32(const void *data, size_t size) {
 	static uint32_t table[256] = {0};
 	if (table[0] == 0)
 		for (size_t i = 0; i < 256; ++i)

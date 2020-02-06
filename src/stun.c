@@ -133,7 +133,7 @@ int stun_write(void *buf, size_t size, const stun_message_t *msg) {
 	}
 	stun_update_header_length(begin, length);
 
-	uint32_t fingerprint = htonl(crc32(buf, pos - begin) ^ STUN_FINGERPRINT_XOR);
+	uint32_t fingerprint = htonl(CRC32(buf, pos - begin) ^ STUN_FINGERPRINT_XOR);
 	len = stun_write_attr(pos, end - pos, STUN_ATTR_FINGERPRINT, &fingerprint, 4);
 	if (len <= 0)
 		goto overflow;
@@ -371,7 +371,7 @@ int stun_read_attr(const void *data, size_t size, stun_message_t *msg, uint8_t *
 		}
 		size_t tmp_length = (uint8_t *)data - attr_begin + STUN_ATTR_SIZE + 4;
 		size_t prev_length = stun_update_header_length(begin, tmp_length);
-		uint32_t expected = crc32(begin, (uint8_t *)data - begin) ^ STUN_FINGERPRINT_XOR;
+		uint32_t expected = CRC32(begin, (uint8_t *)data - begin) ^ STUN_FINGERPRINT_XOR;
 		stun_update_header_length(begin, prev_length);
 
 		uint32_t fingerprint = ntohl(*((uint32_t *)attr->value));

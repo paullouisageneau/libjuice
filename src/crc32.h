@@ -22,6 +22,8 @@
 #include <stdint.h>
 #include <stdlib.h>
 
-uint32_t crc32(const void *data, size_t size);
+uint32_t juice_crc32(const void *data, size_t size);
+
+#define CRC32(data, size) juice_crc32(data, size)
 
 #endif // JUICE_CRC32_H

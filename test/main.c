@@ -182,7 +182,7 @@ int preliminary_tests(void) {
 	juice_set_log_level(JUICE_LOG_LEVEL_WARN);
 
 	const char *test_crc32 = "The quick brown fox jumps over the lazy dog";
-	if (crc32(test_crc32, strlen(test_crc32)) != 0x414fa339) {
+	if (CRC32(test_crc32, strlen(test_crc32)) != 0x414fa339) {
 		printf("CRC32 implementation check failed\n");
 		return -2;
 	}
