@@ -19,6 +19,8 @@
 #include "addr.h"
 #include "log.h"
 
+#include <string.h>
+
 socklen_t addr_get_len(const struct sockaddr *sa) {
 	switch (sa->sa_family) {
 	case AF_INET:

@@ -41,8 +41,9 @@ static int random_bytes(void *buf, size_t size) {
 }
 
 #elif defined(_WIN32)
-#include <wincrypt.h>
 #include <windows.h>
+//
+#include <wincrypt.h>
 
 static int random_bytes(void *buf, size_t size) {
 	HCRYPTPROV prov;
@@ -51,8 +52,8 @@ static int random_bytes(void *buf, size_t size) {
 		JLOG_WARN("Win32: CryptAcquireContext failed");
 		return -1;
 	}
-	BOOL success;
-	if (!(success = CryptGenRandom(prov, (DWORD)size, (BYTE *)buf))) {
+	BOOL success = CryptGenRandom(prov, (DWORD)size, (BYTE *)buf);
+	if (!success) {
 		JLOG_WARN("Win32: CryptGenRandom failed");
 	}
 	CryptReleaseContext(prov, 0);

@@ -21,6 +21,7 @@
 #include "log.h"
 
 #include <stdio.h>
+#include <string.h>
 
 static struct addrinfo *find_family(struct addrinfo *ai_list, unsigned int family) {
 	struct addrinfo *ai = ai_list;
@@ -39,7 +40,7 @@ socket_t udp_create_socket(void) {
 	hints.ai_protocol = IPPROTO_UDP;
 	hints.ai_flags = AI_PASSIVE | AI_NUMERICSERV;
 	if (getaddrinfo(NULL, "0", &hints, &ai_list) != 0) {
-		JLOG_ERROR("getaddrinfo for binding address failed, errno=%d", errno);
+		JLOG_ERROR("getaddrinfo for binding address failed, errno=%d", sockerrno);
 		return INVALID_SOCKET;
 	}
 
@@ -55,33 +56,33 @@ socket_t udp_create_socket(void) {
 	// Create socket
 	socket_t sock = socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
 	if (sock == INVALID_SOCKET) {
-		JLOG_ERROR("UDP socket creation failed, errno=%d", errno);
+		JLOG_ERROR("UDP socket creation failed, errno=%d", sockerrno);
 		goto error;
 	}
 
 	// Set options
 	int enabled = 1;
 	int disabled = 0;
-	setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &enabled, sizeof(enabled));
+	setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, (char *)&enabled, sizeof(enabled));
 	if (ai->ai_family == AF_INET6)
-		setsockopt(sock, IPPROTO_IPV6, IPV6_V6ONLY, &disabled, sizeof(disabled));
+		setsockopt(sock, IPPROTO_IPV6, IPV6_V6ONLY, (char *)&disabled, sizeof(disabled));
 
 #ifndef NO_PMTUDISC
 	int val = IP_PMTUDISC_DO;
-	setsockopt(sock, IPPROTO_IP, IP_MTU_DISCOVER, &val, sizeof(val));
+	setsockopt(sock, IPPROTO_IP, IP_MTU_DISCOVER, (char *)&val, sizeof(val));
 #else
-	setsockopt(sock, IPPROTO_IP, IP_DONTFRAG, &enabled, sizeof(enabled));
+	setsockopt(sock, IPPROTO_IP, IP_DONTFRAG, (char *)&enabled, sizeof(enabled));
 #endif
 
 	// Bind it
 	if (bind(sock, ai->ai_addr, ai->ai_addrlen)) {
-		JLOG_ERROR("bind for UDP socket failed, errno=%d", errno);
+		JLOG_ERROR("bind for UDP socket failed, errno=%d", sockerrno);
 		goto error;
 	}
 
 	ctl_t b = 1;
 	if (ioctl(sock, FIONBIO, &b)) {
-		JLOG_ERROR("Setting non-blocking mode for UDP socket failed, errno=%d", errno);
+		JLOG_ERROR("Setting non-blocking mode for UDP socket failed, errno=%d", sockerrno);
 		goto error;
 	}
 
@@ -97,7 +98,7 @@ uint16_t juice_udp_get_port(socket_t sock) {
 	struct sockaddr_storage sa;
 	socklen_t sl = sizeof(sa);
 	if (getsockname(sock, (struct sockaddr *)&sa, &sl)) {
-		JLOG_WARN("getsockname failed, errno=%d", errno);
+		JLOG_WARN("getsockname failed, errno=%d", sockerrno);
 		return 0;
 	}
 
@@ -117,7 +118,7 @@ int udp_get_addrs(socket_t sock, addr_record_t *records, size_t count) {
 #ifndef NO_IFADDRS
 	struct ifaddrs *ifas;
 	if (getifaddrs(&ifas)) {
-		JLOG_ERROR("getifaddrs failed, errno=%d", errno);
+		JLOG_ERROR("getifaddrs failed, errno=%d", sockerrno);
 		return -1;
 	}
 
@@ -175,7 +176,7 @@ int udp_get_addrs(socket_t sock, addr_record_t *records, size_t count) {
 
 	char hostname[HOST_NAME_MAX];
 	if (gethostname(hostname, HOST_NAME_MAX)) {
-		JLOG_ERROR("gethostname failed, errno=%d", errno);
+		JLOG_ERROR("gethostname failed, errno=%d", sockerrno);
 		return -1;
 	}
 
@@ -198,7 +199,8 @@ int udp_get_addrs(socket_t sock, addr_record_t *records, size_t count) {
 	}
 
 	for (struct addrinfo *ai = ai_list; ai; ai = ai->ai_next) {
-		if ((ai->ai_family == AF_INET || ai->ai_family == AF_INET6) && !is_local_addr(sa)) {
+		if ((ai->ai_family == AF_INET || ai->ai_family == AF_INET6) &&
+		    !addr_is_local(ai->ai_addr)) {
 			++ret;
 			if (records != end) {
 				memcpy(&records->addr, ai->ai_addr, ai->ai_addrlen);

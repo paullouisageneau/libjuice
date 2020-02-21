@@ -25,11 +25,13 @@
 #include "udp.h"
 
 #include <assert.h>
+#include <inttypes.h>
 #include <math.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #define BUFFER_SIZE 4096
 
@@ -328,7 +330,7 @@ void agent_run(juice_agent_t *agent) {
 		int ret = select(n, &set, NULL, NULL, &timeout);
 		pthread_mutex_lock(&agent->mutex);
 		if (ret < 0) {
-			JLOG_ERROR("select failed, errno=%d", errno);
+			JLOG_ERROR("select failed, errno=%d", sockerrno);
 			break;
 		}
 		if (agent->thread_destroyed) {
@@ -343,7 +345,7 @@ void agent_run(juice_agent_t *agent) {
 			int len = recvfrom(agent->sock, buffer, BUFFER_SIZE, 0, (struct sockaddr *)&record.addr,
 			                   &record.len);
 			if (len < 0) {
-				JLOG_ERROR("recvfrom failed, errno=%d", errno);
+				JLOG_ERROR("recvfrom failed, errno=%d", sockerrno);
 				break;
 			}
 
