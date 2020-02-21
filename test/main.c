@@ -45,6 +45,14 @@ void on_recv2(juice_agent_t *agent, const char *data, size_t size, void *user_pt
 int preliminary_tests(void);
 
 int main(int argc, char **argv) {
+#ifdef _WIN32
+	WSADATA wsaData;
+	if (WSAStartup(MAKEWORD(2, 2), &wsaData)) {
+		fprintf(stderr, "WSAStartup failed");
+		return -1;
+	}
+#endif
+
 	int ret = preliminary_tests();
 	if (ret != 0)
 		return ret;
@@ -111,6 +119,10 @@ int main(int argc, char **argv) {
 	juice_destroy(agent1);
 	juice_destroy(agent2);
 	sleep(2);
+
+#ifdef _WIN32
+	WSACleanup();
+#endif
 
 	if (success) {
 		printf("Success\n");
