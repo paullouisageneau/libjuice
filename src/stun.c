@@ -26,6 +26,7 @@
 #include <math.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <string.h>
 
 #define STUN_MAGIC 0x2112A442
 #define STUN_FINGERPRINT_XOR 0x5354554E // "STUN"

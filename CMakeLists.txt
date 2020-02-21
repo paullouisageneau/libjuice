@@ -38,6 +38,10 @@ target_include_directories(juice PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include/jui
 target_include_directories(juice PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_link_libraries(juice Threads::Threads)
 
+if(WIN32)
+	target_link_libraries(juice "wsock32" "ws2_32") # winsock2
+endif()
+
 add_library(juice-static STATIC EXCLUDE_FROM_ALL ${LIBJUICE_SOURCES})
 set_target_properties(juice-static PROPERTIES VERSION ${PROJECT_VERSION})
 
@@ -45,6 +49,10 @@ target_include_directories(juice-static PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/inclu
 target_include_directories(juice-static PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include/juice)
 target_include_directories(juice-static PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_link_libraries(juice-static Threads::Threads)
+
+if(WIN32)
+	target_link_libraries(juice-static "wsock32" "ws2_32") # winsock2
+endif()
 
 if (USE_NETTLE)
 	find_package(Nettle REQUIRED)

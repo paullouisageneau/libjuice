@@ -19,10 +19,10 @@
 #ifndef JUICE_ADDR_H
 #define JUICE_ADDR_H
 
-#include "addr.h"
 #include "socket.h"
 
 #include <stdbool.h>
+#include <stdint.h>
 
 socklen_t addr_get_len(const struct sockaddr *sa);
 uint16_t addr_get_port(const struct sockaddr *sa);
