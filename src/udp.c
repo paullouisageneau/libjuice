@@ -277,8 +277,8 @@ int udp_get_addrs(socket_t sock, addr_record_t *records, size_t count) {
 				}
 			}
 		}
+		freeaddrinfo(ai_list);
 	}
-	freeaddrinfo(ai_list);
 #endif
 #endif
 	return ret;
