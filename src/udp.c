@@ -105,6 +105,32 @@ uint16_t juice_udp_get_port(socket_t sock) {
 	return addr_get_port((struct sockaddr *)&sa);
 }
 
+// Helper function to check if a similar address already exists in records
+static int has_duplicate_addr(struct sockaddr *addr, const addr_record_t *records, size_t count) {
+	for (size_t i = 0; i < count; ++i) {
+		const addr_record_t *record = records + i;
+		if (record->addr.ss_family == addr->sa_family) {
+			switch (addr->sa_family) {
+			case AF_INET: {
+				// For IPv4, compare the whole address
+				if (memcmp(&record->addr, addr, record->len) == 0)
+					return true;
+				break;
+			}
+			case AF_INET6: {
+				// For IPv6, compare the network part only
+				const struct sockaddr_in6 *rsin6 = (const struct sockaddr_in6 *)&record->addr;
+				const struct sockaddr_in6 *asin6 = (const struct sockaddr_in6 *)addr;
+				if (memcmp(&rsin6->sin6_addr, &asin6->sin6_addr, 8) == 0) // compare first 64 bits
+					return true;
+				break;
+			}
+			}
+		}
+	}
+	return false;
+}
+
 int udp_get_addrs(socket_t sock, addr_record_t *records, size_t count) {
 	uint16_t port = juice_udp_get_port(sock);
 	if (port == 0) {
@@ -125,11 +151,15 @@ int udp_get_addrs(socket_t sock, addr_record_t *records, size_t count) {
 	// [RFC6724] specifies that temporary addresses [RFC4941] are to be preferred over permanent
 	// addresses.
 
+	// Here, we will prevent gathering permanent IPv6 addresses if a temporary one is found.
+	// This is more restrictive but fully compliant.
+
+	addr_record_t *current = records;
 	addr_record_t *end = records + count;
 	int ret = 0;
 
 #ifdef _WIN32
-	INTERFACE_INFO info[16];
+	INTERFACE_INFO info[MAX_ADDRS_COUNT];
 	memset(info, 0, sizeof(info));
 	DWORD len = 0;
 	if (WSAIoctl(sock, SIO_GET_INTERFACE_LIST, NULL, 0, info, sizeof(info), &len, NULL, NULL)) {
@@ -139,8 +169,6 @@ int udp_get_addrs(socket_t sock, addr_record_t *records, size_t count) {
 
 	int n = len / sizeof(INTERFACE_INFO);
 
-	// Here, we will prevent gathering permanent IPv6 addresses if a temporary one is found. This is
-	// more restrictive but fully compliant.
 	bool has_temp_inet6 = false;
 	for (int i = 0; i < n; ++i) {
 		ULONG flags = info[i].iiFlags;
@@ -162,18 +190,16 @@ int udp_get_addrs(socket_t sock, addr_record_t *records, size_t count) {
 		struct sockaddr *sa = (sockaddr *)&info[i].iiAddress;
 		socklen_t len;
 		if ((sa->sa_family == AF_INET || sa->sa_family == AF_INET6) && !addr_is_local(sa) &&
-		    (len = addr_get_len(sa))) {
-
-			// Do not gather permanent addresses if a temporary one was found
-			if (sa->sa_family == AF_INET6 && has_temp_inet6 && !addr_is_temp_inet6(sa))
-				continue;
-
-			++ret;
-			if (records != end) {
-				memcpy(&records->addr, sa, len);
-				addr_set_port((struct sockaddr *)&records->addr, port);
-				records->len = len;
-				++records;
+		    !(has_temp_inet6 && sa->sa_family == AF_INET6 && !addr_is_temp_inet6(sa)) &&
+		    (len = addr_get_len(sa)) > 0) {
+			if (!has_duplicate_addr(sa, records, current - records)) {
+				++ret;
+				if (current != end) {
+					memcpy(&current->addr, sa, len);
+					addr_set_port((struct sockaddr *)&current->addr, port);
+					current->len = len;
+					++current;
+				}
 			}
 		}
 	}
@@ -185,8 +211,6 @@ int udp_get_addrs(socket_t sock, addr_record_t *records, size_t count) {
 		return -1;
 	}
 
-	// Here, we will prevent gathering permanent IPv6 addresses if a temporary one is found. This is
-	// more restrictive but fully compliant.
 	bool has_temp_inet6 = false;
 	for (struct ifaddrs *ifa = ifas; ifa; ifa = ifa->ifa_next) {
 		unsigned int flags = ifa->ifa_flags;
@@ -206,18 +230,16 @@ int udp_get_addrs(socket_t sock, addr_record_t *records, size_t count) {
 		struct sockaddr *sa = ifa->ifa_addr;
 		socklen_t len;
 		if (sa && (sa->sa_family == AF_INET || sa->sa_family == AF_INET6) && !addr_is_local(sa) &&
-		    (len = addr_get_len(sa))) {
-
-			// Do not gather permanent addresses if a temporary one was found
-			if (sa->sa_family == AF_INET6 && has_temp_inet6 && !addr_is_temp_inet6(sa))
-				continue;
-
-			++ret;
-			if (records != end) {
-				memcpy(&records->addr, sa, len);
-				addr_set_port((struct sockaddr *)&records->addr, port);
-				records->len = len;
-				++records;
+		    !(has_temp_inet6 && sa->sa_family == AF_INET6 && !addr_is_temp_inet6(sa)) &&
+		    (len = addr_get_len(sa)) > 0) {
+			if (!has_duplicate_addr(sa, records, current - records)) {
+				++ret;
+				if (current != end) {
+					memcpy(&current->addr, sa, len);
+					addr_set_port((struct sockaddr *)&current->addr, port);
+					current->len = len;
+					++current;
+				}
 			}
 		}
 	}
@@ -225,29 +247,31 @@ int udp_get_addrs(socket_t sock, addr_record_t *records, size_t count) {
 	freeifaddrs(ifas);
 
 #else // NO_IFADDRS defined
-	char buf[16384];
+	char buf[MAX_ADDRS_COUNT * 256];
 	struct ifconf ifc;
-	memcpy(&ifc, 0, sizeof(ifc));
+	memset(&ifc, 0, sizeof(ifc));
 	ifc.ifc_len = sizeof(buf);
 	ifc.ifc_buf = buf;
 
 	if (ioctl(sock, SIOCGIFCONF, &ifc)) {
-		JLOG_ERROR("ioctl with SIOCGIFCONF failed, errno=%d", sockerrno);
+		JLOG_ERROR("ioctl for SIOCGIFCONF failed, errno=%d", sockerrno);
 		return -1;
 	}
 
-	int n = ifc.ifc_len / sizeof(struct ifconf);
-	struct ifreq *ifr = ifc.ifc_req;
+	int n = ifc.ifc_len / sizeof(struct ifreq);
 	for (int i = 0; i < n; ++i) {
-		struct sockaddr *sa = &ifr[i].ifr_addr;
-		socklen_t len;
-		if (sa->sa_family == AF_INET && !addr_is_local(sa) && (len = addr_get_len(sa))) {
-			++ret;
-			if (records != end) {
-				memcpy(&records->addr, sa, len);
-				addr_set_port((struct sockaddr *)&records->addr, port);
-				records->len = len;
-				++records;
+		struct ifreq *ifr = ifc.ifc_req + i;
+		struct sockaddr *sa = &ifr->ifr_addr;
+		if (sa->sa_family == AF_INET && !addr_is_local(sa)) {
+			struct sockaddr_in *sin = (struct sockaddr_in *)&ifr->ifr_addr;
+			if (!has_duplicate_addr(sa, records, current - records)) {
+				++ret;
+				if (current != end) {
+					memcpy(&current->addr, sin, sizeof(*sin));
+					addr_set_port((struct sockaddr *)&current->addr, port);
+					current->len = sizeof(*sin);
+					++current;
+				}
 			}
 		}
 	}
@@ -267,13 +291,23 @@ int udp_get_addrs(socket_t sock, addr_record_t *records, size_t count) {
 	hints.ai_protocol = 0;
 	hints.ai_flags = AI_ADDRCONFIG | AI_NUMERICSERV;
 	if (getaddrinfo(hostname, service, &hints, &ai_list) == 0) {
+		bool has_temp_inet6 = false;
 		for (struct addrinfo *ai = ai_list; ai; ai = ai->ai_next) {
-			if (ai->ai_family == AF_INET6 && !addr_is_local(ai->ai_addr)) {
-				++ret;
-				if (records != end) {
-					memcpy(&records->addr, ai->ai_addr, ai->ai_addrlen);
-					records->len = ai->ai_addrlen;
-					++records;
+			if (addr_is_temp_inet6(ai->ai_addr)) {
+				has_temp_inet6 = true;
+				break;
+			}
+		}
+	    for (struct addrinfo *ai = ai_list; ai; ai = ai->ai_next) {
+			if (!addr_is_local(ai->ai_addr) &&
+			    !(has_temp_inet6 && !addr_is_temp_inet6(ai->ai_addr))) {
+				if (!has_duplicate_addr(ai->ai_addr, records, current - records)) {
+					++ret;
+					if (current != end) {
+						memcpy(&current->addr, ai->ai_addr, ai->ai_addrlen);
+						current->len = ai->ai_addrlen;
+						++current;
+					}
 				}
 			}
 		}

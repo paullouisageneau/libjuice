@@ -22,6 +22,8 @@
 #include "addr.h"
 #include "socket.h"
 
+#define MAX_ADDRS_COUNT 16
+
 socket_t udp_create_socket(void);
 uint16_t udp_get_port(socket_t sock);
 int udp_get_addrs(socket_t sock, addr_record_t *records, size_t count);
