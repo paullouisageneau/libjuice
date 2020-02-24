@@ -73,6 +73,10 @@ typedef u_long ctl_t;
 #include <sys/types.h>
 #include <unistd.h>
 
+#ifndef __linux__
+#define NO_PMTUDISC
+#endif
+
 #ifdef __ANDROID__
 #define NO_IFADDRS
 #else
