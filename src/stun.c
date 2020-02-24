@@ -32,9 +32,13 @@
 #define STUN_FINGERPRINT_XOR 0x5354554E // "STUN"
 #define STUN_ATTR_SIZE sizeof(struct stun_attr)
 
+#ifndef htonll
 #define htonll(x)                                                                                  \
 	((uint64_t)htonl(((uint64_t)(x)&0xFFFFFFFF) << 32) | (uint64_t)htonl((uint64_t)(x) >> 32))
+#endif
+#ifndef ntohll
 #define ntohll(x) htonll(x)
+#endif
 
 static size_t align32(size_t len) {
 	while (len & 0x03)
