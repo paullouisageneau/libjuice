@@ -514,6 +514,8 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 		// Pending
 		if (selected_pair)
 			agent_change_state(agent, JUICE_STATE_CONNECTED);
+		else
+			agent_change_state(agent, JUICE_STATE_CONNECTING);
 	}
 
 	for (int i = 0; i < agent->entries_count; ++i) {
