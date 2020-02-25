@@ -161,7 +161,7 @@ int udp_get_addrs(socket_t sock, addr_record_t *records, size_t count) {
 #ifdef _WIN32
 	char buf[4096];
 	DWORD len = 0;
-	if (WSAIoctl(sock, SIO_ADDRESS_LIST_QUERY, NULL, 0, buf, 4096, &len, NULL, NULL)) {
+	if (WSAIoctl(sock, SIO_ADDRESS_LIST_QUERY, NULL, 0, buf, sizeof(buf), &len, NULL, NULL)) {
 		JLOG_ERROR("WSAIoctl with SIO_ADDRESS_LIST_QUERY failed, errno=%d", WSAGetLastError());
 		return -1;
 	}
@@ -238,7 +238,7 @@ int udp_get_addrs(socket_t sock, addr_record_t *records, size_t count) {
 	freeifaddrs(ifas);
 
 #else // NO_IFADDRS defined
-	char buf[MAX_ADDRS_COUNT * 256];
+	char buf[4096];
 	struct ifconf ifc;
 	memset(&ifc, 0, sizeof(ifc));
 	ifc.ifc_len = sizeof(buf);
