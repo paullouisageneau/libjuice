@@ -293,7 +293,7 @@ void agent_run(juice_agent_t *agent) {
 		if (records_count > 0) {
 			if (records_count > MAX_STUN_SERVER_RECORDS_COUNT)
 				records_count = MAX_STUN_SERVER_RECORDS_COUNT;
-			JLOG_VERBOSE("Sending STUN binding request to %zu server addresses", records_count);
+			JLOG_VERBOSE("Sending STUN binding request to %d server addresses", records_count);
 			for (int i = 0; i < records_count; ++i) {
 				if (agent->entries_count >= MAX_STUN_ENTRIES_COUNT)
 					break;
