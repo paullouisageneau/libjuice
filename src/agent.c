@@ -124,7 +124,8 @@ int agent_gather_candidates(juice_agent_t *agent) {
 		records_count = 0;
 	} else if (records_count == 0) {
 		JLOG_WARN("No local host candidates gathered");
-	}
+	} else if (records_count > ICE_MAX_CANDIDATES_COUNT - 1)
+		records_count = ICE_MAX_CANDIDATES_COUNT - 1;
 
 	JLOG_VERBOSE("Adding %d local host candidates", records_count);
 	for (int i = 0; i < records_count; ++i) {
