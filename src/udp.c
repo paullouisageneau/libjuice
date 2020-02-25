@@ -159,45 +159,36 @@ int udp_get_addrs(socket_t sock, addr_record_t *records, size_t count) {
 	int ret = 0;
 
 #ifdef _WIN32
-	INTERFACE_INFO info[MAX_ADDRS_COUNT];
-	memset(info, 0, sizeof(info));
+	char buf[4096];
 	DWORD len = 0;
-	if (WSAIoctl(sock, SIO_GET_INTERFACE_LIST, NULL, 0, info, sizeof(info), &len, NULL, NULL)) {
-		JLOG_ERROR("WSAIoctl with SIO_GET_INTERFACE failed, errno=%d", sockerrno);
+	if (WSAIoctl(sock, SIO_ADDRESS_LIST_QUERY, NULL, 0, buf, 4096, &len, NULL, NULL)) {
+		JLOG_ERROR("WSAIoctl with SIO_ADDRESS_LIST_QUERY failed, errno=%d", WSAGetLastError());
 		return -1;
 	}
 
-	int n = len / sizeof(INTERFACE_INFO);
+	SOCKET_ADDRESS_LIST *list = (SOCKET_ADDRESS_LIST *)buf;
 
 	bool has_temp_inet6 = false;
-	for (int i = 0; i < n; ++i) {
-		ULONG flags = info[i].iiFlags;
-		if (!(flags & IFF_UP) || (flags & IFF_LOOPBACK))
-			continue;
-
-		struct sockaddr *sa = (sockaddr *)&info[i].iiAddress;
+	for (int i = 0; i < list->iAddressCount; ++i) {
+		struct sockaddr *sa = list->Address[i].lpSockaddr;
 		if (addr_is_temp_inet6(sa)) {
 			has_temp_inet6 = true;
 			break;
 		}
 	}
 
-	for (int i = 0; i < len; ++i) {
-		ULONG flags = info[i].iiFlags;
-		if (!(flags & IFF_UP) || (flags & IFF_LOOPBACK))
-			continue;
-
-		struct sockaddr *sa = (sockaddr *)&info[i].iiAddress;
-		socklen_t len;
+	for (int i = 0; i < list->iAddressCount; ++i) {
+		struct sockaddr *sa = list->Address[i].lpSockaddr;
+		socklen_t len = list->Address[i].iSockaddrLength;
 		if ((sa->sa_family == AF_INET || sa->sa_family == AF_INET6) && !addr_is_local(sa) &&
-		    !(has_temp_inet6 && sa->sa_family == AF_INET6 && !addr_is_temp_inet6(sa)) &&
-		    (len = addr_get_len(sa)) > 0) {
+		    !(has_temp_inet6 && sa->sa_family == AF_INET6 && !addr_is_temp_inet6(sa))) {
 			if (!has_duplicate_addr(sa, records, current - records)) {
 				++ret;
 				if (current != end) {
 					memcpy(&current->addr, sa, len);
-					addr_set_port((struct sockaddr *)&current->addr, port);
 					current->len = len;
+					addr_unmap_inet6_v4mapped((struct sockaddr *)&current->addr, &current->len);
+					addr_set_port((struct sockaddr *)&current->addr, port);
 					++current;
 				}
 			}
@@ -236,8 +227,8 @@ int udp_get_addrs(socket_t sock, addr_record_t *records, size_t count) {
 				++ret;
 				if (current != end) {
 					memcpy(&current->addr, sa, len);
-					addr_set_port((struct sockaddr *)&current->addr, port);
 					current->len = len;
+					addr_set_port((struct sockaddr *)&current->addr, port);
 					++current;
 				}
 			}
@@ -268,8 +259,8 @@ int udp_get_addrs(socket_t sock, addr_record_t *records, size_t count) {
 				++ret;
 				if (current != end) {
 					memcpy(&current->addr, sin, sizeof(*sin));
-					addr_set_port((struct sockaddr *)&current->addr, port);
 					current->len = sizeof(*sin);
+					addr_set_port((struct sockaddr *)&current->addr, port);
 					++current;
 				}
 			}
