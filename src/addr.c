@@ -132,8 +132,10 @@ int addr_resolve(const char *hostname, const char *service, addr_record_t *recor
 	hints.ai_protocol = IPPROTO_UDP;
 	hints.ai_flags = AI_ADDRCONFIG;
 	struct addrinfo *ai_list = NULL;
-	if (getaddrinfo(hostname, service, &hints, &ai_list))
+	if (getaddrinfo(hostname, service, &hints, &ai_list)) {
+		JLOG_WARN("Address resolution failed for %s:%s", hostname, service);
 		return -1;
+	}
 
 	int ret = 0;
 	for (struct addrinfo *ai = ai_list; ai; ai = ai->ai_next) {
