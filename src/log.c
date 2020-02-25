@@ -19,9 +19,14 @@
 #include "log.h"
 
 #include <pthread.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
+
+#ifndef _WIN32
+#include <unistd.h>
+#endif
 
 #define BUFFER_SIZE 4096
 
@@ -39,6 +44,14 @@ static const char *log_level_colors[] = {
 static juice_log_level_t log_level = JUICE_LOG_LEVEL_WARN;
 static juice_log_cb_t log_cb = NULL;
 static pthread_mutex_t log_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+static bool use_color(void) {
+#ifdef _WIN32
+	return false;
+#else
+	return isatty(fileno(stdout)) != 0;
+#endif
+}
 
 void juice_set_log_level(juice_log_level_t level) {
 	pthread_mutex_lock(&log_mutex);
@@ -84,7 +97,9 @@ void juice_log_write(juice_log_level_t level, const char *file, int line, const 
 		if (strftime(buffer, 16, "%H:%M:%S", lt) == 0)
 			buffer[0] = '\0';
 
-		fprintf(stdout, "%s", log_level_colors[level]);
+		if (use_color())
+			fprintf(stdout, "%s", log_level_colors[level]);
+
 		fprintf(stdout, "%s %-7s %s:%d: ", buffer, log_level_names[level], filename, line);
 
 		va_list args;
@@ -92,7 +107,9 @@ void juice_log_write(juice_log_level_t level, const char *file, int line, const 
 		vfprintf(stdout, fmt, args);
 		va_end(args);
 
-		fprintf(stdout, "%s", "\x1B[0m\x1B[0K");
+		if (use_color())
+			fprintf(stdout, "%s", "\x1B[0m\x1B[0K");
+
 		fprintf(stdout, "\n");
 		fflush(stdout);
 	}
