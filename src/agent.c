@@ -239,9 +239,14 @@ int agent_send(juice_agent_t *agent, const char *data, size_t size) {
 		return -1;
 	}
 	const addr_record_t *record = &agent->selected_pair->remote->resolved;
+#ifdef _WIN32
+	addr_record_t tmp = *record;
+	addr_map_inet6_v4mapped(&tmp.addr, &tmp.len);
+	int ret = sendto(agent->sock, data, size, 0, (struct sockaddr *)&tmp.addr, tmp.len);
+#else
 	int ret =
 	    sendto(agent->sock, data, size, 0, (const struct sockaddr *)&record->addr, record->len);
-
+#endif
 	if (ret >= 0) {
 		// Reset keepalive
 		for (int i = 0; i < agent->entries_count; ++i) {
@@ -852,9 +857,16 @@ int agent_send_stun_binding(juice_agent_t *agent, const agent_stun_entry_t *entr
 		JLOG_ERROR("STUN message write failed");
 		return -1;
 	}
-	if (sendto(agent->sock, buffer, size, 0, (struct sockaddr *)&entry->record.addr,
-	           entry->record.len) <= 0) {
-		JLOG_ERROR("STUN message send failed");
+#ifdef _WIN32
+	addr_record_t tmp = entry->record;
+	addr_map_inet6_v4mapped(&tmp.addr, &tmp.len);
+	int ret = sendto(agent->sock, buffer, size, 0, (struct sockaddr *)&tmp.addr, tmp.len);
+#else
+	int ret = sendto(agent->sock, buffer, size, 0, (const struct sockaddr *)&entry->record.addr,
+	                 entry->record.len);
+#endif
+	if (ret <= 0) {
+		JLOG_ERROR("STUN message send failed, errno=%d", sockerrno);
 		return -1;
 	}
 	return 0;
