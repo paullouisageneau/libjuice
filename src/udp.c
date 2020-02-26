@@ -71,7 +71,10 @@ socket_t udp_create_socket(void) {
 	int val = IP_PMTUDISC_DO;
 	setsockopt(sock, IPPROTO_IP, IP_MTU_DISCOVER, (char *)&val, sizeof(val));
 #else
+// It seems Mac OS lacks a way to set the DF flag...
+#ifndef __APPLE__
 	setsockopt(sock, IPPROTO_IP, IP_DONTFRAG, (char *)&enabled, sizeof(enabled));
+#endif
 #endif
 
 	// Bind it
