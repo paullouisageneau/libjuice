@@ -68,17 +68,20 @@ void juice_random(void *buf, size_t size) {
 	if (random_bytes(buf, size) == 0)
 		return;
 
-#ifdef __unix__
+	static bool srandom_called = false;
+
+#if defined(__unix__) || defined(__APPLE__)
 #define random_func random
 #define srandom_func srandom
-	JLOG_DEBUG("Using random() for random bytes");
+	if (!srandom_called)
+		JLOG_DEBUG("Using random() for random bytes");
 #else
 #define random_func rand
 #define srandom_func srand
-	JLOG_WARN("Falling back on rand() for random bytes");
+	if (!srandom_called)
+		JLOG_WARN("Falling back on rand() for random bytes");
 #endif
 
-	static bool srandom_called = false;
 	if (!srandom_called) {
 		unsigned int seed;
 		struct timespec ts;

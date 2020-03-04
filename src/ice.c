@@ -86,7 +86,7 @@ static int parse_sdp_candidate(const char *line, ice_candidate_t *candidate) {
 	else if (strcmp(type, "relay") == 0)
 		candidate->type = ICE_CANDIDATE_TYPE_RELAYED;
 	else {
-		JLOG_WARN("Ignoring candidate with unknow type \"%s\"", type);
+		JLOG_WARN("Ignoring candidate with unknown type \"%s\"", type);
 		return -1;
 	}
 
@@ -138,6 +138,8 @@ static void compute_candidate_priority(ice_candidate_t *candidate) {
 
 int ice_parse_sdp(const char *sdp, ice_description_t *description) {
 	memset(description, 0, sizeof(*description));
+	description->candidates_count = 0;
+	description->finished = false;
 
 	char buffer[BUFFER_SIZE];
 	size_t size = 0;
@@ -154,6 +156,10 @@ int ice_parse_sdp(const char *sdp, ice_description_t *description) {
 		++sdp;
 	}
 	ice_sort_candidates(description);
+
+	JLOG_DEBUG("Parsed remote description: ufrag=\"%s\", pwd=\"%s\", candidates=%d",
+	           description->ice_ufrag, description->ice_pwd, description->candidates_count);
+
 	return *description->ice_ufrag && *description->ice_pwd ? 0 : -1;
 }
 
@@ -173,6 +179,9 @@ int ice_create_local_description(ice_description_t *description) {
 	juice_random_str64(description->ice_ufrag, 4 + 1);
 	juice_random_str64(description->ice_pwd, 22 + 1);
 	description->candidates_count = 0;
+	description->finished = false;
+	JLOG_DEBUG("Created local description: ufrag=\"%s\", pwd=\"%s\"", description->ice_ufrag,
+	           description->ice_pwd);
 	return 0;
 }
 
@@ -221,10 +230,6 @@ int ice_resolve_candidate(ice_candidate_t *candidate, ice_resolve_mode_t mode) {
 }
 
 int ice_add_candidate(ice_candidate_t *candidate, ice_description_t *description) {
-	if (description->finished) {
-		JLOG_WARN("Trying to add candidate to finished description");
-		return -1;
-	}
 	if (description->candidates_count >= ICE_MAX_CANDIDATES_COUNT)
 		return -1;
 

@@ -239,7 +239,7 @@ int agent_send(juice_agent_t *agent, const char *data, size_t size) {
 		return -1;
 	}
 	const addr_record_t *record = &agent->selected_pair->remote->resolved;
-#ifdef _WIN32
+#if defined(_WIN32) || defined(__APPLE__)
 	addr_record_t tmp = *record;
 	addr_map_inet6_v4mapped(&tmp.addr, &tmp.len);
 	int ret = sendto(agent->sock, data, size, 0, (struct sockaddr *)&tmp.addr, tmp.len);
@@ -329,7 +329,7 @@ void agent_run(juice_agent_t *agent) {
 		JLOG_VERBOSE("Setting select timeout to %ld ms", (long)timediff);
 		struct timeval timeout;
 		timeout.tv_sec = timediff / 1000;
-		timeout.tv_usec = timediff * 1000;
+		timeout.tv_usec = (timediff % 1000) * 1000;
 		fd_set set;
 		FD_ZERO(&set);
 		FD_SET(agent->sock, &set);
@@ -338,7 +338,7 @@ void agent_run(juice_agent_t *agent) {
 		int ret = select(n, &set, NULL, NULL, &timeout);
 		pthread_mutex_lock(&agent->mutex);
 		if (ret < 0) {
-			JLOG_ERROR("select failed, errno=%d", sockerrno);
+			JLOG_FATAL("select failed, errno=%d", sockerrno);
 			break;
 		}
 		if (agent->thread_destroyed) {
@@ -857,7 +857,7 @@ int agent_send_stun_binding(juice_agent_t *agent, const agent_stun_entry_t *entr
 		JLOG_ERROR("STUN message write failed");
 		return -1;
 	}
-#ifdef _WIN32
+#if defined(_WIN32) || defined(__APPLE__)
 	addr_record_t tmp = entry->record;
 	addr_map_inet6_v4mapped(&tmp.addr, &tmp.len);
 	int ret = sendto(agent->sock, buffer, size, 0, (struct sockaddr *)&tmp.addr, tmp.len);
@@ -897,9 +897,6 @@ int agent_add_local_reflexive_candidate(juice_agent_t *agent, ice_candidate_type
 		return -1;
 	}
 	JLOG_DEBUG("Gathered reflexive candidate: %s", buffer);
-
-	if (agent->config.cb_candidate)
-		agent->config.cb_candidate(agent, buffer, agent->config.user_ptr);
 	return 0;
 }
 

@@ -38,10 +38,6 @@ target_include_directories(juice PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include/jui
 target_include_directories(juice PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_link_libraries(juice Threads::Threads)
 
-if(WIN32)
-	target_link_libraries(juice "wsock32" "ws2_32") # winsock2
-endif()
-
 add_library(juice-static STATIC EXCLUDE_FROM_ALL ${LIBJUICE_SOURCES})
 set_target_properties(juice-static PROPERTIES VERSION ${PROJECT_VERSION})
 
@@ -51,6 +47,7 @@ target_include_directories(juice-static PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_link_libraries(juice-static Threads::Threads)
 
 if(WIN32)
+	target_link_libraries(juice "wsock32" "ws2_32") # winsock2
 	target_link_libraries(juice-static "wsock32" "ws2_32") # winsock2
 endif()
 
@@ -66,6 +63,12 @@ else()
     target_link_libraries(juice OpenSSL::SSL)
     target_compile_definitions(juice-static PRIVATE USE_NETTLE=0)
     target_link_libraries(juice-static OpenSSL::SSL)
+endif()
+
+if(APPLE)
+	# This seems to be necessary on MacOS
+	target_include_directories(juice PRIVATE /usr/local/include)
+	target_include_directories(juice-static PRIVATE /usr/local/include)
 endif()
 
 add_library(LibJuice::LibJuice ALIAS juice)
