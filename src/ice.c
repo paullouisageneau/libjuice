@@ -138,6 +138,8 @@ static void compute_candidate_priority(ice_candidate_t *candidate) {
 
 int ice_parse_sdp(const char *sdp, ice_description_t *description) {
 	memset(description, 0, sizeof(*description));
+	description->candidates_count = 0;
+	description->finished = false;
 
 	char buffer[BUFFER_SIZE];
 	size_t size = 0;
@@ -173,6 +175,7 @@ int ice_create_local_description(ice_description_t *description) {
 	juice_random_str64(description->ice_ufrag, 4 + 1);
 	juice_random_str64(description->ice_pwd, 22 + 1);
 	description->candidates_count = 0;
+	description->finished = false;
 	return 0;
 }
 
