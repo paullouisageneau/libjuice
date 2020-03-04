@@ -897,9 +897,6 @@ int agent_add_local_reflexive_candidate(juice_agent_t *agent, ice_candidate_type
 		return -1;
 	}
 	JLOG_DEBUG("Gathered reflexive candidate: %s", buffer);
-
-	if (agent->config.cb_candidate)
-		agent->config.cb_candidate(agent, buffer, agent->config.user_ptr);
 	return 0;
 }
 

@@ -86,7 +86,7 @@ static int parse_sdp_candidate(const char *line, ice_candidate_t *candidate) {
 	else if (strcmp(type, "relay") == 0)
 		candidate->type = ICE_CANDIDATE_TYPE_RELAYED;
 	else {
-		JLOG_WARN("Ignoring candidate with unknow type \"%s\"", type);
+		JLOG_WARN("Ignoring candidate with unknown type \"%s\"", type);
 		return -1;
 	}
 
