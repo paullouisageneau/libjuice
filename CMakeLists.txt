@@ -68,6 +68,11 @@ else()
     target_link_libraries(juice-static OpenSSL::SSL)
 endif()
 
+if(APPLE)
+	target_include_directories(juice PRIVATE /usr/local/include)
+	target_include_directories(juice-static PRIVATE /usr/local/include)
+endif()
+
 add_library(LibJuice::LibJuice ALIAS juice)
 add_library(LibJuice::LibJuiceStatic ALIAS juice-static)
 
