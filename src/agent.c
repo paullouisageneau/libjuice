@@ -329,7 +329,7 @@ void agent_run(juice_agent_t *agent) {
 		JLOG_VERBOSE("Setting select timeout to %ld ms", (long)timediff);
 		struct timeval timeout;
 		timeout.tv_sec = timediff / 1000;
-		timeout.tv_usec = timediff * 1000;
+		timeout.tv_usec = (timediff % 1000) * 1000;
 		fd_set set;
 		FD_ZERO(&set);
 		FD_SET(agent->sock, &set);
@@ -338,7 +338,7 @@ void agent_run(juice_agent_t *agent) {
 		int ret = select(n, &set, NULL, NULL, &timeout);
 		pthread_mutex_lock(&agent->mutex);
 		if (ret < 0) {
-			JLOG_ERROR("select failed, errno=%d", sockerrno);
+			JLOG_FATAL("select failed, errno=%d", sockerrno);
 			break;
 		}
 		if (agent->thread_destroyed) {
