@@ -1,0 +1,18 @@
+name: Build and test
+on: [push]
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v2
+    - name: install packages
+      run: sudo apt update && sudo apt install nettle-dev
+    - name: cmake
+      run: cmake -B build -DUSE_NETTLE=1
+    - name: make
+      run: (cd build; make)
+    - name: test
+      run: ./build/tests
