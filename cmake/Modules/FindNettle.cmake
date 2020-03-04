@@ -1,5 +1,5 @@
 if (NOT TARGET Nettle::Nettle)
-	find_path(NETTLE_INCLUDE_DIR nettle/sha.h)
+	find_path(NETTLE_INCLUDE_DIR nettle/hmac.h)
 	find_library(NETTLE_LIBRARY NAMES nettle libnettle)
 
 	include(FindPackageHandleStandardArgs)
