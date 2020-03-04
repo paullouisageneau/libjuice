@@ -230,10 +230,6 @@ int ice_resolve_candidate(ice_candidate_t *candidate, ice_resolve_mode_t mode) {
 }
 
 int ice_add_candidate(ice_candidate_t *candidate, ice_description_t *description) {
-	if (description->finished) {
-		JLOG_WARN("Trying to add candidate to finished description");
-		return -1;
-	}
 	if (description->candidates_count >= ICE_MAX_CANDIDATES_COUNT)
 		return -1;
 
