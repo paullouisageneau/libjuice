@@ -156,6 +156,10 @@ int ice_parse_sdp(const char *sdp, ice_description_t *description) {
 		++sdp;
 	}
 	ice_sort_candidates(description);
+
+	JLOG_DEBUG("Parsed remote description: ufrag=\"%s\", pwd=\"%s\", candidates=%d",
+	           description->ice_ufrag, description->ice_pwd, description->candidates_count);
+
 	return *description->ice_ufrag && *description->ice_pwd ? 0 : -1;
 }
 
@@ -176,6 +180,8 @@ int ice_create_local_description(ice_description_t *description) {
 	juice_random_str64(description->ice_pwd, 22 + 1);
 	description->candidates_count = 0;
 	description->finished = false;
+	JLOG_DEBUG("Created local description: ufrag=\"%s\", pwd=\"%s\"", description->ice_ufrag,
+	           description->ice_pwd);
 	return 0;
 }
 
