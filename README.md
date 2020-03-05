@@ -39,5 +39,5 @@ $ make USE_NETTLE=1
 
 ## Example
 
-See [test/main.c](https://github.com/paullouisageneau/libjuice/blob/master/test/main.c) for a complete local connection example.
+See [test/connectivity.c](https://github.com/paullouisageneau/libjuice/blob/master/test/connectivity.c) for a complete local connection example.
 

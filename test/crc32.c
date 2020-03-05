@@ -16,32 +16,17 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include "juice/juice.h"
+#include "crc32.h"
 
-#include <stdio.h>
+#include <stdint.h>
+#include <string.h>
 
-int test_crc32(void);
-int test_stun(void);
-int test_connectivity(void);
+int test_crc32(void) {
+	const char *str = "The quick brown fox jumps over the lazy dog";
+	uint32_t expected = 0x414fa339;
 
-int main(int argc, char **argv) {
-	juice_set_log_level(JUICE_LOG_LEVEL_WARN);
-
-	if (test_crc32()) {
-		fprintf(stderr, "CRC32 implementation check failed\n");
-		return -2;
-	}
-
-	if (test_stun()) {
-		fprintf(stderr, "STUN parsing implementation check failed\n");
-		return -3;
-	}
-
-	if (test_connectivity()) {
-		fprintf(stderr, "Connectivity check failed\n");
+	if (CRC32(str, strlen(str)) != expected)
 		return -1;
-	}
 
 	return 0;
 }
-
