@@ -44,6 +44,15 @@ static timestamp_t current_timestamp() {
 
 juice_agent_t *agent_create(const juice_config_t *config) {
 	JLOG_VERBOSE("Creating agent");
+
+#ifdef _WIN32
+	WSADATA wsaData;
+	if (WSAStartup(MAKEWORD(2, 2), &wsaData)) {
+		JLOG_FATAL("WSAStartup failed");
+		return NULL;
+	}
+#endif
+
 	juice_agent_t *agent = malloc(sizeof(juice_agent_t));
 	if (!agent) {
 		JLOG_FATAL("malloc for agent failed");
@@ -80,6 +89,10 @@ void agent_do_destroy(juice_agent_t *agent) {
 	close(agent->sock);
 	pthread_mutex_destroy(&agent->mutex);
 	free(agent);
+
+#ifdef _WIN32
+	WSACleanup();
+#endif
 }
 
 void agent_destroy(juice_agent_t *agent) {
