@@ -68,5 +68,8 @@ int test_stun(void) {
 	if (!msg.ice_controlled)
 		return -1;
 
+	if (!msg.has_integrity)
+		return -1;
+
 	return 0;
 }
