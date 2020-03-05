@@ -25,6 +25,9 @@ set(LIBJUICE_SOURCES
 
 set(TESTS_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/test/main.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/test/crc32.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/test/stun.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/test/connectivity.c
 )
 
 set(THREADS_PREFER_PTHREAD_FLAG ON)
