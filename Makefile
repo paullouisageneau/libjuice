@@ -26,6 +26,9 @@ LDLIBS+=$(shell pkg-config --libs $(LIBS))
 SRCS=$(shell printf "%s " src/*.c)
 OBJS=$(subst .c,.o,$(SRCS))
 
+TEST_SRCS=$(shell printf "%s " test/*.c)
+TEST_OBJS=$(subst .c,.o,$(TEST_SRCS))
+
 all: $(NAME).a $(NAME).so tests
 
 src/%.o: src/%.c
@@ -42,8 +45,8 @@ $(NAME).a: $(OBJS)
 $(NAME).so: $(OBJS)
 	$(CC) $(LDFLAGS) -shared -o $@ $(OBJS) $(LDLIBS)
 
-tests: $(NAME).a test/main.o
-	$(CC) $(LDFLAGS) -o $@ test/main.o $(LDLIBS) $(NAME).a
+tests: $(NAME).a $(TEST_OBJS)
+	$(CC) $(LDFLAGS) -o $@ $(TEST_OBJS) $(LDLIBS) $(NAME).a
 
 clean:
 	-$(RM) include/juice/*.d *.d
