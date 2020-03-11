@@ -86,7 +86,7 @@ juice_agent_t *agent_create(const juice_config_t *config) {
 
 void agent_do_destroy(juice_agent_t *agent) {
 	JLOG_VERBOSE("Destroying agent");
-	close(agent->sock);
+	closesocket(agent->sock);
 	pthread_mutex_destroy(&agent->mutex);
 	free(agent);
 

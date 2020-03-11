@@ -48,8 +48,6 @@
 typedef SOCKET socket_t;
 typedef SOCKADDR sockaddr;
 typedef u_long ctl_t;
-#define close closesocket
-#define ioctl ioctlsocket
 #define sockerrno ((int)WSAGetLastError())
 #define IP_DONTFRAG IP_DONTFRAGMENT
 #define SOCKET_TO_INT(x) 0
@@ -88,6 +86,8 @@ typedef int ctl_t;
 #define sockerrno errno
 #define INVALID_SOCKET -1
 #define SOCKET_TO_INT(x) (x)
+#define ioctlsocket ioctl
+#define closesocket close
 
 #endif // _WIN32
 
