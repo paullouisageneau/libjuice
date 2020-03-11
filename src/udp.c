@@ -84,7 +84,7 @@ socket_t udp_create_socket(void) {
 	}
 
 	ctl_t b = 1;
-	if (ioctl(sock, FIONBIO, &b)) {
+	if (ioctlsocket(sock, FIONBIO, &b)) {
 		JLOG_ERROR("Setting non-blocking mode for UDP socket failed, errno=%d", sockerrno);
 		goto error;
 	}
@@ -247,7 +247,7 @@ int udp_get_addrs(socket_t sock, addr_record_t *records, size_t count) {
 	ifc.ifc_len = sizeof(buf);
 	ifc.ifc_buf = buf;
 
-	if (ioctl(sock, SIOCGIFCONF, &ifc)) {
+	if (ioctlsocket(sock, SIOCGIFCONF, &ifc)) {
 		JLOG_ERROR("ioctl for SIOCGIFCONF failed, errno=%d", sockerrno);
 		return -1;
 	}
