@@ -18,6 +18,7 @@
 
 #include "juice.h"
 #include "agent.h"
+#include "server.h"
 #include "ice.h"
 
 #include <stdio.h>
@@ -162,3 +163,17 @@ JUICE_EXPORT const char *juice_state_to_string(juice_state_t state) {
 		return "unknown";
 	}
 }
+
+juice_server_t *juice_server_create(uint16_t port, const juice_server_config_t *config) {
+	if (port == 0 || !config)
+		return NULL;
+
+	return server_create(port, config);
+}
+
+void juice_server_destroy(juice_server_t *server) {
+	if(server)
+		server_destroy(server);
+}
+
+

@@ -33,16 +33,16 @@ extern "C" {
 #define JUICE_EXPORT
 #endif
 
+#define JUICE_ERR_SUCCESS 0
+#define JUICE_ERR_INVALID -1   // invalid argument
+#define JUICE_ERR_FAILED -2    // runtime error
+#define JUICE_ERR_NOT_AVAIL -3 // element not available
+
 // ICE Agent
 
 #define JUICE_MAX_ADDRESS_STRING_LEN 56
 #define JUICE_MAX_CANDIDATE_SDP_STRING_LEN 256
 #define JUICE_MAX_SDP_STRING_LEN 4096
-
-#define JUICE_ERR_SUCCESS 0
-#define JUICE_ERR_INVALID -1   // invalid argument
-#define JUICE_ERR_FAILED -2    // runtime error
-#define JUICE_ERR_NOT_AVAIL -3 // element not available
 
 typedef struct juice_agent juice_agent_t;
 
@@ -73,7 +73,7 @@ typedef struct juice_config {
 	uint16_t stun_server_port;
 
 	juice_turn_server_t *turn_servers;
-	unsigned int turn_servers_count;
+	int turn_servers_count;
 
 	uint16_t local_port_range_begin;
 	uint16_t local_port_range_end;
@@ -102,10 +102,36 @@ JUICE_EXPORT int juice_get_selected_candidates(juice_agent_t *agent, char *local
                                                char *remote, size_t remote_size);
 JUICE_EXPORT int juice_get_selected_addresses(juice_agent_t *agent, char *local, size_t local_size,
                                               char *remote, size_t remote_size);
-
-// Utils
-
 JUICE_EXPORT const char *juice_state_to_string(juice_state_t state);
+
+
+// ICE server
+
+typedef struct juice_server juice_server_t;
+
+typedef struct juice_server_credentials {
+	const char *username;
+	const char *password;
+	int allocations_quota;
+} juice_server_credentials_t;
+
+typedef struct juice_server_config {
+	juice_server_credentials_t *credentials;
+	int credentials_count;
+
+	int max_allocations;
+	int max_peers;
+
+	uint16_t relay_port_range_begin;
+	uint16_t relay_port_range_end;
+
+	const char *realm;
+
+} juice_server_config_t;
+
+juice_server_t *juice_server_create(uint16_t port, const juice_server_config_t *config);
+void juice_server_destroy(juice_server_t *server);
+
 
 // Logging
 

@@ -122,23 +122,25 @@ int test_turn() {
 	sleep(2);
 
 	// -- Connection should be finished --
-	bool success= true;
-/*
-	// Check states
-	juice_state_t state1 = juice_get_state(agent1);
-	juice_state_t state2 = juice_get_state(agent2);
-	bool success = (state1 == JUICE_STATE_COMPLETED && state2 == JUICE_STATE_COMPLETED);
-*/
+	bool success = true;
+	/*
+	    // Check states
+	    juice_state_t state1 = juice_get_state(agent1);
+	    juice_state_t state2 = juice_get_state(agent2);
+	    bool success = (state1 == JUICE_STATE_COMPLETED && state2 == JUICE_STATE_COMPLETED);
+	*/
 	// Retrieve candidates
 	char local[JUICE_MAX_CANDIDATE_SDP_STRING_LEN];
 	char remote[JUICE_MAX_CANDIDATE_SDP_STRING_LEN];
-	if (success &= (juice_get_selected_candidates(agent1, local, JUICE_MAX_CANDIDATE_SDP_STRING_LEN,
-	                                             remote, JUICE_MAX_CANDIDATE_SDP_STRING_LEN) == 0)) {
+	if (success &=
+	    (juice_get_selected_candidates(agent1, local, JUICE_MAX_CANDIDATE_SDP_STRING_LEN, remote,
+	                                   JUICE_MAX_CANDIDATE_SDP_STRING_LEN) == 0)) {
 		printf("Local candidate  1: %s\n", local);
 		printf("Remote candidate 1: %s\n", remote);
 	}
-	if (success &= (juice_get_selected_candidates(agent2, local, JUICE_MAX_CANDIDATE_SDP_STRING_LEN,
-	                                             remote, JUICE_MAX_CANDIDATE_SDP_STRING_LEN) == 0)) {
+	if (success &=
+	    (juice_get_selected_candidates(agent2, local, JUICE_MAX_CANDIDATE_SDP_STRING_LEN, remote,
+	                                   JUICE_MAX_CANDIDATE_SDP_STRING_LEN) == 0)) {
 		printf("Local candidate  2: %s\n", local);
 		printf("Remote candidate 2: %s\n", remote);
 	}
@@ -201,7 +203,7 @@ static void on_candidate1(juice_agent_t *agent, const char *sdp, void *user_ptr)
 	printf("Candidate 1: %s\n", sdp);
 
 	// Filter relayed candidates
-	if(!strstr(sdp, "relay"))
+	if (!strstr(sdp, "relay"))
 		return;
 
 	// Agent 2: Receive it from agent 1
@@ -213,7 +215,7 @@ static void on_candidate2(juice_agent_t *agent, const char *sdp, void *user_ptr)
 	printf("Candidate 2: %s\n", sdp);
 
 	// Filter relayed candidates
-	if(!strstr(sdp, "relay"))
+	if (!strstr(sdp, "relay"))
 		return;
 
 	// Agent 1: Receive it from agent 2
