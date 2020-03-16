@@ -26,20 +26,20 @@
 
 #define BUFFER_SIZE 4096
 
-juice_agent_t *agent1;
-juice_agent_t *agent2;
+static juice_agent_t *agent1;
+static juice_agent_t *agent2;
 
-void on_state_changed1(juice_agent_t *agent, juice_state_t state, void *user_ptr);
-void on_state_changed2(juice_agent_t *agent, juice_state_t state, void *user_ptr);
+static void on_state_changed1(juice_agent_t *agent, juice_state_t state, void *user_ptr);
+static void on_state_changed2(juice_agent_t *agent, juice_state_t state, void *user_ptr);
 
-void on_candidate1(juice_agent_t *agent, const char *sdp, void *user_ptr);
-void on_candidate2(juice_agent_t *agent, const char *sdp, void *user_ptr);
+static void on_candidate1(juice_agent_t *agent, const char *sdp, void *user_ptr);
+static void on_candidate2(juice_agent_t *agent, const char *sdp, void *user_ptr);
 
-void on_gathering_done1(juice_agent_t *agent, void *user_ptr);
-void on_gathering_done2(juice_agent_t *agent, void *user_ptr);
+static void on_gathering_done1(juice_agent_t *agent, void *user_ptr);
+static void on_gathering_done2(juice_agent_t *agent, void *user_ptr);
 
-void on_recv1(juice_agent_t *agent, const char *data, size_t size, void *user_ptr);
-void on_recv2(juice_agent_t *agent, const char *data, size_t size, void *user_ptr);
+static void on_recv1(juice_agent_t *agent, const char *data, size_t size, void *user_ptr);
+static void on_recv2(juice_agent_t *agent, const char *data, size_t size, void *user_ptr);
 
 int test_connectivity() {
 	juice_set_log_level(JUICE_LOG_LEVEL_DEBUG);
@@ -133,7 +133,7 @@ int test_connectivity() {
 }
 
 // Agent 1: on state changed
-void on_state_changed1(juice_agent_t *agent, juice_state_t state, void *user_ptr) {
+static void on_state_changed1(juice_agent_t *agent, juice_state_t state, void *user_ptr) {
 	printf("State 1: %s\n", juice_state_to_string(state));
 
 	if (state == JUICE_STATE_CONNECTED) {
@@ -144,7 +144,7 @@ void on_state_changed1(juice_agent_t *agent, juice_state_t state, void *user_ptr
 }
 
 // Agent 2: on state changed
-void on_state_changed2(juice_agent_t *agent, juice_state_t state, void *user_ptr) {
+static void on_state_changed2(juice_agent_t *agent, juice_state_t state, void *user_ptr) {
 	printf("State 2: %s\n", juice_state_to_string(state));
 	if (state == JUICE_STATE_CONNECTED) {
 		// Agent 2: on connected, send a message
@@ -154,7 +154,7 @@ void on_state_changed2(juice_agent_t *agent, juice_state_t state, void *user_ptr
 }
 
 // Agent 1: on local candidate gathered
-void on_candidate1(juice_agent_t *agent, const char *sdp, void *user_ptr) {
+static void on_candidate1(juice_agent_t *agent, const char *sdp, void *user_ptr) {
 	printf("Candidate 1: %s\n", sdp);
 
 	// Agent 2: Receive it from agent 1
@@ -162,7 +162,7 @@ void on_candidate1(juice_agent_t *agent, const char *sdp, void *user_ptr) {
 }
 
 // Agent 2: on local candidate gathered
-void on_candidate2(juice_agent_t *agent, const char *sdp, void *user_ptr) {
+static void on_candidate2(juice_agent_t *agent, const char *sdp, void *user_ptr) {
 	printf("Candidate 2: %s\n", sdp);
 
 	// Agent 1: Receive it from agent 2
@@ -170,19 +170,19 @@ void on_candidate2(juice_agent_t *agent, const char *sdp, void *user_ptr) {
 }
 
 // Agent 1: on local candidates gathering done
-void on_gathering_done1(juice_agent_t *agent, void *user_ptr) {
+static void on_gathering_done1(juice_agent_t *agent, void *user_ptr) {
 	printf("Gathering done 1\n");
 	juice_set_remote_gathering_done(agent2); // optional
 }
 
 // Agent 2: on local candidates gathering done
-void on_gathering_done2(juice_agent_t *agent, void *user_ptr) {
+static void on_gathering_done2(juice_agent_t *agent, void *user_ptr) {
 	printf("Gathering done 2\n");
 	juice_set_remote_gathering_done(agent1); // optional
 }
 
 // Agent 1: on message received
-void on_recv1(juice_agent_t *agent, const char *data, size_t size, void *user_ptr) {
+static void on_recv1(juice_agent_t *agent, const char *data, size_t size, void *user_ptr) {
 	char buffer[BUFFER_SIZE];
 	if (size > BUFFER_SIZE - 1)
 		size = BUFFER_SIZE - 1;
@@ -192,7 +192,7 @@ void on_recv1(juice_agent_t *agent, const char *data, size_t size, void *user_pt
 }
 
 // Agent 2: on message received
-void on_recv2(juice_agent_t *agent, const char *data, size_t size, void *user_ptr) {
+static void on_recv2(juice_agent_t *agent, const char *data, size_t size, void *user_ptr) {
 	char buffer[BUFFER_SIZE];
 	if (size > BUFFER_SIZE - 1)
 		size = BUFFER_SIZE - 1;
@@ -200,4 +200,3 @@ void on_recv2(juice_agent_t *agent, const char *data, size_t size, void *user_pt
 	buffer[size] = '\0';
 	printf("Received 2: %s\n", buffer);
 }
-
