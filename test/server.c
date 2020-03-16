@@ -59,7 +59,7 @@ int test_server() {
 
 	// Wait until gathering done
 	int secs = 10;
-	while (!done && secs--)
+	while (!done && !success && secs--)
 		sleep(1);
 
 	// Destroy
@@ -68,7 +68,7 @@ int test_server() {
 	// Sleep so we can check destruction went well
 	sleep(2);
 
-	if (done && success) {
+	if (success) {
 		printf("Success\n");
 		return 0;
 	} else {
