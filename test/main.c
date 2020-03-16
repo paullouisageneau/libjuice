@@ -23,22 +23,32 @@
 int test_crc32(void);
 int test_stun(void);
 int test_connectivity(void);
+int test_server(void);
 
 int main(int argc, char **argv) {
 	juice_set_log_level(JUICE_LOG_LEVEL_WARN);
 
+	printf("\nRunning CRC32 implementation test...\n");
 	if (test_crc32()) {
-		fprintf(stderr, "CRC32 implementation check failed\n");
+		fprintf(stderr, "CRC32 implementation test failed\n");
 		return -2;
 	}
 
+	printf("\nRunning STUN parsing implementation test...\n");
 	if (test_stun()) {
-		fprintf(stderr, "STUN parsing implementation check failed\n");
+		fprintf(stderr, "STUN parsing implementation test failed\n");
 		return -3;
 	}
 
+	printf("\nRunning connectivity test...\n");
 	if (test_connectivity()) {
-		fprintf(stderr, "Connectivity check failed\n");
+		fprintf(stderr, "Connectivity test failed\n");
+		return -1;
+	}
+
+	printf("\nRunning STUN server test...\n");
+	if (test_server()) {
+		fprintf(stderr, "STUN server test failed\n");
 		return -1;
 	}
 

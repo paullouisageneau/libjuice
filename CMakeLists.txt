@@ -28,6 +28,7 @@ set(TESTS_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/test/crc32.c
     ${CMAKE_CURRENT_SOURCE_DIR}/test/stun.c
     ${CMAKE_CURRENT_SOURCE_DIR}/test/connectivity.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/test/server.c
 )
 
 set(THREADS_PREFER_PTHREAD_FLAG ON)
