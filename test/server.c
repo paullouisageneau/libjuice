@@ -86,8 +86,8 @@ static void on_state_changed(juice_agent_t *agent, juice_state_t state, void *us
 static void on_candidate(juice_agent_t *agent, const char *sdp, void *user_ptr) {
 	printf("Candidate: %s\n", sdp);
 
-	// Success if a server reflexive candidate is emitted
-	if (strstr(sdp, " typ srflx"))
+	// Success if a valid server reflexive candidate is emitted
+	if (strstr(sdp, " typ srflx raddr 0.0.0.0 rport 0"))
 		success = true;
 }
 

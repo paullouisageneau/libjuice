@@ -310,7 +310,8 @@ int ice_generate_sdp(const ice_description_t *description, char *buffer, size_t 
 }
 
 int ice_generate_candidate_sdp(const ice_candidate_t *candidate, char *buffer, size_t size) {
-	const char *type;
+	const char *type = NULL;
+	const char *suffix = NULL;
 	switch (candidate->type) {
 	case ICE_CANDIDATE_TYPE_HOST:
 		type = "host";
@@ -320,17 +321,20 @@ int ice_generate_candidate_sdp(const ice_candidate_t *candidate, char *buffer, s
 		break;
 	case ICE_CANDIDATE_TYPE_SERVER_REFLEXIVE:
 		type = "srflx";
+		suffix = "raddr 0.0.0.0 rport 0"; // This is needed for compatibility with Firefox
 		break;
 	case ICE_CANDIDATE_TYPE_RELAYED:
 		type = "relay";
+		suffix = "raddr 0.0.0.0 rport 0"; // This is needed for compatibility with Firefox
 		break;
 	default:
 		JLOG_ERROR("Unknown candidate type");
 		return -1;
 	}
-	return snprintf(buffer, size, "a=candidate:%s %u UDP %u %s %s typ %s", candidate->foundation,
-	                candidate->component, candidate->priority, candidate->hostname,
-	                candidate->service, type);
+	return snprintf(buffer, size, "a=candidate:%s %u UDP %u %s %s typ %s%s%s",
+	                candidate->foundation, candidate->component, candidate->priority,
+	                candidate->hostname, candidate->service, type, suffix ? " " : "",
+	                suffix ? suffix : "");
 }
 
 int ice_create_candidate_pair(ice_candidate_t *local, ice_candidate_t *remote, bool is_controlling,
