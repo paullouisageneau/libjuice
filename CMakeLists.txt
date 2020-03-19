@@ -23,6 +23,10 @@ set(LIBJUICE_SOURCES
 	${CMAKE_CURRENT_SOURCE_DIR}/src/udp.c
 )
 
+set(LIBJUICE_HEADERS
+	${CMAKE_CURRENT_SOURCE_DIR}/include/juice.h
+)
+
 set(TESTS_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/test/main.c
     ${CMAKE_CURRENT_SOURCE_DIR}/test/crc32.c
@@ -77,6 +81,9 @@ endif()
 
 add_library(LibJuice::LibJuice ALIAS juice)
 add_library(LibJuice::LibJuiceStatic ALIAS juice-static)
+
+install(TARGETS juice LIBRARY DESTINATION lib)
+install(FILES ${LIBJUICE_HEADERS} DESTINATION include/juice)
 
 # Main Test
 add_executable(juice-tests ${TESTS_SOURCES})
