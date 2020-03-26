@@ -117,9 +117,9 @@ void *agent_thread_entry(void *arg) {
 int agent_gather_candidates(juice_agent_t *agent) {
 	pthread_mutex_lock(&agent->mutex);
 	if (agent->sock != INVALID_SOCKET) {
-		JLOG_ERROR("Started candidates gathering twice");
+		JLOG_WARN("Candidates gathering already started");
 		pthread_mutex_unlock(&agent->mutex);
-		return -1;
+		return 0;
 	}
 
 	agent->sock = udp_create_socket();
