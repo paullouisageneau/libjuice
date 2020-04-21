@@ -408,7 +408,17 @@ void agent_run(juice_agent_t *agent) {
 	}
 	JLOG_DEBUG("Leaving agent thread");
 	agent_change_state(agent, JUICE_STATE_DISCONNECTED);
-	agent_do_destroy(agent);
+
+	// Destroy the agent if requested
+	if (agent->thread_destroyed) {
+		pthread_mutex_unlock(&agent->mutex);
+		agent_do_destroy(agent);
+		return;
+	}
+
+	// otherwise the user will have to destroy it
+	agent->thread_started = false;
+	pthread_mutex_unlock(&agent->mutex);
 }
 
 void agent_change_state(juice_agent_t *agent, juice_state_t state) {
