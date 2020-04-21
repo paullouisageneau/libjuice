@@ -77,7 +77,6 @@ struct juice_agent {
 	juice_state_t state;
 	agent_mode_t mode;
 	socket_t sock;
-	socket_t signal_sock;
 	pthread_t thread;
 	pthread_mutex_t mutex;
 	uint64_t ice_tiebreaker;
@@ -92,7 +91,7 @@ struct juice_agent {
 	timestamp_t fail_timestamp;
 	bool gathering_done;
 	bool thread_started;
-	bool thread_destroyed;
+	bool thread_stopped;
 };
 
 juice_agent_t *agent_create(const juice_config_t *config);
@@ -109,6 +108,7 @@ int agent_get_selected_candidate_pair(juice_agent_t *agent, ice_candidate_t *loc
                                       ice_candidate_t *remote);
 
 void agent_run(juice_agent_t *agent);
+void agent_interrupt(juice_agent_t *agent);
 void agent_change_state(juice_agent_t *agent, juice_state_t state);
 int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp);
 int agent_verify_stun(juice_agent_t *agent, void *buf, size_t size, const stun_message_t *msg);

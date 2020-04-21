@@ -85,8 +85,9 @@ juice_agent_t *agent_create(const juice_config_t *config) {
 }
 
 void agent_do_destroy(juice_agent_t *agent) {
-	JLOG_VERBOSE("Destroying agent");
-	closesocket(agent->sock);
+	JLOG_DEBUG("Destroying agent");
+	if (agent->sock != INVALID_SOCKET)
+		closesocket(agent->sock);
 	pthread_mutex_destroy(&agent->mutex);
 	free(agent);
 
@@ -97,16 +98,18 @@ void agent_do_destroy(juice_agent_t *agent) {
 
 void agent_destroy(juice_agent_t *agent) {
 	pthread_mutex_lock(&agent->mutex);
-	if (!agent->thread_started) {
-		pthread_mutex_unlock(&agent->mutex);
-		agent_do_destroy(agent);
-		return;
-	}
-
-	JLOG_VERBOSE("Requesting agent destruction");
-	agent->thread_destroyed = true;
 	memset(&agent->config, 0, sizeof(agent->config));
-	pthread_mutex_unlock(&agent->mutex);
+
+	if (agent->thread_started) {
+		JLOG_DEBUG("Waiting for agent thread");
+		agent->thread_stopped = true;
+		pthread_mutex_unlock(&agent->mutex);
+		agent_interrupt(agent);
+		pthread_join(agent->thread, NULL);
+	} else {
+		pthread_mutex_unlock(&agent->mutex);
+	}
+	agent_do_destroy(agent);
 }
 
 void *agent_thread_entry(void *arg) {
@@ -121,7 +124,6 @@ int agent_gather_candidates(juice_agent_t *agent) {
 		pthread_mutex_unlock(&agent->mutex);
 		return 0;
 	}
-
 	agent->sock = udp_create_socket();
 	if (agent->sock == INVALID_SOCKET) {
 		JLOG_FATAL("UDP socket creation for agent failed");
@@ -178,7 +180,6 @@ int agent_gather_candidates(juice_agent_t *agent) {
 		pthread_mutex_unlock(&agent->mutex);
 		return -1;
 	}
-	pthread_detach(agent->thread);
 	agent->thread_started = true;
 	pthread_mutex_unlock(&agent->mutex);
 	return 0;
@@ -204,16 +205,15 @@ int agent_set_remote_description(juice_agent_t *agent, const char *sdp) {
 		return -1;
 	}
 	for (size_t i = 0; i < agent->remote.candidates_count; ++i) {
-		if (agent_add_candidate_pair(agent, agent->remote.candidates + i)) {
-			pthread_mutex_unlock(&agent->mutex);
-			return -1;
-		}
+		if (agent_add_candidate_pair(agent, agent->remote.candidates + i))
+			JLOG_WARN("Failed to add remote candidate from description");
 	}
 	if (agent->mode == AGENT_MODE_UNKNOWN) {
 		JLOG_DEBUG("Assuming controlled mode");
 		agent->mode = AGENT_MODE_CONTROLLED;
 	}
 	pthread_mutex_unlock(&agent->mutex);
+	agent_interrupt(agent);
 	return 0;
 }
 
@@ -233,6 +233,7 @@ int agent_add_remote_candidate(juice_agent_t *agent, const char *sdp) {
 	ice_candidate_t *remote = agent->remote.candidates + agent->remote.candidates_count - 1;
 	int ret = agent_add_candidate_pair(agent, remote);
 	pthread_mutex_unlock(&agent->mutex);
+	agent_interrupt(agent);
 	return ret;
 }
 
@@ -339,27 +340,32 @@ void agent_run(juice_agent_t *agent) {
 		timediff_t timediff = next_timestamp - current_timestamp();
 		if (timediff < 0)
 			timediff = 0;
+
 		JLOG_VERBOSE("Setting select timeout to %ld ms", (long)timediff);
 		struct timeval timeout;
 		timeout.tv_sec = timediff / 1000;
 		timeout.tv_usec = (timediff % 1000) * 1000;
-		fd_set set;
-		FD_ZERO(&set);
-		FD_SET(agent->sock, &set);
+
+		fd_set readfds;
+		FD_ZERO(&readfds);
+		FD_SET(agent->sock, &readfds);
 		int n = SOCKET_TO_INT(agent->sock) + 1;
+
 		pthread_mutex_unlock(&agent->mutex);
-		int ret = select(n, &set, NULL, NULL, &timeout);
+		int ret = select(n, &readfds, NULL, NULL, &timeout);
 		pthread_mutex_lock(&agent->mutex);
 		if (ret < 0) {
 			JLOG_FATAL("select failed, errno=%d", sockerrno);
 			break;
 		}
-		if (agent->thread_destroyed) {
+		JLOG_VERBOSE("Leaving select");
+
+		if (agent->thread_stopped) {
 			JLOG_VERBOSE("Agent destruction requested");
 			break;
 		}
 
-		if (FD_ISSET(agent->sock, &set)) {
+		if (FD_ISSET(agent->sock, &readfds)) {
 			char buffer[BUFFER_SIZE];
 			addr_record_t record;
 			record.len = sizeof(record.addr);
@@ -369,9 +375,11 @@ void agent_run(juice_agent_t *agent) {
 				JLOG_ERROR("recvfrom failed, errno=%d", sockerrno);
 				break;
 			}
-
-			if (record.addr.ss_family == AF_INET6)
-				addr_unmap_inet6_v4mapped((struct sockaddr *)&record.addr, &record.len);
+			if (len == 0) {
+				continue;
+			}
+			JLOG_VERBOSE("Received a datagram, size=%d", len);
+			addr_unmap_inet6_v4mapped((struct sockaddr *)&record.addr, &record.len);
 
 			// See agent_send_stun_binding(() for username format
 			const size_t username_size = 256 * 2 + 2;
@@ -408,16 +416,27 @@ void agent_run(juice_agent_t *agent) {
 	}
 	JLOG_DEBUG("Leaving agent thread");
 	agent_change_state(agent, JUICE_STATE_DISCONNECTED);
+	pthread_mutex_unlock(&agent->mutex);
+}
 
-	// Destroy the agent if requested
-	if (agent->thread_destroyed) {
+void agent_interrupt(juice_agent_t *agent) {
+	JLOG_VERBOSE("Interrupting agent thread");
+	pthread_mutex_lock(&agent->mutex);
+	if (agent->sock == INVALID_SOCKET) {
 		pthread_mutex_unlock(&agent->mutex);
-		agent_do_destroy(agent);
 		return;
 	}
 
-	// otherwise the user will have to destroy it
-	agent->thread_started = false;
+	addr_record_t record;
+	record.len = sizeof(record.addr);
+	if (getsockname(agent->sock, (struct sockaddr *)&record.addr, &record.len) == 0) {
+		if (sendto(agent->sock, NULL, 0, 0, (struct sockaddr *)&record.addr, record.len) == 0) {
+			pthread_mutex_unlock(&agent->mutex);
+			return;
+		}
+	}
+
+	JLOG_ERROR("Failed to interrupt thread by triggering socket");
 	pthread_mutex_unlock(&agent->mutex);
 }
 
@@ -432,7 +451,7 @@ void agent_change_state(juice_agent_t *agent, juice_state_t state) {
 
 int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 	timestamp_t now = current_timestamp();
-	*next_timestamp = now + 1000;
+	*next_timestamp = now + 60000; // for safety
 
 	if (agent->state == JUICE_STATE_DISCONNECTED)
 		return 0;
