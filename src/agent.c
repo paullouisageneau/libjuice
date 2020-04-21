@@ -446,25 +446,30 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 		if (entry->finished) {
 			// RFC 8445 11. Keepalives: All endpoints MUST send keepalives for each data session.
 			JLOG_DEBUG("STUN entry %d: Sending keepalive", i);
-			agent_send_stun_binding(agent, entry, STUN_CLASS_INDICATION, 0, NULL, NULL);
-			agent_arm_transmission(agent, entry, STUN_KEEPALIVE_PERIOD);
+			if (agent_send_stun_binding(agent, entry, STUN_CLASS_INDICATION, 0, NULL, NULL) >= 0) {
+				agent_arm_transmission(agent, entry, STUN_KEEPALIVE_PERIOD);
+				continue;
+			} else {
+				JLOG_ERROR("Sending keepalive failed");
+			}
 		} else if (entry->retransmissions > 0) {
 			// Request transmission or retransmission
 			JLOG_DEBUG("STUN entry %d: Sending request", i);
-			agent_send_stun_binding(agent, entry, STUN_CLASS_REQUEST, 0, NULL, NULL);
-			--entry->retransmissions;
-			entry->next_transmission = now + entry->retransmission_timeout;
-			entry->retransmission_timeout *= 2;
-		} else {
-			// End of request retransmissions
-			JLOG_DEBUG("STUN entry %d: Failed", i);
-			entry->finished = true;
-			entry->next_transmission = 0; // No keepalive
-			if (entry->pair)
-				entry->pair->state = ICE_CANDIDATE_PAIR_STATE_FAILED;
-			if (entry->type == AGENT_STUN_ENTRY_TYPE_SERVER)
-				agent_update_gathering_done(agent);
+			if (agent_send_stun_binding(agent, entry, STUN_CLASS_REQUEST, 0, NULL, NULL) >= 0) {
+				--entry->retransmissions;
+				entry->next_transmission = now + entry->retransmission_timeout;
+				entry->retransmission_timeout *= 2;
+				continue;
+			}
 		}
+
+		// End of request retransmissions
+		JLOG_DEBUG("STUN entry %d: Failed", i);
+		entry->next_transmission = 0; // No keepalive
+		if (entry->pair)
+			entry->pair->state = ICE_CANDIDATE_PAIR_STATE_FAILED;
+		if (entry->type == AGENT_STUN_ENTRY_TYPE_SERVER)
+			agent_update_gathering_done(agent);
 	}
 
 	if (agent->candidate_pairs_count == 0)
@@ -622,8 +627,7 @@ int agent_dispatch_stun(juice_agent_t *agent, const stun_message_t *msg,
 		JLOG_VERBOSE("STUN message is from the remote peer");
 		if (agent_add_remote_reflexive_candidate(agent, ICE_CANDIDATE_TYPE_PEER_REFLEXIVE,
 		                                         msg->priority, source)) {
-			JLOG_WARN("Failed to add remote peer reflexive candidate from "
-			          "STUN message");
+			JLOG_WARN("Failed to add remote peer reflexive candidate from STUN message");
 		}
 	}
 	if (STUN_IS_RESPONSE(msg->msg_class)) {
@@ -889,7 +893,7 @@ int agent_send_stun_binding(juice_agent_t *agent, const agent_stun_entry_t *entr
 	                 entry->record.len);
 #endif
 	if (ret <= 0) {
-		JLOG_ERROR("STUN message send failed, errno=%d", sockerrno);
+		JLOG_WARN("STUN message send failed, errno=%d", sockerrno);
 		return -1;
 	}
 	return 0;
