@@ -124,7 +124,13 @@ int agent_gather_candidates(juice_agent_t *agent) {
 		pthread_mutex_unlock(&agent->mutex);
 		return 0;
 	}
-	agent->sock = udp_create_socket();
+
+	udp_socket_config_t socket_config;
+	unsigned int port_begin = agent->config.local_port_range_begin;
+	unsigned int port_end = agent->config.local_port_range_end;
+	socket_config.port_begin = (uint16_t)(port_begin <= 0xFFFF ? port_begin : 0xFFFF);
+	socket_config.port_end = (uint16_t)(port_end <= 0xFFFF ? port_end : 0xFFFF);
+	agent->sock = udp_create_socket(&socket_config);
 	if (agent->sock == INVALID_SOCKET) {
 		JLOG_FATAL("UDP socket creation for agent failed");
 		pthread_mutex_unlock(&agent->mutex);

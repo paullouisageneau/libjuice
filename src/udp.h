@@ -22,7 +22,14 @@
 #include "addr.h"
 #include "socket.h"
 
-socket_t udp_create_socket(void);
+#include <stdint.h>
+
+typedef struct udp_socket_config {
+	uint16_t port_begin;
+	uint16_t port_end;
+} udp_socket_config_t;
+
+socket_t udp_create_socket(const udp_socket_config_t *config);
 uint16_t udp_get_port(socket_t sock);
 int udp_get_addrs(socket_t sock, addr_record_t *records, size_t count);
 
