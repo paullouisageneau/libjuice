@@ -136,7 +136,7 @@ error:
 	return INVALID_SOCKET;
 }
 
-uint16_t juice_udp_get_port(socket_t sock) {
+uint16_t udp_get_port(socket_t sock) {
 	struct sockaddr_storage sa;
 	socklen_t sl = sizeof(sa);
 	if (getsockname(sock, (struct sockaddr *)&sa, &sl)) {
@@ -174,7 +174,7 @@ static int has_duplicate_addr(struct sockaddr *addr, const addr_record_t *record
 }
 
 int udp_get_addrs(socket_t sock, addr_record_t *records, size_t count) {
-	uint16_t port = juice_udp_get_port(sock);
+	uint16_t port = udp_get_port(sock);
 	if (port == 0) {
 		JLOG_ERROR("Getting UDP port failed");
 		return -1;
