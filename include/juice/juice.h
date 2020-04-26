@@ -25,6 +25,7 @@ extern "C" {
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 
 // ICE Agent
 
@@ -50,9 +51,9 @@ typedef void (*juice_cb_recv_t)(juice_agent_t *agent, const char *data, size_t s
 
 typedef struct juice_config {
 	const char *stun_server_host;
-	unsigned int stun_server_port;
-	unsigned int local_port_range_begin;
-	unsigned int local_port_range_end;
+	uint16_t stun_server_port;
+	uint16_t local_port_range_begin;
+	uint16_t local_port_range_end;
 	juice_cb_state_changed_t cb_state_changed;
 	juice_cb_candidate_t cb_candidate;
 	juice_cb_gathering_done_t cb_gathering_done;

@@ -126,10 +126,9 @@ int agent_gather_candidates(juice_agent_t *agent) {
 	}
 
 	udp_socket_config_t socket_config;
-	unsigned int port_begin = agent->config.local_port_range_begin;
-	unsigned int port_end = agent->config.local_port_range_end;
-	socket_config.port_begin = (uint16_t)(port_begin <= 0xFFFF ? port_begin : 0xFFFF);
-	socket_config.port_end = (uint16_t)(port_end <= 0xFFFF ? port_end : 0xFFFF);
+	memset(&socket_config, 0, sizeof(socket_config));
+	socket_config.port_begin = agent->config.local_port_range_begin;
+	socket_config.port_end = agent->config.local_port_range_end;
 	agent->sock = udp_create_socket(&socket_config);
 	if (agent->sock == INVALID_SOCKET) {
 		JLOG_FATAL("UDP socket creation for agent failed");
@@ -312,7 +311,7 @@ void agent_run(juice_agent_t *agent) {
 		if (!agent->config.stun_server_port)
 			agent->config.stun_server_port = 3478; // default STUN port
 		char service[8];
-		snprintf(service, 8, "%hd", (uint16_t)agent->config.stun_server_port);
+		snprintf(service, 8, "%hu", agent->config.stun_server_port);
 		addr_record_t records[MAX_STUN_SERVER_RECORDS_COUNT];
 		int records_count = addr_resolve(agent->config.stun_server_host, service, records,
 		                                 MAX_STUN_SERVER_RECORDS_COUNT);
