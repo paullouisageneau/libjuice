@@ -53,6 +53,9 @@ typedef u_long ctl_t;
 #define SOCKET_TO_INT(x) 0
 #define HOST_NAME_MAX 256
 
+#undef EADDRINUSE
+#define EADDRINUSE WSAEADDRINUSE
+
 #else // assume POSIX
 
 #include <arpa/inet.h>

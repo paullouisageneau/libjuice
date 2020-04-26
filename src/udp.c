@@ -19,7 +19,9 @@
 #include "udp.h"
 #include "addr.h"
 #include "log.h"
+#include "random.h"
 
+#include <pthread.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -30,7 +32,24 @@ static struct addrinfo *find_family(struct addrinfo *ai_list, unsigned int famil
 	return ai;
 }
 
-socket_t udp_create_socket(void) {
+static uint16_t get_next_port_in_range(uint16_t begin, uint16_t end) {
+	static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+	static uint32_t count = 0;
+	if (begin == 0)
+		begin = 1024;
+	if (end == 0)
+		end = 0xFFFF;
+	if (count == 0)
+		count = juice_rand32();
+
+	pthread_mutex_lock(&mutex);
+	uint32_t diff = end > begin ? end - begin : 0;
+	uint16_t next = begin + count++ % (diff + 1);
+	pthread_mutex_unlock(&mutex);
+	return next;
+}
+
+socket_t udp_create_socket(const udp_socket_config_t *config) {
 	// Obtain local Address
 	struct addrinfo *ai_list = NULL;
 	struct addrinfo hints;
@@ -77,20 +96,40 @@ socket_t udp_create_socket(void) {
 #endif
 #endif
 
-	// Bind it
-	if (bind(sock, ai->ai_addr, ai->ai_addrlen)) {
-		JLOG_ERROR("bind for UDP socket failed, errno=%d", sockerrno);
-		goto error;
-	}
-
 	ctl_t b = 1;
 	if (ioctlsocket(sock, FIONBIO, &b)) {
-		JLOG_ERROR("Setting non-blocking mode for UDP socket failed, errno=%d", sockerrno);
+		JLOG_ERROR("setting non-blocking mode on UDP socket failed, errno=%d", sockerrno);
 		goto error;
 	}
 
-	freeaddrinfo(ai_list);
-	return sock;
+	// Bind it
+	if (config->port_begin == 0 && config->port_end == 0) {
+		if (bind(sock, ai->ai_addr, ai->ai_addrlen) == 0) {
+			freeaddrinfo(ai_list);
+			return sock;
+		}
+
+		JLOG_ERROR("UDP socket binding failed, errno=%d", sockerrno);
+
+	} else {
+		struct sockaddr_storage addr;
+		socklen_t addrlen = ai->ai_addrlen;
+		memcpy(&addr, ai->ai_addr, addrlen);
+
+		int retries = config->port_end - config->port_begin;
+		do {
+			uint16_t port = get_next_port_in_range(config->port_begin, config->port_end);
+			addr_set_port((struct sockaddr *)&addr, port);
+			if (bind(sock, (struct sockaddr *)&addr, addrlen) == 0) {
+				JLOG_DEBUG("UDP socket bound to port %hu", port);
+				freeaddrinfo(ai_list);
+				return sock;
+			}
+		} while (sockerrno == EADDRINUSE && retries-- > 0);
+
+		JLOG_ERROR("UDP socket binding failed on port range [%hu, %hu], errno=%d",
+		           config->port_begin, config->port_end, sockerrno);
+	}
 
 error:
 	freeaddrinfo(ai_list);
