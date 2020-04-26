@@ -125,7 +125,7 @@ socket_t udp_create_socket(const udp_socket_config_t *config) {
 				freeaddrinfo(ai_list);
 				return sock;
 			}
-		} while (errno == EADDRINUSE && retries-- > 0);
+		} while (sockerrno == EADDRINUSE && retries-- > 0);
 
 		JLOG_ERROR("UDP socket binding failed on port range [%hu, %hu], errno=%d",
 		           config->port_begin, config->port_end, sockerrno);
