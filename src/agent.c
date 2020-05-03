@@ -444,7 +444,7 @@ void agent_interrupt(juice_agent_t *agent) {
 		}
 	}
 
-	JLOG_ERROR("Failed to interrupt thread by triggering socket");
+	JLOG_WARN("Failed to interrupt thread by triggering socket");
 	pthread_mutex_unlock(&agent->mutex);
 }
 
@@ -459,7 +459,7 @@ void agent_change_state(juice_agent_t *agent, juice_state_t state) {
 
 int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 	timestamp_t now = current_timestamp();
-	*next_timestamp = now + 60000; // for safety
+	*next_timestamp = now + 10000; // for safety
 
 	if (agent->state == JUICE_STATE_DISCONNECTED)
 		return 0;
