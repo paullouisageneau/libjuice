@@ -670,8 +670,8 @@ int agent_dispatch_stun(juice_agent_t *agent, const stun_message_t *msg,
 		JLOG_ERROR("STUN entry for message processing not found");
 		return -1;
 	}
-	if (entry->type == AGENT_STUN_ENTRY_TYPE_CHECK && msg->msg_class != STUN_CLASS_INDICATION &&
-	    !msg->has_integrity) {
+	if (entry->type == AGENT_STUN_ENTRY_TYPE_CHECK && !msg->has_integrity &&
+	    (msg->msg_class == STUN_CLASS_REQUEST || msg->msg_class == STUN_CLASS_RESP_SUCCESS)) {
 		JLOG_WARN("STUN binding message from remote peer missing integrity");
 		return -1;
 	}
