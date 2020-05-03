@@ -64,7 +64,7 @@ int stun_write(void *buf, size_t size, const stun_message_t *msg) {
 	if (msg->error_code) {
 		struct stun_value_error_code error;
 		memset(&error, 0, sizeof(error));
-		error.code_class = (msg->error_code / 100) & 0x08;
+		error.code_class = (msg->error_code / 100) & 0x07;
 		error.code_number = msg->error_code % 100;
 		len = stun_write_attr(pos, end - pos, STUN_ATTR_ERROR_CODE, &error, sizeof(error));
 		if (len <= 0)
@@ -345,7 +345,7 @@ int stun_read_attr(const void *data, size_t size, stun_message_t *msg, uint8_t *
 		}
 		const struct stun_value_error_code *error =
 		    (const struct stun_value_error_code *)attr->value;
-		msg->error_code = (error->code_class & 0x08) * 100 + error->code_number;
+		msg->error_code = (error->code_class & 0x07) * 100 + error->code_number;
 		JLOG_DEBUG("Got STUN error code %u", msg->error_code);
 		break;
 	}
