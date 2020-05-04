@@ -3,9 +3,9 @@ if (NOT TARGET Nettle::Nettle)
 	find_library(NETTLE_LIBRARY NAMES nettle libnettle)
 
 	include(FindPackageHandleStandardArgs)
-	find_package_handle_standard_args(NETTLE DEFAULT_MSG NETTLE_LIBRARY NETTLE_INCLUDE_DIR)
+	find_package_handle_standard_args(Nettle DEFAULT_MSG NETTLE_LIBRARY NETTLE_INCLUDE_DIR)
 
-    if (NETTLE_FOUND)
+    if (Nettle_FOUND)
         add_library(Nettle::Nettle UNKNOWN IMPORTED)
         set_target_properties(Nettle::Nettle PROPERTIES
             IMPORTED_LOCATION "${NETTLE_LIBRARY}"
