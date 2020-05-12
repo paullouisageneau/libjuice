@@ -115,6 +115,7 @@ bool addr_unmap_inet6_v4mapped(struct sockaddr *sa, socklen_t *len) {
 	sin6 = &copy;
 
 	struct sockaddr_in *sin = (struct sockaddr_in *)sa;
+	memset(sin, 0, sizeof(*sin));
 	sin->sin_family = AF_INET;
 	sin->sin_port = sin6->sin6_port;
 	memcpy(&sin->sin_addr, ((const uint8_t *)&sin6->sin6_addr) + 12, 4);
@@ -131,6 +132,7 @@ bool addr_map_inet6_v4mapped(struct sockaddr_storage *ss, socklen_t *len) {
 	sin = &copy;
 
 	struct sockaddr_in6 *sin6 = (struct sockaddr_in6 *)ss;
+	memset(sin6, 0, sizeof(*sin6));
 	sin6->sin6_family = AF_INET6;
 	sin6->sin6_port = sin->sin_port;
 	uint8_t *b = (uint8_t *)&sin6->sin6_addr;
