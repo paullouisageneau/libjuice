@@ -433,18 +433,14 @@ void agent_interrupt(juice_agent_t *agent) {
 	}
 
 	addr_record_t record;
-	record.len = sizeof(record.addr);
-	if (getsockname(agent->sock, (struct sockaddr *)&record.addr, &record.len) == 0) {
-#if defined(_WIN32) || defined(__APPLE__)
-		addr_map_inet6_v4mapped(&record.addr, &record.len);
-#endif
+	if (udp_get_local_addr(agent->sock, &record) == 0) {
 		if (sendto(agent->sock, NULL, 0, 0, (struct sockaddr *)&record.addr, record.len) == 0) {
 			pthread_mutex_unlock(&agent->mutex);
 			return;
 		}
 	}
 
-	JLOG_WARN("Failed to interrupt thread by triggering socket");
+	JLOG_WARN("Failed to interrupt thread by triggering socket, errno=%d", sockerrno);
 	pthread_mutex_unlock(&agent->mutex);
 }
 

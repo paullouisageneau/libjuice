@@ -137,14 +137,39 @@ error:
 }
 
 uint16_t udp_get_port(socket_t sock) {
-	struct sockaddr_storage sa;
-	socklen_t sl = sizeof(sa);
-	if (getsockname(sock, (struct sockaddr *)&sa, &sl)) {
+	addr_record_t record;
+	record.len = sizeof(record.addr);
+	if (getsockname(sock, (struct sockaddr *)&record.addr, &record.len)) {
 		JLOG_WARN("getsockname failed, errno=%d", sockerrno);
 		return 0;
 	}
 
-	return addr_get_port((struct sockaddr *)&sa);
+	return addr_get_port((struct sockaddr *)&record.addr);
+}
+
+int udp_get_local_addr(socket_t sock, addr_record_t *record) {
+	record->len = sizeof(record->addr);
+	if (getsockname(sock, (struct sockaddr *)&record->addr, &record->len)) {
+		JLOG_WARN("getsockname failed, errno=%d", sockerrno);
+		return -1;
+	}
+
+	switch (record->addr.ss_family) {
+	case AF_INET: {
+		struct sockaddr_in *sin = (struct sockaddr_in *)&record->addr;
+		const uint8_t localhost[4] = {127, 0, 0, 1};
+		memcpy(&sin->sin_addr, localhost, 4);
+		break;
+	}
+	case AF_INET6: {
+		struct sockaddr_in6 *sin6 = (struct sockaddr_in6 *)&record->addr;
+		uint8_t *b = (uint8_t *)&sin6->sin6_addr;
+		memset(b, 0, 15);
+		b[15] = 0x01; // localhost
+		break;
+	}
+	}
+	return 0;
 }
 
 // Helper function to check if a similar address already exists in records
@@ -184,14 +209,14 @@ int udp_get_addrs(socket_t sock, addr_record_t *records, size_t count) {
 	// Addresses from a loopback interface MUST NOT be included in the candidate addresses.
 	// [...]
 	// If gathering one or more host candidates that correspond to an IPv6 address that was
-	// generated using a mechanism that prevents location tracking [RFC7721], host candidates that
-	// correspond to IPv6 addresses that do allow location tracking, are configured on the same
-	// interface, and are part of the same network prefix MUST NOT be gathered. Similarly, when host
-	// candidates corresponding to an IPv6 address generated using a mechanism that prevents
-	// location tracking are gathered, then host candidates corresponding to IPv6 link-local
-	// addresses [RFC4291] MUST NOT be gathered. The IPv6 default address selection specification
-	// [RFC6724] specifies that temporary addresses [RFC4941] are to be preferred over permanent
-	// addresses.
+	// generated using a mechanism that prevents location tracking [RFC7721], host candidates
+	// that correspond to IPv6 addresses that do allow location tracking, are configured on the
+	// same interface, and are part of the same network prefix MUST NOT be gathered. Similarly,
+	// when host candidates corresponding to an IPv6 address generated using a mechanism that
+	// prevents location tracking are gathered, then host candidates corresponding to IPv6
+	// link-local addresses [RFC4291] MUST NOT be gathered. The IPv6 default address selection
+	// specification [RFC6724] specifies that temporary addresses [RFC4941] are to be preferred
+	// over permanent addresses.
 
 	// Here, we will prevent gathering permanent IPv6 addresses if a temporary one is found.
 	// This is more restrictive but fully compliant.
