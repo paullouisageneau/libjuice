@@ -1041,8 +1041,10 @@ void agent_arm_transmission(juice_agent_t *agent, agent_stun_entry_t *entry, tim
 void agent_update_gathering_done(juice_agent_t *agent) {
 	JLOG_VERBOSE("Updating gathering status");
 	for (int i = 0; i < agent->entries_count; ++i) {
-		if (agent->entries[i].type == AGENT_STUN_ENTRY_TYPE_SERVER && !agent->entries[i].finished) {
-			JLOG_VERBOSE("STUN server entry %d is not finished", i);
+		agent_stun_entry_t *entry = agent->entries + i;
+		// Checking finished flag is not sufficient here since the entry might be failed
+		if (entry->type == AGENT_STUN_ENTRY_TYPE_SERVER && entry->next_transmission > 0) {
+			JLOG_VERBOSE("STUN server entry %d is still pending", i);
 			return;
 		}
 	}
