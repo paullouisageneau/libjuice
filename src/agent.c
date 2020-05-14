@@ -533,6 +533,9 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 			// Succeeded
 			if (nominated_pair) {
 				// Finished
+				// Do not allow direct transition from connecting to completed
+				if (agent->state == JUICE_STATE_CONNECTING)
+					agent_change_state(agent, JUICE_STATE_CONNECTED);
 				agent_change_state(agent, JUICE_STATE_COMPLETED);
 				// Disable transmissions for other entries
 				for (int i = 0; i < agent->entries_count; ++i) {
