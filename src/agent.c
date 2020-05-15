@@ -1046,7 +1046,8 @@ void agent_update_gathering_done(juice_agent_t *agent) {
 	for (int i = 0; i < agent->entries_count; ++i) {
 		agent_stun_entry_t *entry = agent->entries + i;
 		// Checking finished flag is not sufficient here since the entry might be failed
-		if (entry->type == AGENT_STUN_ENTRY_TYPE_SERVER && entry->next_transmission > 0) {
+		if (entry->type == AGENT_STUN_ENTRY_TYPE_SERVER && !entry->finished &&
+		    entry->next_transmission > 0) {
 			JLOG_VERBOSE("STUN server entry %d is still pending", i);
 			return;
 		}
