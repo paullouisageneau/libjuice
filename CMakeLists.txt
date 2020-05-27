@@ -44,7 +44,7 @@ set_target_properties(juice PROPERTIES VERSION ${PROJECT_VERSION})
 target_include_directories(juice PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_include_directories(juice PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include/juice)
 target_include_directories(juice PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_link_libraries(juice Threads::Threads)
+target_link_libraries(juice PUBLIC Threads::Threads)
 
 add_library(juice-static STATIC EXCLUDE_FROM_ALL ${LIBJUICE_SOURCES})
 set_target_properties(juice-static PROPERTIES VERSION ${PROJECT_VERSION})
@@ -52,25 +52,25 @@ set_target_properties(juice-static PROPERTIES VERSION ${PROJECT_VERSION})
 target_include_directories(juice-static PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_include_directories(juice-static PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include/juice)
 target_include_directories(juice-static PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_link_libraries(juice-static Threads::Threads)
+target_link_libraries(juice-static PUBLIC Threads::Threads)
 
 if(WIN32)
-	target_link_libraries(juice "wsock32" "ws2_32") # winsock2
-	target_link_libraries(juice-static "wsock32" "ws2_32") # winsock2
+	target_link_libraries(juice PRIVATE wsock32 ws2_32) # winsock2
+	target_link_libraries(juice-static PRIVATE wsock32 ws2_32) # winsock2
 endif()
 
 if (USE_NETTLE)
 	find_package(Nettle REQUIRED)
     target_compile_definitions(juice PRIVATE USE_NETTLE=1)
-    target_link_libraries(juice Nettle::Nettle)
+    target_link_libraries(juice PRIVATE Nettle::Nettle)
     target_compile_definitions(juice-static PRIVATE USE_NETTLE=1)
-    target_link_libraries(juice-static Nettle::Nettle)
+    target_link_libraries(juice-static PRIVATE Nettle::Nettle)
 else()
     find_package(OpenSSL REQUIRED)
     target_compile_definitions(juice PRIVATE USE_NETTLE=0)
-    target_link_libraries(juice OpenSSL::SSL)
+    target_link_libraries(juice PRIVATE OpenSSL::SSL)
     target_compile_definitions(juice-static PRIVATE USE_NETTLE=0)
-    target_link_libraries(juice-static OpenSSL::SSL)
+    target_link_libraries(juice-static PRIVATE OpenSSL::SSL)
 endif()
 
 if(APPLE)
