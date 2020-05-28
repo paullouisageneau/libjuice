@@ -68,8 +68,8 @@ int test_connectivity() {
 	config2.cb_recv = on_recv2;
 	config2.user_ptr = NULL;
 	// Port range example
-	config2.local_port_range_begin = 5000;
-	config2.local_port_range_end = 6000;
+	config2.local_port_range_begin = 60000;
+	config2.local_port_range_end = 61000;
 
 	agent2 = juice_create(&config2);
 
