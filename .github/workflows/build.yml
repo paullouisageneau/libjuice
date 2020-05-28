@@ -27,6 +27,8 @@ jobs:
       run: brew install nettle
     - name: cmake
       run: cmake -B build -DUSE_NETTLE=1
+      env:
+        CFLAGS: -DJUICE_ENABLE_ADDRS_LOCALHOST
     - name: make
       run: (cd build; make)
     - name: test

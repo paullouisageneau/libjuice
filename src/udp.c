@@ -225,6 +225,31 @@ int udp_get_addrs(socket_t sock, addr_record_t *records, size_t count) {
 	addr_record_t *end = records + count;
 	int ret = 0;
 
+#ifdef JUICE_ENABLE_ADDRS_LOCALHOST
+	// Add localhost for test purposes
+	if (current != end) {
+		++ret;
+		struct sockaddr_in6 *sin6 = (struct sockaddr_in6 *)&current->addr;
+		current->len = sizeof(*sin6);
+		memset(sin6, 0, sizeof(*sin6));
+		sin6->sin6_family = AF_INET6;
+		*((uint8_t *)&sin6->sin6_addr + 15) = 0x01;
+		sin6->sin6_port = htons(port);
+		++current;
+	}
+	if (current != end) {
+		++ret;
+		const uint8_t localhost[4] = {127, 0, 0, 1};
+		struct sockaddr_in *sin = (struct sockaddr_in *)&current->addr;
+		current->len = sizeof(*sin);
+		memset(sin, 0, sizeof(*sin));
+		sin->sin_family = AF_INET;
+		memcpy(&sin->sin_addr, localhost, 4);
+		sin->sin_port = htons(port);
+		++current;
+	}
+#endif
+
 #ifdef _WIN32
 	char buf[4096];
 	DWORD len = 0;
@@ -373,5 +398,6 @@ int udp_get_addrs(socket_t sock, addr_record_t *records, size_t count) {
 	}
 #endif
 #endif
+
 	return ret;
 }
