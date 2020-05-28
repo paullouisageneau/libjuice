@@ -28,6 +28,7 @@ jobs:
     - name: cmake
       run: cmake -B build -DUSE_NETTLE=1
       env:
+# hack to bypass EPERM issue on sendto()
         CFLAGS: -DJUICE_ENABLE_ADDRS_LOCALHOST
     - name: make
       run: (cd build; make)
