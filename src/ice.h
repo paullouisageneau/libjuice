@@ -28,6 +28,7 @@
 #define ICE_MAX_CANDIDATES_COUNT 16
 
 typedef enum ice_candidate_type {
+	ICE_CANDIDATE_TYPE_UNKNOWN,
 	ICE_CANDIDATE_TYPE_HOST,
 	ICE_CANDIDATE_TYPE_SERVER_REFLEXIVE,
 	ICE_CANDIDATE_TYPE_PEER_REFLEXIVE,
@@ -90,7 +91,8 @@ int ice_resolve_candidate(ice_candidate_t *candidate, ice_resolve_mode_t mode);
 int ice_add_candidate(ice_candidate_t *candidate, ice_description_t *description);
 void ice_sort_candidates(ice_description_t *description);
 ice_candidate_t *ice_find_candidate_from_addr(ice_description_t *description,
-                                              const addr_record_t *record);
+                                              const addr_record_t *record,
+                                              ice_candidate_type_t type);
 int ice_generate_sdp(const ice_description_t *description, char *buffer, size_t size);
 int ice_generate_candidate_sdp(const ice_candidate_t *candidate, char *buffer, size_t size);
 int ice_create_candidate_pair(ice_candidate_t *local, ice_candidate_t *remote, bool is_controlling,

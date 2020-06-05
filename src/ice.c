@@ -230,6 +230,9 @@ int ice_resolve_candidate(ice_candidate_t *candidate, ice_resolve_mode_t mode) {
 }
 
 int ice_add_candidate(ice_candidate_t *candidate, ice_description_t *description) {
+	if (candidate == ICE_CANDIDATE_TYPE_UNKNOWN)
+		return -1;
+
 	if (description->candidates_count >= ICE_MAX_CANDIDATES_COUNT)
 		return -1;
 
@@ -259,11 +262,13 @@ void ice_sort_candidates(ice_description_t *description) {
 }
 
 ice_candidate_t *ice_find_candidate_from_addr(ice_description_t *description,
-                                              const addr_record_t *record) {
+                                              const addr_record_t *record,
+                                              ice_candidate_type_t type) {
 	ice_candidate_t *cur = description->candidates;
 	ice_candidate_t *end = cur + description->candidates_count;
 	while (cur != end) {
-		if (record->len == cur->resolved.len &&
+		if ((type == ICE_CANDIDATE_TYPE_UNKNOWN || cur->type == type) &&
+		    record->len == cur->resolved.len &&
 		    memcmp(&record->addr, &cur->resolved.addr, record->len) == 0)
 			return cur;
 		++cur;

@@ -496,7 +496,7 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 	}
 
 	if (agent->candidate_pairs_count == 0)
-		return 0;
+		goto finally;
 
 	unsigned int pending_count = 0;
 	ice_candidate_pair_t *nominated_pair = NULL;
@@ -580,6 +580,7 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 			agent_change_state(agent, JUICE_STATE_CONNECTING);
 	}
 
+finally:
 	for (int i = 0; i < agent->entries_count; ++i) {
 		agent_stun_entry_t *entry = agent->entries + i;
 		if (entry->next_transmission && *next_timestamp > entry->next_transmission)
@@ -782,7 +783,8 @@ int agent_process_stun_binding(juice_agent_t *agent, const stun_message_t *msg,
 		if (entry->type == AGENT_STUN_ENTRY_TYPE_CHECK) {
 			ice_candidate_pair_t *pair = entry->pair;
 			if (!pair->local)
-				pair->local = ice_find_candidate_from_addr(&agent->local, &msg->mapped);
+				pair->local = ice_find_candidate_from_addr(&agent->local, &msg->mapped,
+				                                           ICE_CANDIDATE_TYPE_UNKNOWN);
 			if (pair->state != ICE_CANDIDATE_PAIR_STATE_SUCCEEDED) {
 				JLOG_DEBUG("Got a working pair");
 				pair->state = ICE_CANDIDATE_PAIR_STATE_SUCCEEDED;
@@ -931,7 +933,9 @@ int agent_add_local_reflexive_candidate(juice_agent_t *agent, ice_candidate_type
 		JLOG_ERROR("Invalid type for reflexive candidate");
 		return -1;
 	}
-	if (ice_find_candidate_from_addr(&agent->local, record)) {
+	int family = record->addr.ss_family;
+	if (ice_find_candidate_from_addr(&agent->local, record,
+	                                 family == AF_INET6 ? ICE_CANDIDATE_TYPE_UNKNOWN : type)) {
 		JLOG_VERBOSE("A local candidate exists for the mapped address");
 		return 0;
 	}
@@ -963,7 +967,9 @@ int agent_add_remote_reflexive_candidate(juice_agent_t *agent, ice_candidate_typ
 		JLOG_ERROR("Invalid type for reflexive candidate");
 		return -1;
 	}
-	if (ice_find_candidate_from_addr(&agent->remote, record)) {
+	int family = record->addr.ss_family;
+	if (ice_find_candidate_from_addr(&agent->remote, record,
+	                                 family == AF_INET6 ? ICE_CANDIDATE_TYPE_UNKNOWN : type)) {
 		JLOG_VERBOSE("A remote candidate exists for the remote address");
 		return 0;
 	}
