@@ -144,7 +144,7 @@ int stun_write(void *buf, size_t size, const stun_message_t *msg) {
 		goto overflow;
 	pos += len;
 
-	return pos - begin;
+	return (int)(pos - begin);
 
 overflow:
 	JLOG_ERROR("Not enough space in buffer for STUN message, size=%zu", size);
@@ -170,7 +170,7 @@ int stun_write_header(void *buf, size_t size, stun_class_t class, stun_method_t 
 size_t stun_update_header_length(void *buf, size_t length) {
 	struct stun_header *header = buf;
 	size_t previous = ntohs(header->length);
-	header->length = htons(length);
+	header->length = htons((uint16_t)length);
 	return previous;
 }
 
@@ -285,7 +285,7 @@ int stun_read(void *data, size_t size, stun_message_t *msg) {
 	}
 
 	JLOG_VERBOSE("Finished reading STUN attributes");
-	return sizeof(struct stun_header) + length;
+	return (int)(sizeof(struct stun_header) + length);
 }
 
 int stun_read_attr(const void *data, size_t size, stun_message_t *msg, uint8_t *begin,
@@ -317,7 +317,7 @@ int stun_read_attr(const void *data, size_t size, stun_message_t *msg, uint8_t *
 		JLOG_DEBUG("Ignoring STUN attribute %X after message integrity", (unsigned int)type);
 		while (length & 0x03)
 			++length; // attributes are aligned on 4 bytes
-		return sizeof(struct stun_attr) + length;
+		return (int)(sizeof(struct stun_attr) + length);
 	}
 
 	switch (type) {
@@ -428,7 +428,7 @@ int stun_read_attr(const void *data, size_t size, stun_message_t *msg, uint8_t *
 		break;
 	}
 	}
-	return sizeof(struct stun_attr) + align32(length);
+	return (int)(sizeof(struct stun_attr) + align32(length));
 }
 
 int stun_read_value_mapped_address(const void *data, size_t size, stun_message_t *msg,
@@ -479,7 +479,7 @@ int stun_read_value_mapped_address(const void *data, size_t size, stun_message_t
 		break;
 	}
 	}
-	return len;
+	return (int)len;
 }
 
 bool stun_check_integrity(void *buf, size_t size, const stun_message_t *msg, const char *password) {

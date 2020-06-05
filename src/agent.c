@@ -771,12 +771,12 @@ int agent_process_stun_binding(juice_agent_t *agent, const stun_message_t *msg,
 		agent_arm_transmission(agent, entry, STUN_KEEPALIVE_PERIOD);
 
 		if (msg->mapped.len) {
+			JLOG_VERBOSE("Response has mapped address");
 			ice_candidate_type_t type = (entry->type == AGENT_STUN_ENTRY_TYPE_CHECK)
 			                                ? ICE_CANDIDATE_TYPE_PEER_REFLEXIVE
 			                                : ICE_CANDIDATE_TYPE_SERVER_REFLEXIVE;
 			if (agent_add_local_reflexive_candidate(agent, type, &msg->mapped)) {
-				JLOG_WARN("Failed to add local peer reflexive candidate from "
-				          "STUN mapped address");
+				JLOG_WARN("Failed to add local peer reflexive candidate from STUN mapped address");
 			}
 		}
 		if (entry->type == AGENT_STUN_ENTRY_TYPE_CHECK) {

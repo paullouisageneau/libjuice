@@ -246,13 +246,11 @@ void ice_sort_candidates(ice_description_t *description) {
 	ice_candidate_t *begin = description->candidates;
 	ice_candidate_t *end = begin + description->candidates_count;
 	ice_candidate_t *cur = begin;
-	ice_candidate_t tmp;
 	while (++cur < end) {
 		uint32_t priority = cur->priority;
 		ice_candidate_t *prev = cur;
+		ice_candidate_t tmp = *prev;
 		while (--prev >= begin && prev->priority < priority) {
-			if (prev + 1 == cur)
-				tmp = *(prev + 1);
 			*(prev + 1) = *prev;
 		}
 		if (prev + 1 != cur)
@@ -290,11 +288,10 @@ int ice_generate_sdp(const ice_description_t *description, char *buffer, size_t 
 			ret = snprintf(begin, end - begin, "a=ice-ufrag:%s\r\na=ice-pwd:%s\r\n",
 			               description->ice_ufrag, description->ice_pwd);
 		} else if (i < description->candidates_count + 1) {
-			char buffer[BUFFER_SIZE];
-			if (ice_generate_candidate_sdp(description->candidates + i - 1, buffer, BUFFER_SIZE) <
-			    0)
+			char tmp[BUFFER_SIZE];
+			if (ice_generate_candidate_sdp(description->candidates + i - 1, tmp, BUFFER_SIZE) < 0)
 				continue;
-			ret = snprintf(begin, end - begin, "%s\r\n", buffer);
+			ret = snprintf(begin, end - begin, "%s\r\n", tmp);
 		} else { // i == description->candidates_count + 1
 			if (description->finished)
 				ret = snprintf(begin, end - begin, "a=end-of-candidates\r\n");
@@ -306,7 +303,7 @@ int ice_generate_sdp(const ice_description_t *description, char *buffer, size_t 
 		len += ret;
 		begin += ret < end - begin - 1 ? ret : end - begin - 1;
 	}
-	return len;
+	return (int)len;
 }
 
 int ice_generate_candidate_sdp(const ice_candidate_t *candidate, char *buffer, size_t size) {
