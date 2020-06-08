@@ -197,6 +197,7 @@ int stun_write_value_mapped_address(void *buf, size_t size, const struct sockadd
 		return -1;
 
 	struct stun_value_mapped_address *value = buf;
+	value->padding = 0;
 	switch (addr->sa_family) {
 	case AF_INET: {
 		value->family = STUN_ADDRESS_FAMILY_IPV4;
