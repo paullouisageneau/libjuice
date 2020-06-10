@@ -230,38 +230,49 @@ int stun_write_value_mapped_address(void *buf, size_t size, const struct sockadd
 	}
 }
 
-int stun_read(void *data, size_t size, stun_message_t *msg) {
-	memset(msg, 0, sizeof(*msg));
-
+bool is_stun_datagram(const void *data, size_t size) {
 	// RFC 5389: The most significant 2 bits of every STUN message MUST be zeroes.
 	if (!size || *((uint8_t *)data) & 0xC0) {
 		JLOG_VERBOSE("Not a STUN message: first 2 bits are not zeroes");
-		return 0;
+		return false;
 	}
 
 	if (size < sizeof(struct stun_header)) {
 		JLOG_VERBOSE("Not a STUN message: message too short, size=%zu", size);
-		return 0;
+		return false;
 	}
 
 	const struct stun_header *header = data;
 	if (ntohl(header->magic) != STUN_MAGIC) {
 		JLOG_VERBOSE("Not a STUN message: magic number invalid");
-		return 0;
+		return false;
 	}
 
 	// RFC 5389: The message length MUST contain the size, in bytes, of the message not including
 	// the 20-byte STUN header. Since all STUN attributes are padded to a multiple of 4 bytes, the
 	// last 2 bits of this field are always zero.
-	size_t length = ntohs(header->length);
+	const size_t length = ntohs(header->length);
 	if (length & 0x03) {
 		JLOG_VERBOSE("Not a STUN message: invalid length %zu not multiple of 4", length);
-		return 0;
+		return false;
 	}
 	if (size != sizeof(struct stun_header) + length) {
 		JLOG_VERBOSE("Not a STUN message: invalid length %zu while expecting %zu", length,
 		             size - sizeof(struct stun_header));
-		return 0;
+		return false;
+	}
+
+	return true;
+}
+
+int stun_read(void *data, size_t size, stun_message_t *msg) {
+	memset(msg, 0, sizeof(*msg));
+
+	const struct stun_header *header = data;
+	const size_t length = ntohs(header->length);
+	if (size < sizeof(struct stun_header) + length) {
+		JLOG_ERROR("Invalid STUN message length", length, size - sizeof(struct stun_header));
+		return -1;
 	}
 
 	uint16_t type = ntohs(header->type);

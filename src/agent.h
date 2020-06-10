@@ -87,6 +87,7 @@ struct juice_agent {
 	ice_candidate_pair_t *selected_pair;
 	size_t candidate_pairs_count;
 	agent_stun_entry_t entries[MAX_STUN_ENTRIES_COUNT];
+	agent_stun_entry_t *selected_entry; // entry for selected pair
 	size_t entries_count;
 	timestamp_t fail_timestamp;
 	bool gathering_done;
@@ -108,7 +109,8 @@ int agent_get_selected_candidate_pair(juice_agent_t *agent, ice_candidate_t *loc
                                       ice_candidate_t *remote);
 
 void agent_run(juice_agent_t *agent);
-void agent_interrupt(juice_agent_t *agent);
+int agent_recv(juice_agent_t *agent);
+int agent_interrupt(juice_agent_t *agent);
 void agent_change_state(juice_agent_t *agent, juice_state_t state);
 int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp);
 int agent_verify_stun(juice_agent_t *agent, void *buf, size_t size, const stun_message_t *msg);

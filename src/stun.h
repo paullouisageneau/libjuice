@@ -192,6 +192,8 @@ int stun_write_attr(void *buf, size_t size, uint16_t type, const void *value, si
 int stun_write_value_mapped_address(void *buf, size_t size, const struct sockaddr *addr,
                                     socklen_t addrlen, const uint8_t *mask);
 
+bool is_stun_datagram(const void *data, size_t size);
+
 int stun_read(void *data, size_t size, stun_message_t *msg);
 int stun_read_attr(const void *data, size_t size, stun_message_t *msg, uint8_t *begin,
                    uint8_t *attr_begin);

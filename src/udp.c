@@ -96,8 +96,8 @@ socket_t udp_create_socket(const udp_socket_config_t *config) {
 #endif
 #endif
 
-	// Set buffer size to 1 MiB for performance
-	const int bufferSize = 1024 * 1024;
+	// Set buffer size to 2 MiB for performance
+	const int bufferSize = 2 * 1024 * 1024;
 	setsockopt(sock, SOL_SOCKET, SO_RCVBUF, (char *)&bufferSize, sizeof(bufferSize));
 	setsockopt(sock, SOL_SOCKET, SO_SNDBUF, (char *)&bufferSize, sizeof(bufferSize));
 
