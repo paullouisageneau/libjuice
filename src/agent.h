@@ -19,6 +19,10 @@
 #ifndef JUICE_AGENT_H
 #define JUICE_AGENT_H
 
+#ifdef __STDC_NO_ATOMICS__
+#define NO_ATOMICS
+#endif
+
 #include "addr.h"
 #include "ice.h"
 #include "juice.h"
@@ -29,6 +33,10 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#ifndef NO_ATOMICS
+#include <stdatomic.h>
+#endif
+
 // RFC 8445: Agents MUST NOT use an RTO value smaller than 500 ms.
 #define MIN_STUN_RETRANSMISSION_TIMEOUT 500 // msecs
 #define MAX_STUN_RETRANSMISSION_COUNT 5     // count (will give ~30s)
@@ -37,7 +45,7 @@
 // another value based on the characteristics of the associated data.
 #define STUN_PACING_TIME 50 // msecs
 
-// RFC 8445: Agents SHOULD use a Tr value of 15 seconds.  Agents MAY use a bigger value but MUST NOT
+// RFC 8445: Agents SHOULD use a Tr value of 15 seconds. Agents MAY use a bigger value but MUST NOT
 // use a value smaller than 15 seconds.
 #define STUN_KEEPALIVE_PERIOD 15000 // msecs
 
@@ -70,6 +78,11 @@ typedef struct agent_stun_entry {
 	timediff_t retransmission_timeout;
 	int retransmissions;
 	bool finished;
+#ifdef NO_ATOMICS
+	bool armed;
+#else
+	atomic_flag armed;
+#endif
 } agent_stun_entry_t;
 
 struct juice_agent {
@@ -88,6 +101,11 @@ struct juice_agent {
 	size_t candidate_pairs_count;
 	agent_stun_entry_t entries[MAX_STUN_ENTRIES_COUNT];
 	size_t entries_count;
+#ifdef NO_ATOMICS
+	agent_stun_entry_t *selected_entry;
+#else
+	_Atomic(agent_stun_entry_t *) selected_entry;
+#endif
 	timestamp_t fail_timestamp;
 	bool gathering_done;
 	bool thread_started;
@@ -108,7 +126,8 @@ int agent_get_selected_candidate_pair(juice_agent_t *agent, ice_candidate_t *loc
                                       ice_candidate_t *remote);
 
 void agent_run(juice_agent_t *agent);
-void agent_interrupt(juice_agent_t *agent);
+int agent_recv(juice_agent_t *agent);
+int agent_interrupt(juice_agent_t *agent);
 void agent_change_state(juice_agent_t *agent, juice_state_t state);
 int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp);
 int agent_verify_stun(juice_agent_t *agent, void *buf, size_t size, const stun_message_t *msg);

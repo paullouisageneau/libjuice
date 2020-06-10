@@ -2,7 +2,7 @@
 
 libjuice :lemon::sweat_drops: (_JUICE is a UDP Interactive Connectivity Establishment library_) allows to open bidirectionnal User Datagram Protocol (UDP) streams with Network Address Translator (NAT) traversal.
 
-The library is a simplified implementation of the Interactive Connectivity Establishment (ICE) protocol in C99 for POSIX platforms and Microsoft Windows. It supports only a single component over UDP per session in a standard single-gateway network topology, as this should be sufficient for the majority of use cases nowadays.
+The library is a simplified implementation of the Interactive Connectivity Establishment (ICE) protocol in C for POSIX platforms and Microsoft Windows. It supports only a single component over UDP per session in a standard single-gateway network topology, as this should be sufficient for the majority of use cases nowadays.
 
 Licensed under LGPLv2, see [LICENSE](https://github.com/paullouisageneau/libjuice/blob/master/LICENSE).
 

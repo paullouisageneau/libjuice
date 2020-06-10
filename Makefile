@@ -20,6 +20,11 @@ else
         LIBS+=openssl
 endif
 
+NO_ATOMICS ?= 0
+ifneq ($(NO_ATOMICS), 0)
+        CFLAGS+=-DNO_ATOMICS
+endif
+
 INCLUDES+=$(shell pkg-config --cflags $(LIBS))
 LDLIBS+=$(shell pkg-config --libs $(LIBS))
 

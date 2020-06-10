@@ -5,8 +5,9 @@ project (libjuice
 	LANGUAGES C)
 
 option(USE_NETTLE "Use Nettle instead of OpenSSL for HMAC computation" OFF)
+option(NO_ATOMICS "Force disabling C11 atomics" OFF)
 
-set(C_STANDARD 99)
+set(C_STANDARD 11)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 set(CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake/Modules)
 
@@ -71,6 +72,11 @@ else()
     target_link_libraries(juice PRIVATE OpenSSL::SSL)
     target_compile_definitions(juice-static PRIVATE USE_NETTLE=0)
     target_link_libraries(juice-static PRIVATE OpenSSL::SSL)
+endif()
+
+if (NO_ATOMICS)
+	target_compile_definitions(juice PRIVATE NO_ATOMICS)
+	target_compile_definitions(juice-static PRIVATE NO_ATOMICS)
 endif()
 
 if(APPLE)
