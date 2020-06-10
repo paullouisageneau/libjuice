@@ -6,7 +6,7 @@ project (libjuice
 
 option(USE_NETTLE "Use Nettle instead of OpenSSL for HMAC computation" OFF)
 
-set(C_STANDARD 99)
+set(C_STANDARD 11)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 set(CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake/Modules)
 
