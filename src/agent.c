@@ -69,6 +69,12 @@ juice_agent_t *agent_create(const juice_config_t *config) {
 	pthread_mutexattr_settype(&mutexattr, PTHREAD_MUTEX_RECURSIVE);
 	pthread_mutex_init(&agent->mutex, &mutexattr);
 
+#ifdef NO_ATOMICS
+	agent->selected_entry = NULL;
+#else
+	atomic_init(&agent->selected_entry, NULL);
+#endif
+
 	ice_create_local_description(&agent->local);
 
 	// RFC 8445: 16.1. Attributes
@@ -251,13 +257,26 @@ int agent_set_remote_gathering_done(juice_agent_t *agent) {
 }
 
 int agent_send(juice_agent_t *agent, const char *data, size_t size) {
+	// For performance reasons, this function is lock-free if the platform has atomics
+#ifdef NO_ATOMICS
 	pthread_mutex_lock(&agent->mutex);
-	if (!agent->selected_pair) {
+	agent_stun_entry_t *selected_entry = agent->selected_entry;
+	if (selected_entry)
+		selected_entry->armed = false;   // so keepalive will be rescheduled
+	pthread_mutex_unlock(&agent->mutex);
+#else
+	agent_stun_entry_t *selected_entry = atomic_load(&agent->selected_entry);
+	if (selected_entry)
+		atomic_flag_clear(&selected_entry->armed); // so keepalive will be rescheduled
+#endif
+
+	if (!selected_entry || !selected_entry->pair) {
 		JLOG_ERROR("Send called before ICE is connected");
 		pthread_mutex_unlock(&agent->mutex);
 		return -1;
 	}
-	const addr_record_t *record = &agent->selected_pair->remote->resolved;
+
+	const addr_record_t *record = &selected_entry->pair->remote->resolved;
 #if defined(_WIN32) || defined(__APPLE__)
 	addr_record_t tmp = *record;
 	addr_map_inet6_v4mapped(&tmp.addr, &tmp.len);
@@ -267,12 +286,6 @@ int agent_send(juice_agent_t *agent, const char *data, size_t size) {
 	    sendto(agent->sock, data, size, 0, (const struct sockaddr *)&record->addr, record->len);
 #endif
 
-	if (ret >= 0) {
-		// Reset keepalive
-		if (agent->selected_entry && agent->selected_entry->finished)
-			agent_arm_transmission(agent, agent->selected_entry, STUN_KEEPALIVE_PERIOD);
-	}
-	pthread_mutex_unlock(&agent->mutex);
 	return ret;
 }
 
@@ -461,13 +474,22 @@ void agent_change_state(juice_agent_t *agent, juice_state_t state) {
 
 int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 	timestamp_t now = current_timestamp();
-	*next_timestamp = now + 10000; // for safety
+	*next_timestamp = now + 10000; // We need at least to rearm keepalives
 
 	if (agent->state == JUICE_STATE_DISCONNECTED)
 		return 0;
 
 	for (int i = 0; i < agent->entries_count; ++i) {
 		agent_stun_entry_t *entry = agent->entries + i;
+#ifdef NO_ATOMICS
+		bool must_arm = !entry->armed;
+#else
+		bool must_arm = !atomic_flag_test_and_set(&entry->armed);
+#endif
+		if (entry->finished && must_arm) {
+			JLOG_VERBOSE("STUN entry %d: Must be rearmed", i);
+			agent_arm_transmission(agent, entry, STUN_KEEPALIVE_PERIOD);
+		}
 		if (!entry->next_transmission || entry->next_transmission > now)
 			continue;
 
@@ -536,7 +558,11 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 		for (int i = 0; i < agent->entries_count; ++i) {
 			agent_stun_entry_t *entry = agent->entries + i;
 			if (entry->pair == agent->selected_pair) {
+#ifdef NO_ATOMICS
 				agent->selected_entry = entry;
+#else
+				atomic_store(&agent->selected_entry, entry);
+#endif
 				break;
 			}
 		}
@@ -1041,6 +1067,12 @@ int agent_add_candidate_pair(juice_agent_t *agent, ice_candidate_t *remote) {
 }
 
 void agent_arm_transmission(juice_agent_t *agent, agent_stun_entry_t *entry, timediff_t delay) {
+#ifdef NO_ATOMICS
+	entry->armed = true;
+#else
+	atomic_flag_test_and_set(&entry->armed);
+#endif
+
 	// Arm transmission
 	entry->next_transmission = current_timestamp() + delay;
 	entry->retransmissions = MAX_STUN_RETRANSMISSION_COUNT;
@@ -1103,17 +1135,22 @@ void agent_update_ordered_pairs(juice_agent_t *agent) {
 
 agent_stun_entry_t *agent_find_entry_from_record(juice_agent_t *agent,
                                                  const addr_record_t *record) {
-	if (agent->selected_entry) {
+#ifdef NO_ATOMICS
+	agent_stun_entry_t *selected_entry = agent->selected_entry;
+#else
+	agent_stun_entry_t *selected_entry = atomic_load(&agent->selected_entry);
+#endif
+	if (selected_entry) {
 		// As an optimization, try to match selected entry first
-		if (record->len == agent->selected_entry->record.len &&
-		    memcmp(&record->addr, &agent->selected_entry->record.addr, record->len) == 0) {
+		if (record->len == selected_entry->record.len &&
+		    memcmp(&record->addr, &selected_entry->record.addr, record->len) == 0) {
 			JLOG_DEBUG("STUN selected entry matching incoming address");
-			return agent->selected_entry;
+			return selected_entry;
 		}
 	}
 	for (int i = 0; i < agent->entries_count; ++i) {
 		agent_stun_entry_t *entry = agent->entries + i;
-		if (entry == agent->selected_entry)
+		if (entry == selected_entry)
 			continue;
 		if (record->len == entry->record.len &&
 		    memcmp(&record->addr, &entry->record.addr, record->len) == 0) {
