@@ -64,10 +64,7 @@ juice_agent_t *agent_create(const juice_config_t *config) {
 	agent->mode = AGENT_MODE_UNKNOWN;
 	agent->sock = INVALID_SOCKET;
 
-	pthread_mutexattr_t mutexattr;
-	pthread_mutexattr_init(&mutexattr);
-	pthread_mutexattr_settype(&mutexattr, PTHREAD_MUTEX_RECURSIVE);
-	pthread_mutex_init(&agent->mutex, &mutexattr);
+	mtx_init(&agent->mutex, mtx_recursive);
 
 #ifdef NO_ATOMICS
 	agent->selected_entry = NULL;
@@ -94,7 +91,7 @@ void agent_do_destroy(juice_agent_t *agent) {
 	JLOG_DEBUG("Destroying agent");
 	if (agent->sock != INVALID_SOCKET)
 		closesocket(agent->sock);
-	pthread_mutex_destroy(&agent->mutex);
+	mtx_destroy(&agent->mutex);
 	free(agent);
 
 #ifdef _WIN32
@@ -103,31 +100,31 @@ void agent_do_destroy(juice_agent_t *agent) {
 }
 
 void agent_destroy(juice_agent_t *agent) {
-	pthread_mutex_lock(&agent->mutex);
+	mtx_lock(&agent->mutex);
 	memset(&agent->config, 0, sizeof(agent->config));
 
 	if (agent->thread_started) {
 		JLOG_DEBUG("Waiting for agent thread");
 		agent->thread_stopped = true;
-		pthread_mutex_unlock(&agent->mutex);
+		mtx_unlock(&agent->mutex);
 		agent_interrupt(agent);
-		pthread_join(agent->thread, NULL);
+		thrd_join(agent->thread, NULL);
 	} else {
-		pthread_mutex_unlock(&agent->mutex);
+		mtx_unlock(&agent->mutex);
 	}
 	agent_do_destroy(agent);
 }
 
-void *agent_thread_entry(void *arg) {
+int agent_thread_entry(void *arg) {
 	agent_run((juice_agent_t *)arg);
-	return NULL;
+	return 0;
 }
 
 int agent_gather_candidates(juice_agent_t *agent) {
-	pthread_mutex_lock(&agent->mutex);
+	mtx_lock(&agent->mutex);
 	if (agent->sock != INVALID_SOCKET) {
 		JLOG_WARN("Candidates gathering already started");
-		pthread_mutex_unlock(&agent->mutex);
+		mtx_unlock(&agent->mutex);
 		return 0;
 	}
 
@@ -138,7 +135,7 @@ int agent_gather_candidates(juice_agent_t *agent) {
 	agent->sock = udp_create_socket(&socket_config);
 	if (agent->sock == INVALID_SOCKET) {
 		JLOG_FATAL("UDP socket creation for agent failed");
-		pthread_mutex_unlock(&agent->mutex);
+		mtx_unlock(&agent->mutex);
 		return -1;
 	}
 	agent_change_state(agent, JUICE_STATE_GATHERING);
@@ -185,34 +182,34 @@ int agent_gather_candidates(juice_agent_t *agent) {
 		JLOG_DEBUG("Assuming controlling mode");
 		agent->mode = AGENT_MODE_CONTROLLING;
 	}
-	int ret = pthread_create(&agent->thread, NULL, agent_thread_entry, agent);
+	int ret = thrd_create(&agent->thread, agent_thread_entry, agent);
 	if (ret) {
-		JLOG_FATAL("pthread_create for agent failed, error=%d", ret);
-		pthread_mutex_unlock(&agent->mutex);
+		JLOG_FATAL("thrd_create for agent failed, error=%d", ret);
+		mtx_unlock(&agent->mutex);
 		return -1;
 	}
 	agent->thread_started = true;
-	pthread_mutex_unlock(&agent->mutex);
+	mtx_unlock(&agent->mutex);
 	return 0;
 }
 
 int agent_get_local_description(juice_agent_t *agent, char *buffer, size_t size) {
-	pthread_mutex_lock(&agent->mutex);
+	mtx_lock(&agent->mutex);
 	if (ice_generate_sdp(&agent->local, buffer, size) < 0)
 		return -1;
 	if (agent->mode == AGENT_MODE_UNKNOWN) {
 		JLOG_DEBUG("Assuming controlling mode");
 		agent->mode = AGENT_MODE_CONTROLLING;
 	}
-	pthread_mutex_unlock(&agent->mutex);
+	mtx_unlock(&agent->mutex);
 	return 0;
 }
 
 int agent_set_remote_description(juice_agent_t *agent, const char *sdp) {
-	pthread_mutex_lock(&agent->mutex);
+	mtx_lock(&agent->mutex);
 	if (ice_parse_sdp(sdp, &agent->remote) < 0) {
 		JLOG_ERROR("Failed to parse remote SDP description");
-		pthread_mutex_unlock(&agent->mutex);
+		mtx_unlock(&agent->mutex);
 		return -1;
 	}
 	for (size_t i = 0; i < agent->remote.candidates_count; ++i) {
@@ -223,47 +220,47 @@ int agent_set_remote_description(juice_agent_t *agent, const char *sdp) {
 		JLOG_DEBUG("Assuming controlled mode");
 		agent->mode = AGENT_MODE_CONTROLLED;
 	}
-	pthread_mutex_unlock(&agent->mutex);
+	mtx_unlock(&agent->mutex);
 	agent_interrupt(agent);
 	return 0;
 }
 
 int agent_add_remote_candidate(juice_agent_t *agent, const char *sdp) {
-	pthread_mutex_lock(&agent->mutex);
+	mtx_lock(&agent->mutex);
 	ice_candidate_t candidate;
 	if (ice_parse_candidate_sdp(sdp, &candidate) < 0) {
 		JLOG_ERROR("Failed to parse remote SDP candidate");
-		pthread_mutex_unlock(&agent->mutex);
+		mtx_unlock(&agent->mutex);
 		return -1;
 	}
 	if (ice_add_candidate(&candidate, &agent->remote)) {
 		JLOG_ERROR("Failed to add candidate to remote description");
-		pthread_mutex_unlock(&agent->mutex);
+		mtx_unlock(&agent->mutex);
 		return -1;
 	}
 	ice_candidate_t *remote = agent->remote.candidates + agent->remote.candidates_count - 1;
 	int ret = agent_add_candidate_pair(agent, remote);
-	pthread_mutex_unlock(&agent->mutex);
+	mtx_unlock(&agent->mutex);
 	agent_interrupt(agent);
 	return ret;
 }
 
 int agent_set_remote_gathering_done(juice_agent_t *agent) {
-	pthread_mutex_lock(&agent->mutex);
+	mtx_lock(&agent->mutex);
 	agent->remote.finished = true;
 	agent->fail_timestamp = 0; // So the bookkeeping will recompute it and fail
-	pthread_mutex_unlock(&agent->mutex);
+	mtx_unlock(&agent->mutex);
 	return 0;
 }
 
 int agent_send(juice_agent_t *agent, const char *data, size_t size) {
 	// For performance reasons, this function is lock-free if the platform has atomics
 #ifdef NO_ATOMICS
-	pthread_mutex_lock(&agent->mutex);
+	mtx_lock(&agent->mutex);
 	agent_stun_entry_t *selected_entry = agent->selected_entry;
 	if (selected_entry)
 		selected_entry->armed = false;   // so keepalive will be rescheduled
-	pthread_mutex_unlock(&agent->mutex);
+	mtx_unlock(&agent->mutex);
 #else
 	agent_stun_entry_t *selected_entry = atomic_load(&agent->selected_entry);
 	if (selected_entry)
@@ -272,7 +269,7 @@ int agent_send(juice_agent_t *agent, const char *data, size_t size) {
 
 	if (!selected_entry || !selected_entry->pair) {
 		JLOG_ERROR("Send called before ICE is connected");
-		pthread_mutex_unlock(&agent->mutex);
+		mtx_unlock(&agent->mutex);
 		return -1;
 	}
 
@@ -290,28 +287,28 @@ int agent_send(juice_agent_t *agent, const char *data, size_t size) {
 }
 
 juice_state_t agent_get_state(juice_agent_t *agent) {
-	pthread_mutex_lock(&agent->mutex);
+	mtx_lock(&agent->mutex);
 	juice_state_t state = agent->state;
-	pthread_mutex_unlock(&agent->mutex);
+	mtx_unlock(&agent->mutex);
 	return state;
 }
 
 int agent_get_selected_candidate_pair(juice_agent_t *agent, ice_candidate_t *local,
                                       ice_candidate_t *remote) {
-	pthread_mutex_lock(&agent->mutex);
+	mtx_lock(&agent->mutex);
 	ice_candidate_pair_t *pair = agent->selected_pair;
 	if (!pair) {
-		pthread_mutex_unlock(&agent->mutex);
+		mtx_unlock(&agent->mutex);
 		return -1;
 	}
 	*local = pair->local ? *pair->local : agent->local.candidates[0];
 	*remote = *pair->remote;
-	pthread_mutex_unlock(&agent->mutex);
+	mtx_unlock(&agent->mutex);
 	return 0;
 }
 
 void agent_run(juice_agent_t *agent) {
-	pthread_mutex_lock(&agent->mutex);
+	mtx_lock(&agent->mutex);
 	agent_change_state(agent, JUICE_STATE_CONNECTING);
 
 	// STUN server handling
@@ -364,9 +361,9 @@ void agent_run(juice_agent_t *agent) {
 		FD_SET(agent->sock, &readfds);
 		int n = SOCKET_TO_INT(agent->sock) + 1;
 
-		pthread_mutex_unlock(&agent->mutex);
+		mtx_unlock(&agent->mutex);
 		int ret = select(n, &readfds, NULL, NULL, &timeout);
-		pthread_mutex_lock(&agent->mutex);
+		mtx_lock(&agent->mutex);
 		if (ret < 0) {
 			JLOG_FATAL("select failed, errno=%d", sockerrno);
 			break;
@@ -385,7 +382,7 @@ void agent_run(juice_agent_t *agent) {
 	}
 	JLOG_DEBUG("Leaving agent thread");
 	agent_change_state(agent, JUICE_STATE_DISCONNECTED);
-	pthread_mutex_unlock(&agent->mutex);
+	mtx_unlock(&agent->mutex);
 }
 
 int agent_recv(juice_agent_t *agent) {
@@ -444,22 +441,22 @@ int agent_recv(juice_agent_t *agent) {
 
 int agent_interrupt(juice_agent_t *agent) {
 	JLOG_VERBOSE("Interrupting agent thread");
-	pthread_mutex_lock(&agent->mutex);
+	mtx_lock(&agent->mutex);
 	if (agent->sock == INVALID_SOCKET) {
-		pthread_mutex_unlock(&agent->mutex);
+		mtx_unlock(&agent->mutex);
 		return -1;
 	}
 
 	addr_record_t record;
 	if (udp_get_local_addr(agent->sock, &record) == 0) {
 		if (sendto(agent->sock, NULL, 0, 0, (struct sockaddr *)&record.addr, record.len) == 0) {
-			pthread_mutex_unlock(&agent->mutex);
+			mtx_unlock(&agent->mutex);
 			return 0;
 		}
 	}
 
 	JLOG_WARN("Failed to interrupt thread by triggering socket, errno=%d", sockerrno);
-	pthread_mutex_unlock(&agent->mutex);
+	mtx_unlock(&agent->mutex);
 	return -1;
 }
 

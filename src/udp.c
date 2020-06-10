@@ -21,9 +21,13 @@
 #include "log.h"
 #include "random.h"
 
-#include <pthread.h>
+#ifdef __STDC_NO_THREADS__
+#error C11 threads are required
+#endif
+
 #include <stdio.h>
 #include <string.h>
+#include <threads.h> // for mutexes
 
 static struct addrinfo *find_family(struct addrinfo *ai_list, unsigned int family) {
 	struct addrinfo *ai = ai_list;
@@ -32,20 +36,27 @@ static struct addrinfo *find_family(struct addrinfo *ai_list, unsigned int famil
 	return ai;
 }
 
+static mtx_t port_count_mutex;
+static once_flag port_count_once_flag = ONCE_FLAG_INIT;
+static uint32_t port_count = 0;
+
+static void port_count_init(void) {
+	mtx_init(&port_count_mutex, mtx_plain);
+	port_count = juice_rand32();
+}
+
 static uint16_t get_next_port_in_range(uint16_t begin, uint16_t end) {
-	static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
-	static uint32_t count = 0;
 	if (begin == 0)
 		begin = 1024;
 	if (end == 0)
 		end = 0xFFFF;
-	if (count == 0)
-		count = juice_rand32();
 
-	pthread_mutex_lock(&mutex);
+	call_once(&port_count_once_flag, port_count_init);
+
+	mtx_lock(&port_count_mutex);
 	uint32_t diff = end > begin ? end - begin : 0;
-	uint16_t next = begin + count++ % (diff + 1);
-	pthread_mutex_unlock(&mutex);
+	uint16_t next = begin + port_count++ % (diff + 1);
+	mtx_unlock(&port_count_mutex);
 	return next;
 }
 

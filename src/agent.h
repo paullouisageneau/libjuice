@@ -19,6 +19,10 @@
 #ifndef JUICE_AGENT_H
 #define JUICE_AGENT_H
 
+#ifdef __STDC_NO_THREADS__
+#error C11 threads are required
+#endif
+
 #ifdef __STDC_NO_ATOMICS__
 #define NO_ATOMICS
 #endif
@@ -29,9 +33,9 @@
 #include "socket.h"
 #include "stun.h"
 
-#include <pthread.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <threads.h>
 
 #ifndef NO_ATOMICS
 #include <stdatomic.h>
@@ -90,8 +94,8 @@ struct juice_agent {
 	juice_state_t state;
 	agent_mode_t mode;
 	socket_t sock;
-	pthread_t thread;
-	pthread_mutex_t mutex;
+	thrd_t thread;
+	mtx_t mutex;
 	uint64_t ice_tiebreaker;
 	ice_description_t local;
 	ice_description_t remote;
