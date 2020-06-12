@@ -160,6 +160,10 @@ int agent_gather_candidates(juice_agent_t *agent) {
 			JLOG_ERROR("Failed to create host candidate");
 			continue;
 		}
+		if (agent->local.candidates_count >= MAX_HOST_CANDIDATES_COUNT) {
+			JLOG_WARN("Local description already has the maximum number of host candidates");
+			break;
+		}
 		if (ice_add_candidate(&candidate, &agent->local)) {
 			JLOG_ERROR("Failed to add candidate to local description");
 			continue;
@@ -985,16 +989,21 @@ int agent_add_local_reflexive_candidate(juice_agent_t *agent, ice_candidate_type
 		JLOG_ERROR("Failed to create reflexive candidate");
 		return -1;
 	}
-	if (ice_add_candidate(&candidate, &agent->local)) {
-		JLOG_ERROR("Failed to add candidate to local description");
-		return -1;
-	}
 	char buffer[BUFFER_SIZE];
 	if (ice_generate_candidate_sdp(&candidate, buffer, BUFFER_SIZE) < 0) {
 		JLOG_ERROR("Failed to generate SDP for local candidate");
 		return -1;
 	}
 	JLOG_DEBUG("Gathered reflexive candidate: %s", buffer);
+
+	if (agent->local.candidates_count >= ICE_MAX_CANDIDATES_COUNT) {
+		JLOG_WARN("Local description already has the maximum number of candidates");
+		return 0;
+	}
+	if (ice_add_candidate(&candidate, &agent->local)) {
+		JLOG_ERROR("Failed to add candidate to local description");
+		return -1;
+	}
 
 	if (type != ICE_CANDIDATE_TYPE_PEER_REFLEXIVE && agent->config.cb_candidate)
 		agent->config.cb_candidate(agent, buffer, agent->config.user_ptr);
@@ -1019,11 +1028,17 @@ int agent_add_remote_reflexive_candidate(juice_agent_t *agent, ice_candidate_typ
 		JLOG_ERROR("Failed to create reflexive candidate");
 		return -1;
 	}
+	JLOG_DEBUG("Obtained a new remote reflexive candidate, priority=%lu", (unsigned long)priority);
+
+	if (agent->remote.candidates_count >= ICE_MAX_CANDIDATES_COUNT) {
+		JLOG_WARN("Remote description already has the maximum number of candidates");
+		return 0;
+	}
 	if (ice_add_candidate(&candidate, &agent->remote)) {
 		JLOG_ERROR("Failed to add candidate to remote description");
 		return -1;
 	}
-	JLOG_DEBUG("Obtained a new remote reflexive candidate, priority=%lu", (unsigned long)priority);
+
 	ice_candidate_t *remote = agent->remote.candidates + agent->remote.candidates_count - 1;
 	remote->priority = priority;
 	return agent_add_candidate_pair(agent, remote);

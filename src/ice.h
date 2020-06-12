@@ -25,7 +25,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#define ICE_MAX_CANDIDATES_COUNT 16
+#define ICE_MAX_CANDIDATES_COUNT 16 // ~ 500B * 16 = 8KB
 
 typedef enum ice_candidate_type {
 	ICE_CANDIDATE_TYPE_UNKNOWN,
