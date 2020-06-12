@@ -152,5 +152,6 @@ void agent_update_candidate_pairs(juice_agent_t *agent);
 void agent_update_ordered_pairs(juice_agent_t *agent);
 
 agent_stun_entry_t *agent_find_entry_from_record(juice_agent_t *agent, const addr_record_t *record);
+void agent_translate_host_candidate_entry(juice_agent_t *agent, agent_stun_entry_t *entry);
 
 #endif
