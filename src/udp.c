@@ -185,7 +185,7 @@ static int has_duplicate_addr(struct sockaddr *addr, const addr_record_t *record
 			switch (addr->sa_family) {
 			case AF_INET: {
 				// For IPv4, compare the whole address
-				if (memcmp(&record->addr, addr, record->len) == 0)
+				if (addr_is_equal((struct sockaddr *)&record->addr, (struct sockaddr *)&addr, true))
 					return true;
 				break;
 			}
@@ -193,7 +193,8 @@ static int has_duplicate_addr(struct sockaddr *addr, const addr_record_t *record
 				// For IPv6, compare the network part only
 				const struct sockaddr_in6 *rsin6 = (const struct sockaddr_in6 *)&record->addr;
 				const struct sockaddr_in6 *asin6 = (const struct sockaddr_in6 *)addr;
-				if (memcmp(&rsin6->sin6_addr, &asin6->sin6_addr, 8) == 0) // compare first 64 bits
+				if (memcmp(&rsin6->sin6_addr, &asin6->sin6_addr, 8) == 0 // compare first 64 bits
+				    && rsin6->sin6_port == asin6->sin6_port)
 					return true;
 				break;
 			}

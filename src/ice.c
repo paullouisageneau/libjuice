@@ -268,8 +268,8 @@ ice_candidate_t *ice_find_candidate_from_addr(ice_description_t *description,
 	ice_candidate_t *end = cur + description->candidates_count;
 	while (cur != end) {
 		if ((type == ICE_CANDIDATE_TYPE_UNKNOWN || cur->type == type) &&
-		    record->len == cur->resolved.len &&
-		    memcmp(&record->addr, &cur->resolved.addr, record->len) == 0)
+		    addr_is_equal((struct sockaddr *)&record->addr, (struct sockaddr *)&cur->resolved.addr,
+		                  true))
 			return cur;
 		++cur;
 	}
