@@ -15,6 +15,13 @@ set(C_STANDARD 11)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 set(CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake/Modules)
 
+if(WIN32)
+	add_definitions(-DWIN32_LEAN_AND_MEAN)
+	if (MSVC)
+		add_definitions(-DNOMINMAX)
+	endif()
+endif()
+
 set(LIBJUICE_SOURCES
 	${CMAKE_CURRENT_SOURCE_DIR}/src/addr.c
 	${CMAKE_CURRENT_SOURCE_DIR}/src/agent.c
