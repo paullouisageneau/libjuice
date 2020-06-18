@@ -21,9 +21,11 @@
 #include "log.h"
 #include "random.h"
 
-#include <pthread.h>
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
+
+#include <pthread.h>
 
 static struct addrinfo *find_family(struct addrinfo *ai_list, unsigned int family) {
 	struct addrinfo *ai = ai_list;

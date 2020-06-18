@@ -18,7 +18,6 @@
 
 #include "log.h"
 
-#include <pthread.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
@@ -27,6 +26,8 @@
 #ifndef _WIN32
 #include <unistd.h>
 #endif
+
+#include <pthread.h>
 
 #define BUFFER_SIZE 4096
 

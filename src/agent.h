@@ -23,19 +23,23 @@
 #define NO_ATOMICS
 #endif
 
+#define HAVE_STRUCT_TIMESPEC
+
 #include "addr.h"
 #include "ice.h"
 #include "juice.h"
 #include "socket.h"
 #include "stun.h"
 
-#include <pthread.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <time.h>
 
 #ifndef NO_ATOMICS
 #include <stdatomic.h>
 #endif
+
+#include <pthread.h>
 
 // RFC 8445: Agents MUST NOT use an RTO value smaller than 500 ms.
 #define MIN_STUN_RETRANSMISSION_TIMEOUT 500 // msecs
