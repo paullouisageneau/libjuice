@@ -23,6 +23,12 @@
 #include <stdbool.h>
 #include <time.h>
 
+#ifdef _WIN32
+#define HAVE_STRUCT_TIMESPEC // for pthreads-win32
+#endif
+
+#include <pthread.h> // for mutexes
+
 #if defined(__linux__)
 #include <errno.h>
 #include <sys/random.h>
@@ -64,12 +70,27 @@ static int random_bytes(void *buf, size_t size) {
 static int random_bytes(void *buf, size_t size) { return -1; }
 #endif
 
+static unsigned int generate_seed() {
+#ifdef _WIN32
+	return (unsigned int)GetTickCount();
+#else
+	struct timespec ts;
+	if (clock_gettime(CLOCK_REALTIME, &ts) == 0)
+		return (unsigned int)(ts.tv_sec ^ ts.tv_nsec);
+	else
+		return (unsigned int)time(NULL);
+#endif
+}
+
 void juice_random(void *buf, size_t size) {
 	if (random_bytes(buf, size) == 0)
 		return;
 
-	static bool srandom_called = false;
+	// rand() is not thread-safe
+	static pthread_mutex_t rand_mutex = PTHREAD_MUTEX_INITIALIZER;
+	pthread_mutex_lock(&rand_mutex);
 
+	static bool srandom_called = false;
 #if defined(__unix__) || defined(__APPLE__)
 #define random_func random
 #define srandom_func srandom
@@ -81,24 +102,18 @@ void juice_random(void *buf, size_t size) {
 	if (!srandom_called)
 		JLOG_WARN("Falling back on rand() for random bytes");
 #endif
-
 	if (!srandom_called) {
-		unsigned int seed;
-		struct timespec ts;
-		if (clock_gettime(CLOCK_REALTIME, &ts) == 0)
-			seed = (unsigned int)(ts.tv_sec ^ ts.tv_nsec);
-		else
-			seed = (unsigned int)time(NULL);
-		srandom_func(seed);
+		srandom_func(generate_seed());
 		srandom_called = true;
 	}
 	// RAND_MAX is guaranteed to be at least 2^15 - 1
 	uint8_t *bytes = buf;
 	for (size_t i = 0; i < size; ++i)
 		bytes[i] = (uint8_t)((random_func() & 0x7f80) >> 7);
-
 #undef random_func
 #undef srandom_func
+
+	pthread_mutex_unlock(&rand_mutex);
 }
 
 void juice_random_str64(char *buf, size_t size) {

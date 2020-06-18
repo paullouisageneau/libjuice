@@ -31,6 +31,6 @@ void hmac_sha1(const void *message, size_t size, const void *key, size_t key_siz
 	hmac_sha1_update(&ctx, size, message);
 	hmac_sha1_digest(&ctx, HMAC_SHA1_SIZE, digest);
 #else
-	HMAC(EVP_sha1(), key, key_size, message, size, digest, NULL);
+	HMAC(EVP_sha1(), key, (int)key_size, message, size, digest, NULL);
 #endif
 }

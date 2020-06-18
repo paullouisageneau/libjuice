@@ -188,7 +188,7 @@ int stun_write_attr(void *buf, size_t size, uint16_t type, const void *value, si
 	// Pad to align on 4 bytes
 	while (length & 0x03)
 		attr->value[length++] = 0;
-	return sizeof(struct stun_attr) + length;
+	return (int)(sizeof(struct stun_attr) + length);
 }
 
 int stun_write_value_mapped_address(void *buf, size_t size, const struct sockaddr *addr,

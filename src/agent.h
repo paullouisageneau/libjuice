@@ -39,6 +39,10 @@
 #include <stdatomic.h>
 #endif
 
+#ifdef _WIN32
+#define HAVE_STRUCT_TIMESPEC // for pthreads-win32
+#endif
+
 #include <pthread.h>
 
 // RFC 8445: Agents MUST NOT use an RTO value smaller than 500 ms.

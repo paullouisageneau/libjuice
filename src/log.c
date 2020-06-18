@@ -23,7 +23,9 @@
 #include <string.h>
 #include <time.h>
 
-#ifndef _WIN32
+#ifdef _WIN32
+#define HAVE_STRUCT_TIMESPEC // for pthreads-win32
+#else
 #include <unistd.h>
 #endif
 

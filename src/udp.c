@@ -25,6 +25,10 @@
 #include <string.h>
 #include <time.h>
 
+#ifdef _WIN32
+#define HAVE_STRUCT_TIMESPEC
+#endif
+
 #include <pthread.h>
 
 static struct addrinfo *find_family(struct addrinfo *ai_list, unsigned int family) {
@@ -111,7 +115,7 @@ socket_t udp_create_socket(const udp_socket_config_t *config) {
 
 	// Bind it
 	if (config->port_begin == 0 && config->port_end == 0) {
-		if (bind(sock, ai->ai_addr, ai->ai_addrlen) == 0) {
+		if (bind(sock, ai->ai_addr, (socklen_t)ai->ai_addrlen) == 0) {
 			freeaddrinfo(ai_list);
 			return sock;
 		}
@@ -120,7 +124,7 @@ socket_t udp_create_socket(const udp_socket_config_t *config) {
 
 	} else {
 		struct sockaddr_storage addr;
-		socklen_t addrlen = ai->ai_addrlen;
+		socklen_t addrlen = (socklen_t)ai->ai_addrlen;
 		memcpy(&addr, ai->ai_addr, addrlen);
 
 		int retries = config->port_end - config->port_begin;

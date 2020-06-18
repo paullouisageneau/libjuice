@@ -295,7 +295,7 @@ int agent_send(juice_agent_t *agent, const char *data, size_t size) {
 #if defined(_WIN32) || defined(__APPLE__)
 	addr_record_t tmp = *record;
 	addr_map_inet6_v4mapped(&tmp.addr, &tmp.len);
-	int ret = sendto(agent->sock, data, size, 0, (struct sockaddr *)&tmp.addr, tmp.len);
+	int ret = sendto(agent->sock, data, (int)size, 0, (struct sockaddr *)&tmp.addr, (int)tmp.len);
 #else
 	int ret =
 	    sendto(agent->sock, data, size, 0, (const struct sockaddr *)&record->addr, record->len);
@@ -375,8 +375,8 @@ void agent_run(juice_agent_t *agent) {
 
 		JLOG_VERBOSE("Setting select timeout to %ld ms", (long)timediff);
 		struct timeval timeout;
-		timeout.tv_sec = timediff / 1000;
-		timeout.tv_usec = (timediff % 1000) * 1000;
+		timeout.tv_sec = (long)(timediff / 1000);
+		timeout.tv_usec = (long)((timediff % 1000) * 1000);
 
 		fd_set readfds;
 		FD_ZERO(&readfds);
@@ -1160,7 +1160,7 @@ void agent_update_ordered_pairs(juice_agent_t *agent) {
 		ice_candidate_pair_t **begin = agent->ordered_pairs;
 		ice_candidate_pair_t **end = begin + i;
 		ice_candidate_pair_t **prev = end;
-		uint32_t priority = agent->candidate_pairs[i].priority;
+		uint64_t priority = agent->candidate_pairs[i].priority;
 		while (--prev >= begin && (*prev)->priority < priority)
 			*(prev + 1) = *prev;
 		*(prev + 1) = agent->candidate_pairs + i;

@@ -19,6 +19,7 @@ if(WIN32)
 	add_definitions(-DWIN32_LEAN_AND_MEAN)
 	if (MSVC)
 		add_definitions(-DNOMINMAX)
+		add_definitions(-D_CRT_SECURE_NO_WARNINGS)
 	endif()
 endif()
 

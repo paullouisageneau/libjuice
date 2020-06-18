@@ -41,7 +41,7 @@ static uint32_t crc32_table(const uint8_t *p, size_t size, uint32_t *table) {
 uint32_t juice_crc32(const void *data, size_t size) {
 	static uint32_t table[256] = {0};
 	if (table[0] == 0)
-		for (size_t i = 0; i < 256; ++i)
+		for (uint32_t i = 0; i < 256; ++i)
 			table[i] = crc32_byte(i);
 
 	return crc32_table(data, size, table);

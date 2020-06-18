@@ -220,7 +220,7 @@ int ice_resolve_candidate(ice_candidate_t *candidate, ice_resolve_mode_t mode) {
 	}
 	for (struct addrinfo *ai = ai_list; ai; ai = ai->ai_next) {
 		if (ai->ai_family == AF_INET || ai->ai_family == AF_INET6) {
-			candidate->resolved.len = ai->ai_addrlen;
+			candidate->resolved.len = (socklen_t)ai->ai_addrlen;
 			memcpy(&candidate->resolved.addr, ai->ai_addr, ai->ai_addrlen);
 			break;
 		}
@@ -230,7 +230,7 @@ int ice_resolve_candidate(ice_candidate_t *candidate, ice_resolve_mode_t mode) {
 }
 
 int ice_add_candidate(ice_candidate_t *candidate, ice_description_t *description) {
-	if (candidate == ICE_CANDIDATE_TYPE_UNKNOWN)
+	if (candidate->type == ICE_CANDIDATE_TYPE_UNKNOWN)
 		return -1;
 
 	if (description->candidates_count >= ICE_MAX_CANDIDATES_COUNT)
