@@ -19,18 +19,6 @@ jobs:
       run: (cd build; make)
     - name: test
       run: ./build/tests
-  build-noatomics:
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v2
-    - name: install packages
-      run: sudo apt update && sudo apt install nettle-dev
-    - name: cmake
-      run: cmake -B build -DUSE_NETTLE=1 -DNO_ATOMICS=1
-    - name: make
-      run: (cd build; make)
-    - name: test
-      run: ./build/tests
   build-macos:
     runs-on: macos-latest
     steps:
@@ -49,7 +37,7 @@ jobs:
     - uses: actions/checkout@v2
     - uses: ilammy/msvc-dev-cmd@v1
     - name: cmake
-      run: cmake -B build -G "NMake Makefiles" -DUSE_NETTLE=0
+      run: cmake -B build -G "NMake Makefiles"
     - name: nmake
       run: |
         cd build
