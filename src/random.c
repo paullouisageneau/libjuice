@@ -18,16 +18,11 @@
 
 #include "random.h"
 #include "log.h"
+#include "thread.h" // for mutexes
 
 #include <math.h>
 #include <stdbool.h>
 #include <time.h>
-
-#ifdef _WIN32
-#define HAVE_STRUCT_TIMESPEC // for pthreads-win32
-#endif
-
-#include <pthread.h> // for mutexes
 
 #if defined(__linux__)
 #include <errno.h>
@@ -87,8 +82,8 @@ void juice_random(void *buf, size_t size) {
 		return;
 
 	// rand() is not thread-safe
-	static pthread_mutex_t rand_mutex = PTHREAD_MUTEX_INITIALIZER;
-	pthread_mutex_lock(&rand_mutex);
+	static mutex_t rand_mutex = MUTEX_INITIALIZER;
+	mutex_lock(&rand_mutex);
 
 	static bool srandom_called = false;
 #if defined(__unix__) || defined(__APPLE__)
@@ -113,7 +108,7 @@ void juice_random(void *buf, size_t size) {
 #undef random_func
 #undef srandom_func
 
-	pthread_mutex_unlock(&rand_mutex);
+	mutex_unlock(&rand_mutex);
 }
 
 void juice_random_str64(char *buf, size_t size) {

@@ -23,27 +23,19 @@
 #define NO_ATOMICS
 #endif
 
-#define HAVE_STRUCT_TIMESPEC
-
 #include "addr.h"
 #include "ice.h"
 #include "juice.h"
 #include "socket.h"
 #include "stun.h"
+#include "thread.h"
 
 #include <stdbool.h>
 #include <stdint.h>
-#include <time.h>
 
 #ifndef NO_ATOMICS
 #include <stdatomic.h>
 #endif
-
-#ifdef _WIN32
-#define HAVE_STRUCT_TIMESPEC // for pthreads-win32
-#endif
-
-#include <pthread.h>
 
 // RFC 8445: Agents MUST NOT use an RTO value smaller than 500 ms.
 #define MIN_STUN_RETRANSMISSION_TIMEOUT 500 // msecs
@@ -99,8 +91,8 @@ struct juice_agent {
 	juice_state_t state;
 	agent_mode_t mode;
 	socket_t sock;
-	pthread_t thread;
-	pthread_mutex_t mutex;
+	thread_t thread;
+	mutex_t mutex;
 	uint64_t ice_tiebreaker;
 	ice_description_t local;
 	ice_description_t remote;

@@ -20,16 +20,11 @@
 #include "addr.h"
 #include "log.h"
 #include "random.h"
+#include "thread.h" // for mutexes
 
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
-
-#ifdef _WIN32
-#define HAVE_STRUCT_TIMESPEC
-#endif
-
-#include <pthread.h>
 
 static struct addrinfo *find_family(struct addrinfo *ai_list, unsigned int family) {
 	struct addrinfo *ai = ai_list;
@@ -39,8 +34,8 @@ static struct addrinfo *find_family(struct addrinfo *ai_list, unsigned int famil
 }
 
 static uint16_t get_next_port_in_range(uint16_t begin, uint16_t end) {
-	static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
-	static uint32_t count = 0;
+	static mutex_t mutex = MUTEX_INITIALIZER;
+	static volatile uint32_t count = 0;
 	if (begin == 0)
 		begin = 1024;
 	if (end == 0)
@@ -48,10 +43,10 @@ static uint16_t get_next_port_in_range(uint16_t begin, uint16_t end) {
 	if (count == 0)
 		count = juice_rand32();
 
-	pthread_mutex_lock(&mutex);
+	mutex_lock(&mutex);
 	uint32_t diff = end > begin ? end - begin : 0;
 	uint16_t next = begin + count++ % (diff + 1);
-	pthread_mutex_unlock(&mutex);
+	mutex_unlock(&mutex);
 	return next;
 }
 
