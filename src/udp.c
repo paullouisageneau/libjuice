@@ -178,6 +178,7 @@ int udp_get_local_addr(socket_t sock, addr_record_t *record) {
 }
 
 // Helper function to check if a similar address already exists in records
+// This function ignores the port
 static int has_duplicate_addr(struct sockaddr *addr, const addr_record_t *records, size_t count) {
 	for (size_t i = 0; i < count; ++i) {
 		const addr_record_t *record = records + i;
@@ -185,7 +186,9 @@ static int has_duplicate_addr(struct sockaddr *addr, const addr_record_t *record
 			switch (addr->sa_family) {
 			case AF_INET: {
 				// For IPv4, compare the whole address
-				if (addr_is_equal((struct sockaddr *)&record->addr, (struct sockaddr *)&addr, true))
+				const struct sockaddr_in *rsin = (const struct sockaddr_in *)&record->addr;
+				const struct sockaddr_in *asin = (const struct sockaddr_in *)addr;
+				if (memcmp(&rsin->sin_addr, &asin->sin_addr, 4) == 0)
 					return true;
 				break;
 			}
@@ -193,8 +196,7 @@ static int has_duplicate_addr(struct sockaddr *addr, const addr_record_t *record
 				// For IPv6, compare the network part only
 				const struct sockaddr_in6 *rsin6 = (const struct sockaddr_in6 *)&record->addr;
 				const struct sockaddr_in6 *asin6 = (const struct sockaddr_in6 *)addr;
-				if (memcmp(&rsin6->sin6_addr, &asin6->sin6_addr, 8) == 0 // compare first 64 bits
-				    && rsin6->sin6_port == asin6->sin6_port)
+				if (memcmp(&rsin6->sin6_addr, &asin6->sin6_addr, 8) == 0) // compare first 64 bits
 					return true;
 				break;
 			}
