@@ -106,6 +106,7 @@ void agent_do_destroy(juice_agent_t *agent) {
 #ifdef _WIN32
 	WSACleanup();
 #endif
+	JLOG_VERBOSE("Destroyed agent");
 }
 
 void agent_destroy(juice_agent_t *agent) {
