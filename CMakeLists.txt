@@ -5,7 +5,11 @@ project (libjuice
 	LANGUAGES C)
 
 option(USE_NETTLE "Use Nettle instead of OpenSSL for HMAC computation" OFF)
-option(NO_ATOMICS "Force disabling C11 atomics" OFF)
+if(MSVC)
+	option(NO_ATOMICS "Force disabling C11 atomics" ON)
+else()
+	option(NO_ATOMICS "Force disabling C11 atomics" OFF)
+endif()
 
 set(C_STANDARD 11)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
