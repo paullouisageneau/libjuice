@@ -520,3 +520,7 @@ bool stun_check_integrity(void *buf, size_t size, const stun_message_t *msg, con
 	JLOG_VERBOSE("STUN message integrity check succeeded");
 	return true;
 }
+
+JUICE_EXPORT int _juice_stun_read(void *data, size_t size, stun_message_t *msg) {
+	return stun_read(data, size, msg);
+}

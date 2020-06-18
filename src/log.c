@@ -53,13 +53,13 @@ static bool use_color(void) {
 #endif
 }
 
-void juice_set_log_level(juice_log_level_t level) {
+JUICE_EXPORT void juice_set_log_level(juice_log_level_t level) {
 	mutex_lock(&log_mutex);
 	log_level = level;
 	mutex_unlock(&log_mutex);
 }
 
-void juice_set_log_handler(juice_log_cb_t cb) {
+JUICE_EXPORT void juice_set_log_handler(juice_log_cb_t cb) {
 	mutex_lock(&log_mutex);
 	log_cb = cb;
 	mutex_unlock(&log_mutex);

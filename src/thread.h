@@ -79,7 +79,9 @@ static int mutex_init_impl(mutex_t *m, int flags) {
 	pthread_mutexattr_t mutexattr;
 	pthread_mutexattr_init(&mutexattr);
 	pthread_mutexattr_settype(&mutexattr, flags);
-	return pthread_mutex_init(m, &mutexattr);
+	int ret = pthread_mutex_init(m, &mutexattr);
+	pthread_mutexattr_destroy(&mutexattr);
+	return ret;
 }
 
 #define mutex_init(m, flags) mutex_init_impl(m, flags)

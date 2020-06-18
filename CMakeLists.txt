@@ -106,6 +106,7 @@ install(FILES ${LIBJUICE_HEADERS} DESTINATION include/juice)
 # Main Test
 add_executable(juice-tests ${TESTS_SOURCES})
 target_include_directories(juice-tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_include_directories(juice-tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include/juice)
 set_target_properties(juice-tests PROPERTIES VERSION ${PROJECT_VERSION})
 set_target_properties(juice-tests PROPERTIES OUTPUT_NAME tests)
 target_link_libraries(juice-tests juice)
