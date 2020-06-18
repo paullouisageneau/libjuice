@@ -414,7 +414,7 @@ int agent_recv(juice_agent_t *agent) {
 		int len = recvfrom(agent->sock, buffer, BUFFER_SIZE, 0, (struct sockaddr *)&record.addr,
 		                   &record.len);
 		if (len < 0) {
-			if (errno == EAGAIN || errno == EWOULDBLOCK) {
+			if (sockerrno == EAGAIN || sockerrno == EWOULDBLOCK) {
 				JLOG_VERBOSE("No more datagrams to receive");
 				break;
 			}
