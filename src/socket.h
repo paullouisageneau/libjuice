@@ -55,6 +55,10 @@ typedef u_long ctl_t;
 
 #undef EADDRINUSE
 #define EADDRINUSE WSAEADDRINUSE
+#undef EAGAIN
+#define EAGAIN WSAEAGAIN
+#undef EWOULDBLOCK
+#define EWOULDBLOCK WSAEWOULDBLOCK
 
 #else // assume POSIX
 
