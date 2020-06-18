@@ -33,13 +33,21 @@
 #include <stdlib.h>
 #include <string.h>
 
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
 #define BUFFER_SIZE 4096
 
 static timestamp_t current_timestamp() {
+#ifdef _WIN32
+	return (timestamp_t)GetTickCount();
+#else // POSIX
 	struct timespec ts;
 	if (clock_gettime(CLOCK_REALTIME, &ts))
 		return 0;
 	return (timestamp_t)ts.tv_sec * 1000 + (timestamp_t)ts.tv_nsec / 1000000;
+#endif
 }
 
 juice_agent_t *agent_create(const juice_config_t *config) {
