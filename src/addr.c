@@ -194,7 +194,7 @@ int addr_resolve(const char *hostname, const char *service, addr_record_t *recor
 			++ret;
 			if (records != end) {
 				memcpy(&records->addr, ai->ai_addr, ai->ai_addrlen);
-				records->len = ai->ai_addrlen;
+				records->len = (socklen_t)ai->ai_addrlen;
 				++records;
 			}
 		}
