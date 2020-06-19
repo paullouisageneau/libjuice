@@ -32,13 +32,15 @@
 
 typedef HANDLE mutex_t;
 typedef HANDLE thread_t;
+typedef DWORD thread_return_t;
 
 #define MUTEX_INITIALIZER NULL
 
 #define MUTEX_PLAIN 0x0
 #define MUTEX_RECURSIVE 0x0 // mutexes are recursive on Windows
 
-static int mutex_init_impl(mutex_t *m) {
+    static int
+    mutex_init_impl(mutex_t *m) {
 	return ((*m = CreateMutex(NULL, FALSE, NULL)) != NULL ? 0 : (int)GetLastError());
 }
 
@@ -57,11 +59,15 @@ static int mutex_lock_impl(mutex_t *m) {
 #define mutex_unlock(m) (void)ReleaseMutex(*(m))
 #define mutex_destroy(m) (void)CloseHandle(*(m))
 
+static void thread_join_impl(thread_t t, thread_return_t *res) {
+	WaitForSingleObject(t, INFINITE);
+	GetExitCodeThread(t, res);
+	CloseHandle(t);
+}
+
 #define thread_init(t, func, arg)                                                                  \
-	((*(t) = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)func, arg, 0, NULL)) != NULL            \
-	     ? 0                                                                                       \
-	     : (int)GetLastError())
-#define thread_join(t) WaitForSingleObject(t, INFINITE), (void)CloseHandle(t)
+	((*(t) = CreateThread(NULL, 0, func, arg, 0, NULL)) != NULL ? 0 : (int)GetLastError())
+#define thread_join(t, res) thread_join_impl(t, res)
 
 #else // POSIX
 
@@ -69,6 +75,7 @@ static int mutex_lock_impl(mutex_t *m) {
 
 typedef pthread_mutex_t mutex_t;
 typedef pthread_t thread_t;
+typedef void *thread_return_t;
 
 #define MUTEX_INITIALIZER PTHREAD_MUTEX_INITIALIZER
 
@@ -90,7 +97,7 @@ static int mutex_init_impl(mutex_t *m, int flags) {
 #define mutex_destroy(m) (void)pthread_mutex_destroy(m)
 
 #define thread_init(t, func, arg) pthread_create(t, NULL, func, arg)
-#define thread_join(t) (void)pthread_join(t, NULL)
+#define thread_join(t, res) (void)pthread_join(t, res)
 
 #endif
 

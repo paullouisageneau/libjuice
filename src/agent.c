@@ -118,16 +118,16 @@ void agent_destroy(juice_agent_t *agent) {
 		agent->thread_stopped = true;
 		mutex_unlock(&agent->mutex);
 		agent_interrupt(agent);
-		thread_join(agent->thread);
+		thread_join(agent->thread, NULL);
 	} else {
 		mutex_unlock(&agent->mutex);
 	}
 	agent_do_destroy(agent);
 }
 
-void *agent_thread_entry(void *arg) {
+thread_return_t agent_thread_entry(void *arg) {
 	agent_run((juice_agent_t *)arg);
-	return NULL;
+	return (thread_return_t)0;
 }
 
 int agent_gather_candidates(juice_agent_t *agent) {
