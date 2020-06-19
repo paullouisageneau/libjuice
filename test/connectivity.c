@@ -48,7 +48,7 @@ static void on_recv1(juice_agent_t *agent, const char *data, size_t size, void *
 static void on_recv2(juice_agent_t *agent, const char *data, size_t size, void *user_ptr);
 
 int test_connectivity() {
-	juice_set_log_level(JUICE_LOG_LEVEL_VERBOSE);
+	juice_set_log_level(JUICE_LOG_LEVEL_DEBUG);
 
 	// Agent 1: Create agent
 	juice_config_t config1;
@@ -130,7 +130,7 @@ int test_connectivity() {
 	juice_destroy(agent2);
 
 	// Sleep so we can check destruction went well
-	// sleep(2);
+	sleep(2);
 
 	if (success) {
 		printf("Success\n");
