@@ -40,15 +40,15 @@ int main(int argc, char **argv) {
 		return -3;
 	}
 
-	printf("\nRunning connectivity test...\n");
-	if (test_connectivity()) {
-		fprintf(stderr, "Connectivity test failed\n");
-		return -1;
-	}
-
 	printf("\nRunning STUN server test...\n");
 	if (test_server()) {
 		fprintf(stderr, "STUN server test failed\n");
+		return -1;
+	}
+
+	printf("\nRunning connectivity test...\n");
+	if (test_connectivity()) {
+		fprintf(stderr, "Connectivity test failed\n");
 		return -1;
 	}
 
