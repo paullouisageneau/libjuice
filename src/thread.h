@@ -39,12 +39,11 @@ typedef DWORD thread_return_t;
 #define MUTEX_PLAIN 0x0
 #define MUTEX_RECURSIVE 0x0 // mutexes are recursive on Windows
 
-    static int
-    mutex_init_impl(mutex_t *m) {
+static inline int mutex_init_impl(mutex_t *m) {
 	return ((*m = CreateMutex(NULL, FALSE, NULL)) != NULL ? 0 : (int)GetLastError());
 }
 
-static int mutex_lock_impl(mutex_t *m) {
+static inline int mutex_lock_impl(volatile mutex_t *m) {
 	// Atomically initialize the mutex on first lock
 	if (*m == NULL) {
 		HANDLE cm = CreateMutex(NULL, FALSE, NULL);
@@ -59,9 +58,10 @@ static int mutex_lock_impl(mutex_t *m) {
 #define mutex_unlock(m) (void)ReleaseMutex(*(m))
 #define mutex_destroy(m) (void)CloseHandle(*(m))
 
-static void thread_join_impl(thread_t t, thread_return_t *res) {
+static inline void thread_join_impl(thread_t t, thread_return_t *res) {
 	WaitForSingleObject(t, INFINITE);
-	GetExitCodeThread(t, res);
+	if (res)
+		GetExitCodeThread(t, res);
 	CloseHandle(t);
 }
 
@@ -82,7 +82,7 @@ typedef void *thread_return_t;
 #define MUTEX_PLAIN PTHREAD_MUTEX_NORMAL
 #define MUTEX_RECURSIVE PTHREAD_MUTEX_RECURSIVE
 
-static int mutex_init_impl(mutex_t *m, int flags) {
+static inline int mutex_init_impl(mutex_t *m, int flags) {
 	pthread_mutexattr_t mutexattr;
 	pthread_mutexattr_init(&mutexattr);
 	pthread_mutexattr_settype(&mutexattr, flags);
