@@ -61,7 +61,7 @@ static int mutex_lock_impl(mutex_t *m) {
 	((*(t) = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)func, arg, 0, NULL)) != NULL            \
 	     ? 0                                                                                       \
 	     : (int)GetLastError())
-#define thread_join(t) (void)WaitForSingleObject(t, INFINITE)
+#define thread_join(t) WaitForSingleObject(t, INFINITE), (void)CloseHandle(t)
 
 #else // POSIX
 
