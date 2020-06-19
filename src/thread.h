@@ -40,13 +40,15 @@ typedef DWORD thread_return_t;
 #define MUTEX_RECURSIVE 0x0 // mutexes are recursive on Windows
 
 static inline int mutex_init_impl(mutex_t *m) {
-	return ((*m = CreateMutex(NULL, FALSE, NULL)) != NULL ? 0 : (int)GetLastError());
+	return ((*(m) = CreateMutex(NULL, FALSE, NULL)) != NULL ? 0 : (int)GetLastError());
 }
 
 static inline int mutex_lock_impl(volatile mutex_t *m) {
 	// Atomically initialize the mutex on first lock
-	if (*m == NULL) {
+	if (*(m) == NULL) {
 		HANDLE cm = CreateMutex(NULL, FALSE, NULL);
+		if (cm == NULL)
+			return (int)GetLastError();
 		if (InterlockedCompareExchangePointer(m, cm, NULL) != NULL)
 			CloseHandle(cm);
 	}
