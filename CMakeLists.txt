@@ -5,11 +5,23 @@ project (libjuice
 	LANGUAGES C)
 
 option(USE_NETTLE "Use Nettle instead of OpenSSL for HMAC computation" OFF)
-option(NO_ATOMICS "Force disabling C11 atomics" OFF)
+if(MSVC)
+	option(NO_ATOMICS "Force disabling C11 atomics" ON)
+else()
+	option(NO_ATOMICS "Force disabling C11 atomics" OFF)
+endif()
 
 set(C_STANDARD 11)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 set(CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake/Modules)
+
+if(WIN32)
+	add_definitions(-DWIN32_LEAN_AND_MEAN)
+	if (MSVC)
+		add_definitions(-DNOMINMAX)
+		add_definitions(-D_CRT_SECURE_NO_WARNINGS)
+	endif()
+endif()
 
 set(LIBJUICE_SOURCES
 	${CMAKE_CURRENT_SOURCE_DIR}/src/addr.c
@@ -94,6 +106,7 @@ install(FILES ${LIBJUICE_HEADERS} DESTINATION include/juice)
 # Main Test
 add_executable(juice-tests ${TESTS_SOURCES})
 target_include_directories(juice-tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_include_directories(juice-tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include/juice)
 set_target_properties(juice-tests PROPERTIES VERSION ${PROJECT_VERSION})
 set_target_properties(juice-tests PROPERTIES OUTPUT_NAME tests)
 target_link_libraries(juice-tests juice)

@@ -56,7 +56,7 @@ int test_stun(void) {
 	strcpy(msg.username, "evtj:h6vY");
 	msg.password = "VOkJxbRl1RmTxUk/WvJxBt";
 
-	if (stun_read(message, sizeof(message), &msg) <= 0)
+	if (_juice_stun_read(message, sizeof(message), &msg) <= 0)
 		return -1;
 
 	if (memcmp(msg.transaction_id, message + 8, 12) != 0)

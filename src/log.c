@@ -17,8 +17,8 @@
  */
 
 #include "log.h"
+#include "thread.h" // for mutexes
 
-#include <pthread.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
@@ -41,9 +41,9 @@ static const char *log_level_colors[] = {
     "\x1B[97m\x1B[41m" // white on red
 };
 
-static juice_log_level_t log_level = JUICE_LOG_LEVEL_WARN;
-static juice_log_cb_t log_cb = NULL;
-static pthread_mutex_t log_mutex = PTHREAD_MUTEX_INITIALIZER;
+static volatile juice_log_level_t log_level = JUICE_LOG_LEVEL_WARN;
+static volatile juice_log_cb_t log_cb = NULL;
+static mutex_t log_mutex = MUTEX_INITIALIZER;
 
 static bool use_color(void) {
 #ifdef _WIN32
@@ -53,22 +53,22 @@ static bool use_color(void) {
 #endif
 }
 
-void juice_set_log_level(juice_log_level_t level) {
-	pthread_mutex_lock(&log_mutex);
+JUICE_EXPORT void juice_set_log_level(juice_log_level_t level) {
+	mutex_lock(&log_mutex);
 	log_level = level;
-	pthread_mutex_unlock(&log_mutex);
+	mutex_unlock(&log_mutex);
 }
 
-void juice_set_log_handler(juice_log_cb_t cb) {
-	pthread_mutex_lock(&log_mutex);
+JUICE_EXPORT void juice_set_log_handler(juice_log_cb_t cb) {
+	mutex_lock(&log_mutex);
 	log_cb = cb;
-	pthread_mutex_unlock(&log_mutex);
+	mutex_unlock(&log_mutex);
 }
 
 void juice_log_write(juice_log_level_t level, const char *file, int line, const char *fmt, ...) {
-	pthread_mutex_lock(&log_mutex);
+	mutex_lock(&log_mutex);
 	if (level < log_level) {
-		pthread_mutex_unlock(&log_mutex);
+		mutex_unlock(&log_mutex);
 		return;
 	}
 
@@ -113,5 +113,5 @@ void juice_log_write(juice_log_level_t level, const char *file, int line, const 
 		fprintf(stdout, "\n");
 		fflush(stdout);
 	}
-	pthread_mutex_unlock(&log_mutex);
+	mutex_unlock(&log_mutex);
 }

@@ -27,6 +27,12 @@ extern "C" {
 #include <stddef.h>
 #include <stdint.h>
 
+#ifdef _WIN32
+#define JUICE_EXPORT __declspec(dllexport)
+#else
+#define JUICE_EXPORT
+#endif
+
 // ICE Agent
 
 #define JUICE_MAX_ADDRESS_STRING_LEN 56
@@ -61,22 +67,22 @@ typedef struct juice_config {
 	void *user_ptr;
 } juice_config_t;
 
-juice_agent_t *juice_create(const juice_config_t *config);
-void juice_destroy(juice_agent_t *agent);
+JUICE_EXPORT juice_agent_t *juice_create(const juice_config_t *config);
+JUICE_EXPORT void juice_destroy(juice_agent_t *agent);
 
-int juice_gather_candidates(juice_agent_t *agent);
-int juice_get_local_description(juice_agent_t *agent, char *buffer, size_t size);
-int juice_set_remote_description(juice_agent_t *agent, const char *sdp);
-int juice_add_remote_candidate(juice_agent_t *agent, const char *sdp);
-int juice_set_remote_gathering_done(juice_agent_t *agent);
-int juice_send(juice_agent_t *agent, const char *data, size_t size);
-juice_state_t juice_get_state(juice_agent_t *agent);
-int juice_get_selected_addresses(juice_agent_t *agent, char *local, size_t local_size, char *remote,
-                                 size_t remote_size);
+JUICE_EXPORT int juice_gather_candidates(juice_agent_t *agent);
+JUICE_EXPORT int juice_get_local_description(juice_agent_t *agent, char *buffer, size_t size);
+JUICE_EXPORT int juice_set_remote_description(juice_agent_t *agent, const char *sdp);
+JUICE_EXPORT int juice_add_remote_candidate(juice_agent_t *agent, const char *sdp);
+JUICE_EXPORT int juice_set_remote_gathering_done(juice_agent_t *agent);
+JUICE_EXPORT int juice_send(juice_agent_t *agent, const char *data, size_t size);
+JUICE_EXPORT juice_state_t juice_get_state(juice_agent_t *agent);
+JUICE_EXPORT int juice_get_selected_addresses(juice_agent_t *agent, char *local, size_t local_size,
+                                              char *remote, size_t remote_size);
 
 // Utils
 
-const char *juice_state_to_string(juice_state_t state);
+JUICE_EXPORT const char *juice_state_to_string(juice_state_t state);
 
 // Logging
 
@@ -91,8 +97,8 @@ typedef enum {
 
 typedef void (*juice_log_cb_t)(juice_log_level_t level, const char *message);
 
-void juice_set_log_level(juice_log_level_t level);
-void juice_set_log_handler(juice_log_cb_t cb);
+JUICE_EXPORT void juice_set_log_level(juice_log_level_t level);
+JUICE_EXPORT void juice_set_log_handler(juice_log_cb_t cb);
 
 #ifdef __cplusplus
 }

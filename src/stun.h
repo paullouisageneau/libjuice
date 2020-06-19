@@ -19,6 +19,8 @@
 #ifndef JUICE_STUN_H
 #define JUICE_STUN_H
 
+#include "juice.h"
+
 #include "addr.h"
 #include "hmac.h"
 
@@ -201,5 +203,8 @@ int stun_read_value_mapped_address(const void *data, size_t size, stun_message_t
                                    const uint8_t *mask);
 
 bool stun_check_integrity(void *buf, size_t size, const stun_message_t *msg, const char *password);
+
+// Export for tests
+JUICE_EXPORT int _juice_stun_read(void *data, size_t size, stun_message_t *msg);
 
 #endif

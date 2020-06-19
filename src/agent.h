@@ -28,8 +28,8 @@
 #include "juice.h"
 #include "socket.h"
 #include "stun.h"
+#include "thread.h"
 
-#include <pthread.h>
 #include <stdbool.h>
 #include <stdint.h>
 
@@ -91,8 +91,8 @@ struct juice_agent {
 	juice_state_t state;
 	agent_mode_t mode;
 	socket_t sock;
-	pthread_t thread;
-	pthread_mutex_t mutex;
+	thread_t thread;
+	mutex_t mutex;
 	uint64_t ice_tiebreaker;
 	ice_description_t local;
 	ice_description_t remote;

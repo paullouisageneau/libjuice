@@ -188,7 +188,7 @@ int stun_write_attr(void *buf, size_t size, uint16_t type, const void *value, si
 	// Pad to align on 4 bytes
 	while (length & 0x03)
 		attr->value[length++] = 0;
-	return sizeof(struct stun_attr) + length;
+	return (int)(sizeof(struct stun_attr) + length);
 }
 
 int stun_write_value_mapped_address(void *buf, size_t size, const struct sockaddr *addr,
@@ -519,4 +519,8 @@ bool stun_check_integrity(void *buf, size_t size, const stun_message_t *msg, con
 	}
 	JLOG_VERBOSE("STUN message integrity check succeeded");
 	return true;
+}
+
+JUICE_EXPORT int _juice_stun_read(void *data, size_t size, stun_message_t *msg) {
+	return stun_read(data, size, msg);
 }

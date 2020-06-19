@@ -20,10 +20,11 @@
 #include "addr.h"
 #include "log.h"
 #include "random.h"
+#include "thread.h" // for mutexes
 
-#include <pthread.h>
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 
 static struct addrinfo *find_family(struct addrinfo *ai_list, unsigned int family) {
 	struct addrinfo *ai = ai_list;
@@ -33,8 +34,8 @@ static struct addrinfo *find_family(struct addrinfo *ai_list, unsigned int famil
 }
 
 static uint16_t get_next_port_in_range(uint16_t begin, uint16_t end) {
-	static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
-	static uint32_t count = 0;
+	static mutex_t mutex = MUTEX_INITIALIZER;
+	static volatile uint32_t count = 0;
 	if (begin == 0)
 		begin = 1024;
 	if (end == 0)
@@ -42,10 +43,10 @@ static uint16_t get_next_port_in_range(uint16_t begin, uint16_t end) {
 	if (count == 0)
 		count = juice_rand32();
 
-	pthread_mutex_lock(&mutex);
+	mutex_lock(&mutex);
 	uint32_t diff = end > begin ? end - begin : 0;
 	uint16_t next = begin + count++ % (diff + 1);
-	pthread_mutex_unlock(&mutex);
+	mutex_unlock(&mutex);
 	return next;
 }
 
@@ -109,7 +110,7 @@ socket_t udp_create_socket(const udp_socket_config_t *config) {
 
 	// Bind it
 	if (config->port_begin == 0 && config->port_end == 0) {
-		if (bind(sock, ai->ai_addr, ai->ai_addrlen) == 0) {
+		if (bind(sock, ai->ai_addr, (socklen_t)ai->ai_addrlen) == 0) {
 			freeaddrinfo(ai_list);
 			return sock;
 		}
@@ -118,7 +119,7 @@ socket_t udp_create_socket(const udp_socket_config_t *config) {
 
 	} else {
 		struct sockaddr_storage addr;
-		socklen_t addrlen = ai->ai_addrlen;
+		socklen_t addrlen = (socklen_t)ai->ai_addrlen;
 		memcpy(&addr, ai->ai_addr, addrlen);
 
 		int retries = config->port_end - config->port_begin;

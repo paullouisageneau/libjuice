@@ -22,57 +22,57 @@
 
 #include <stdio.h>
 
-juice_agent_t *juice_create(const juice_config_t *config) {
+JUICE_EXPORT juice_agent_t *juice_create(const juice_config_t *config) {
 	if (!config)
 		return NULL;
 	return agent_create(config);
 }
 
-void juice_destroy(juice_agent_t *agent) {
+JUICE_EXPORT void juice_destroy(juice_agent_t *agent) {
 	if (agent)
 		agent_destroy(agent);
 }
 
-int juice_gather_candidates(juice_agent_t *agent) {
+JUICE_EXPORT int juice_gather_candidates(juice_agent_t *agent) {
 	if (!agent)
 		return -1;
 	return agent_gather_candidates(agent);
 }
 
-int juice_get_local_description(juice_agent_t *agent, char *buffer, size_t size) {
+JUICE_EXPORT int juice_get_local_description(juice_agent_t *agent, char *buffer, size_t size) {
 	if (!agent || (!buffer && size))
 		return -1;
 	return agent_get_local_description(agent, buffer, size);
 }
 
-int juice_set_remote_description(juice_agent_t *agent, const char *sdp) {
+JUICE_EXPORT int juice_set_remote_description(juice_agent_t *agent, const char *sdp) {
 	if (!agent || !sdp)
 		return -1;
 	return agent_set_remote_description(agent, sdp);
 }
 
-int juice_add_remote_candidate(juice_agent_t *agent, const char *sdp) {
+JUICE_EXPORT int juice_add_remote_candidate(juice_agent_t *agent, const char *sdp) {
 	if (!agent || !sdp)
 		return -1;
 	return agent_add_remote_candidate(agent, sdp);
 }
 
-int juice_set_remote_gathering_done(juice_agent_t *agent) {
+JUICE_EXPORT int juice_set_remote_gathering_done(juice_agent_t *agent) {
 	if (!agent)
 		return -1;
 	return agent_set_remote_gathering_done(agent);
 }
 
-int juice_send(juice_agent_t *agent, const char *data, size_t size) {
+JUICE_EXPORT int juice_send(juice_agent_t *agent, const char *data, size_t size) {
 	if (!agent || (!data && size))
 		return -1;
 	return agent_send(agent, data, size);
 }
 
-juice_state_t juice_get_state(juice_agent_t *agent) { return agent_get_state(agent); }
+JUICE_EXPORT juice_state_t juice_get_state(juice_agent_t *agent) { return agent_get_state(agent); }
 
-int juice_get_selected_addresses(juice_agent_t *agent, char *local, size_t local_size, char *remote,
-                                 size_t remote_size) {
+JUICE_EXPORT int juice_get_selected_addresses(juice_agent_t *agent, char *local, size_t local_size,
+                                              char *remote, size_t remote_size) {
 	if (!agent || (!local && local_size) || (!remote && remote_size))
 		return -1;
 	ice_candidate_t local_cand, remote_cand;
@@ -87,7 +87,7 @@ int juice_get_selected_addresses(juice_agent_t *agent, char *local, size_t local
 	return 0;
 }
 
-const char *juice_state_to_string(juice_state_t state) {
+JUICE_EXPORT const char *juice_state_to_string(juice_state_t state) {
 	switch (state) {
 	case JUICE_STATE_DISCONNECTED:
 		return "disconnected";

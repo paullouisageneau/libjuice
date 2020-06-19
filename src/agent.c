@@ -32,14 +32,23 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
+
+#ifdef _WIN32
+#include <windows.h>
+#endif
 
 #define BUFFER_SIZE 4096
 
 static timestamp_t current_timestamp() {
+#ifdef _WIN32
+	return (timestamp_t)GetTickCount();
+#else // POSIX
 	struct timespec ts;
 	if (clock_gettime(CLOCK_REALTIME, &ts))
 		return 0;
 	return (timestamp_t)ts.tv_sec * 1000 + (timestamp_t)ts.tv_nsec / 1000000;
+#endif
 }
 
 juice_agent_t *agent_create(const juice_config_t *config) {
@@ -64,10 +73,7 @@ juice_agent_t *agent_create(const juice_config_t *config) {
 	agent->mode = AGENT_MODE_UNKNOWN;
 	agent->sock = INVALID_SOCKET;
 
-	pthread_mutexattr_t mutexattr;
-	pthread_mutexattr_init(&mutexattr);
-	pthread_mutexattr_settype(&mutexattr, PTHREAD_MUTEX_RECURSIVE);
-	pthread_mutex_init(&agent->mutex, &mutexattr);
+	mutex_init(&agent->mutex, MUTEX_RECURSIVE);
 
 #ifdef NO_ATOMICS
 	agent->selected_entry = NULL;
@@ -94,40 +100,41 @@ void agent_do_destroy(juice_agent_t *agent) {
 	JLOG_DEBUG("Destroying agent");
 	if (agent->sock != INVALID_SOCKET)
 		closesocket(agent->sock);
-	pthread_mutex_destroy(&agent->mutex);
+	mutex_destroy(&agent->mutex);
 	free(agent);
 
 #ifdef _WIN32
 	WSACleanup();
 #endif
+	JLOG_VERBOSE("Destroyed agent");
 }
 
 void agent_destroy(juice_agent_t *agent) {
-	pthread_mutex_lock(&agent->mutex);
+	mutex_lock(&agent->mutex);
 	memset(&agent->config, 0, sizeof(agent->config));
 
 	if (agent->thread_started) {
 		JLOG_DEBUG("Waiting for agent thread");
 		agent->thread_stopped = true;
-		pthread_mutex_unlock(&agent->mutex);
+		mutex_unlock(&agent->mutex);
 		agent_interrupt(agent);
-		pthread_join(agent->thread, NULL);
+		thread_join(agent->thread, NULL);
 	} else {
-		pthread_mutex_unlock(&agent->mutex);
+		mutex_unlock(&agent->mutex);
 	}
 	agent_do_destroy(agent);
 }
 
-void *agent_thread_entry(void *arg) {
+thread_return_t agent_thread_entry(void *arg) {
 	agent_run((juice_agent_t *)arg);
-	return NULL;
+	return (thread_return_t)0;
 }
 
 int agent_gather_candidates(juice_agent_t *agent) {
-	pthread_mutex_lock(&agent->mutex);
+	mutex_lock(&agent->mutex);
 	if (agent->sock != INVALID_SOCKET) {
 		JLOG_WARN("Candidates gathering already started");
-		pthread_mutex_unlock(&agent->mutex);
+		mutex_unlock(&agent->mutex);
 		return 0;
 	}
 
@@ -138,7 +145,7 @@ int agent_gather_candidates(juice_agent_t *agent) {
 	agent->sock = udp_create_socket(&socket_config);
 	if (agent->sock == INVALID_SOCKET) {
 		JLOG_FATAL("UDP socket creation for agent failed");
-		pthread_mutex_unlock(&agent->mutex);
+		mutex_unlock(&agent->mutex);
 		return -1;
 	}
 	agent_change_state(agent, JUICE_STATE_GATHERING);
@@ -192,34 +199,34 @@ int agent_gather_candidates(juice_agent_t *agent) {
 		JLOG_DEBUG("Assuming controlling mode");
 		agent->mode = AGENT_MODE_CONTROLLING;
 	}
-	int ret = pthread_create(&agent->thread, NULL, agent_thread_entry, agent);
+	int ret = thread_init(&agent->thread, agent_thread_entry, agent);
 	if (ret) {
-		JLOG_FATAL("pthread_create for agent failed, error=%d", ret);
-		pthread_mutex_unlock(&agent->mutex);
+		JLOG_FATAL("thread_create for agent failed, error=%d", ret);
+		mutex_unlock(&agent->mutex);
 		return -1;
 	}
 	agent->thread_started = true;
-	pthread_mutex_unlock(&agent->mutex);
+	mutex_unlock(&agent->mutex);
 	return 0;
 }
 
 int agent_get_local_description(juice_agent_t *agent, char *buffer, size_t size) {
-	pthread_mutex_lock(&agent->mutex);
+	mutex_lock(&agent->mutex);
 	if (ice_generate_sdp(&agent->local, buffer, size) < 0)
 		return -1;
 	if (agent->mode == AGENT_MODE_UNKNOWN) {
 		JLOG_DEBUG("Assuming controlling mode");
 		agent->mode = AGENT_MODE_CONTROLLING;
 	}
-	pthread_mutex_unlock(&agent->mutex);
+	mutex_unlock(&agent->mutex);
 	return 0;
 }
 
 int agent_set_remote_description(juice_agent_t *agent, const char *sdp) {
-	pthread_mutex_lock(&agent->mutex);
+	mutex_lock(&agent->mutex);
 	if (ice_parse_sdp(sdp, &agent->remote) < 0) {
 		JLOG_ERROR("Failed to parse remote SDP description");
-		pthread_mutex_unlock(&agent->mutex);
+		mutex_unlock(&agent->mutex);
 		return -1;
 	}
 	for (size_t i = 0; i < agent->remote.candidates_count; ++i) {
@@ -230,47 +237,47 @@ int agent_set_remote_description(juice_agent_t *agent, const char *sdp) {
 		JLOG_DEBUG("Assuming controlled mode");
 		agent->mode = AGENT_MODE_CONTROLLED;
 	}
-	pthread_mutex_unlock(&agent->mutex);
+	mutex_unlock(&agent->mutex);
 	agent_interrupt(agent);
 	return 0;
 }
 
 int agent_add_remote_candidate(juice_agent_t *agent, const char *sdp) {
-	pthread_mutex_lock(&agent->mutex);
+	mutex_lock(&agent->mutex);
 	ice_candidate_t candidate;
 	if (ice_parse_candidate_sdp(sdp, &candidate) < 0) {
 		JLOG_ERROR("Failed to parse remote SDP candidate");
-		pthread_mutex_unlock(&agent->mutex);
+		mutex_unlock(&agent->mutex);
 		return -1;
 	}
 	if (ice_add_candidate(&candidate, &agent->remote)) {
 		JLOG_ERROR("Failed to add candidate to remote description");
-		pthread_mutex_unlock(&agent->mutex);
+		mutex_unlock(&agent->mutex);
 		return -1;
 	}
 	ice_candidate_t *remote = agent->remote.candidates + agent->remote.candidates_count - 1;
 	int ret = agent_add_candidate_pair(agent, remote);
-	pthread_mutex_unlock(&agent->mutex);
+	mutex_unlock(&agent->mutex);
 	agent_interrupt(agent);
 	return ret;
 }
 
 int agent_set_remote_gathering_done(juice_agent_t *agent) {
-	pthread_mutex_lock(&agent->mutex);
+	mutex_lock(&agent->mutex);
 	agent->remote.finished = true;
 	agent->fail_timestamp = 0; // So the bookkeeping will recompute it and fail
-	pthread_mutex_unlock(&agent->mutex);
+	mutex_unlock(&agent->mutex);
 	return 0;
 }
 
 int agent_send(juice_agent_t *agent, const char *data, size_t size) {
 	// For performance reasons, this function is lock-free if the platform has atomics
 #ifdef NO_ATOMICS
-	pthread_mutex_lock(&agent->mutex);
+	mutex_lock(&agent->mutex);
 	agent_stun_entry_t *selected_entry = agent->selected_entry;
 	if (selected_entry)
 		selected_entry->armed = false;   // so keepalive will be rescheduled
-	pthread_mutex_unlock(&agent->mutex);
+	mutex_unlock(&agent->mutex);
 #else
 	agent_stun_entry_t *selected_entry = atomic_load(&agent->selected_entry);
 	if (selected_entry)
@@ -279,7 +286,7 @@ int agent_send(juice_agent_t *agent, const char *data, size_t size) {
 
 	if (!selected_entry) {
 		JLOG_ERROR("Send called before ICE is connected");
-		pthread_mutex_unlock(&agent->mutex);
+		mutex_unlock(&agent->mutex);
 		return -1;
 	}
 
@@ -287,7 +294,7 @@ int agent_send(juice_agent_t *agent, const char *data, size_t size) {
 #if defined(_WIN32) || defined(__APPLE__)
 	addr_record_t tmp = *record;
 	addr_map_inet6_v4mapped(&tmp.addr, &tmp.len);
-	int ret = sendto(agent->sock, data, size, 0, (struct sockaddr *)&tmp.addr, tmp.len);
+	int ret = sendto(agent->sock, data, (int)size, 0, (struct sockaddr *)&tmp.addr, (int)tmp.len);
 #else
 	int ret =
 	    sendto(agent->sock, data, size, 0, (const struct sockaddr *)&record->addr, record->len);
@@ -297,18 +304,18 @@ int agent_send(juice_agent_t *agent, const char *data, size_t size) {
 }
 
 juice_state_t agent_get_state(juice_agent_t *agent) {
-	pthread_mutex_lock(&agent->mutex);
+	mutex_lock(&agent->mutex);
 	juice_state_t state = agent->state;
-	pthread_mutex_unlock(&agent->mutex);
+	mutex_unlock(&agent->mutex);
 	return state;
 }
 
 int agent_get_selected_candidate_pair(juice_agent_t *agent, ice_candidate_t *local,
                                       ice_candidate_t *remote) {
-	pthread_mutex_lock(&agent->mutex);
+	mutex_lock(&agent->mutex);
 	ice_candidate_pair_t *pair = agent->selected_pair;
 	if (!pair) {
-		pthread_mutex_unlock(&agent->mutex);
+		mutex_unlock(&agent->mutex);
 		return -1;
 	}
 
@@ -317,12 +324,12 @@ int agent_get_selected_candidate_pair(juice_agent_t *agent, ice_candidate_t *loc
 	if (remote)
 		*remote = *pair->remote;
 
-	pthread_mutex_unlock(&agent->mutex);
+	mutex_unlock(&agent->mutex);
 	return 0;
 }
 
 void agent_run(juice_agent_t *agent) {
-	pthread_mutex_lock(&agent->mutex);
+	mutex_lock(&agent->mutex);
 	agent_change_state(agent, JUICE_STATE_CONNECTING);
 
 	// STUN server handling
@@ -367,17 +374,17 @@ void agent_run(juice_agent_t *agent) {
 
 		JLOG_VERBOSE("Setting select timeout to %ld ms", (long)timediff);
 		struct timeval timeout;
-		timeout.tv_sec = timediff / 1000;
-		timeout.tv_usec = (timediff % 1000) * 1000;
+		timeout.tv_sec = (long)(timediff / 1000);
+		timeout.tv_usec = (long)((timediff % 1000) * 1000);
 
 		fd_set readfds;
 		FD_ZERO(&readfds);
 		FD_SET(agent->sock, &readfds);
 		int n = SOCKET_TO_INT(agent->sock) + 1;
 
-		pthread_mutex_unlock(&agent->mutex);
+		mutex_unlock(&agent->mutex);
 		int ret = select(n, &readfds, NULL, NULL, &timeout);
-		pthread_mutex_lock(&agent->mutex);
+		mutex_lock(&agent->mutex);
 		if (ret < 0) {
 			JLOG_FATAL("select failed, errno=%d", sockerrno);
 			break;
@@ -396,7 +403,7 @@ void agent_run(juice_agent_t *agent) {
 	}
 	JLOG_DEBUG("Leaving agent thread");
 	agent_change_state(agent, JUICE_STATE_DISCONNECTED);
-	pthread_mutex_unlock(&agent->mutex);
+	mutex_unlock(&agent->mutex);
 }
 
 int agent_recv(juice_agent_t *agent) {
@@ -408,7 +415,7 @@ int agent_recv(juice_agent_t *agent) {
 		int len = recvfrom(agent->sock, buffer, BUFFER_SIZE, 0, (struct sockaddr *)&record.addr,
 		                   &record.len);
 		if (len < 0) {
-			if (errno == EAGAIN || errno == EWOULDBLOCK) {
+			if (sockerrno == EAGAIN || sockerrno == EWOULDBLOCK) {
 				JLOG_VERBOSE("No more datagrams to receive");
 				break;
 			}
@@ -455,22 +462,22 @@ int agent_recv(juice_agent_t *agent) {
 
 int agent_interrupt(juice_agent_t *agent) {
 	JLOG_VERBOSE("Interrupting agent thread");
-	pthread_mutex_lock(&agent->mutex);
+	mutex_lock(&agent->mutex);
 	if (agent->sock == INVALID_SOCKET) {
-		pthread_mutex_unlock(&agent->mutex);
+		mutex_unlock(&agent->mutex);
 		return -1;
 	}
 
 	addr_record_t record;
 	if (udp_get_local_addr(agent->sock, &record) == 0) {
 		if (sendto(agent->sock, NULL, 0, 0, (struct sockaddr *)&record.addr, record.len) == 0) {
-			pthread_mutex_unlock(&agent->mutex);
+			mutex_unlock(&agent->mutex);
 			return 0;
 		}
 	}
 
 	JLOG_WARN("Failed to interrupt thread by triggering socket, errno=%d", sockerrno);
-	pthread_mutex_unlock(&agent->mutex);
+	mutex_unlock(&agent->mutex);
 	return -1;
 }
 
@@ -1152,7 +1159,7 @@ void agent_update_ordered_pairs(juice_agent_t *agent) {
 		ice_candidate_pair_t **begin = agent->ordered_pairs;
 		ice_candidate_pair_t **end = begin + i;
 		ice_candidate_pair_t **prev = end;
-		uint32_t priority = agent->candidate_pairs[i].priority;
+		uint64_t priority = agent->candidate_pairs[i].priority;
 		while (--prev >= begin && (*prev)->priority < priority)
 			*(prev + 1) = *prev;
 		*(prev + 1) = agent->candidate_pairs + i;

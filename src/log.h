@@ -19,7 +19,7 @@
 #ifndef JUICE_LOG_H
 #define JUICE_LOG_H
 
-#include "juice.h" // for log level
+#include "juice.h"
 
 #include <stdarg.h>
 

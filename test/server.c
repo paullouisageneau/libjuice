@@ -22,7 +22,13 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+
+#ifdef _WIN32
+#include <windows.h>
+static void sleep(unsigned int secs) { Sleep(secs * 1000); }
+#else
 #include <unistd.h> // for sleep
+#endif
 
 #define BUFFER_SIZE 4096
 
