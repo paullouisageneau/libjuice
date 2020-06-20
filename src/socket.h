@@ -53,12 +53,9 @@ typedef u_long ctl_t;
 #define SOCKET_TO_INT(x) 0
 #define HOST_NAME_MAX 256
 
-#undef EADDRINUSE
-#define EADDRINUSE WSAEADDRINUSE
-#undef EAGAIN
-#define EAGAIN WSAEWOULDBLOCK
-#undef EWOULDBLOCK
-#define EWOULDBLOCK WSAEWOULDBLOCK
+#define SEADDRINUSE WSAEADDRINUSE
+#define SEAGAIN WSAEWOULDBLOCK
+#define SEWOULDBLOCK WSAEWOULDBLOCK
 
 #else // assume POSIX
 
@@ -95,6 +92,10 @@ typedef int ctl_t;
 #define SOCKET_TO_INT(x) (x)
 #define ioctlsocket ioctl
 #define closesocket close
+
+#define SEADDRINUSE EADDRINUSE
+#define SEAGAIN EAGAIN
+#define SEWOULDBLOCK EWOULDBLOCK
 
 #endif // _WIN32
 
