@@ -72,11 +72,11 @@ void juice_log_write(juice_log_level_t level, const char *file, int line, const 
 		return;
 	}
 
-	const char *filename = strrchr(file, '/');
-	if (filename)
+	const char *filename = file + strlen(file);
+	while (filename != file && *filename != '/' && *filename != '\\')
+		--filename;
+	if (filename != file)
 		++filename;
-	else
-		filename = file;
 
 	if (log_cb) {
 		char message[BUFFER_SIZE];
