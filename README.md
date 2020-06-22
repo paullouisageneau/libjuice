@@ -37,14 +37,16 @@ The CMake library targets `libjuice` and `libjuice-static` respectively correspo
 
 ```bash
 $ cmake -B build -DUSE_NETTLE=1
-$ cd build && make -j2
+$ cd build
+$ make -j2
 ```
 
 #### Microsoft Windows with MinGW cross-compilation
 
 ```bash
 $ cmake -B build -DCMAKE_TOOLCHAIN_FILE=/usr/share/mingw/toolchain-x86_64-w64-mingw32.cmake # replace with your toolchain file
-$ cd build && make -j2
+$ cd build
+$ make -j2
 ```
 
 #### Microsoft Windows with Microsoft Visual C++
