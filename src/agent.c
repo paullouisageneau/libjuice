@@ -1110,7 +1110,7 @@ int agent_unfreeze_candidate_pair(juice_agent_t *agent, ice_candidate_pair_t *pa
 		return 0;
 
 	if (agent->entries_count == MAX_STUN_ENTRIES_COUNT) {
-		JLOG_VERBOSE("No free STUN entry left for candidate pair checking");
+		JLOG_WARN("No free STUN entry left for candidate pair checking");
 		return -1;
 	}
 
