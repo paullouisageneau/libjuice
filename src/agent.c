@@ -310,7 +310,8 @@ int agent_send(juice_agent_t *agent, const char *data, size_t size) {
 	int ret =
 	    sendto(agent->sock, data, size, 0, (const struct sockaddr *)&record->addr, record->len);
 #endif
-
+	if (ret < 0)
+		JLOG_WARN("Send failed, errno=%d", sockerrno);
 	return ret;
 }
 
@@ -355,7 +356,7 @@ void agent_run(juice_agent_t *agent) {
 		if (records_count > 0) {
 			if (records_count > MAX_STUN_SERVER_RECORDS_COUNT)
 				records_count = MAX_STUN_SERVER_RECORDS_COUNT;
-			JLOG_VERBOSE("Sending STUN binding request to %d server addresses", records_count);
+			JLOG_DEBUG("Sending STUN binding request to %d server addresses", records_count);
 			for (int i = 0; i < records_count; ++i) {
 				if (agent->entries_count >= MAX_STUN_ENTRIES_COUNT)
 					break;
@@ -731,13 +732,15 @@ int agent_dispatch_stun(juice_agent_t *agent, const stun_message_t *msg,
 		for (int i = 0; i < agent->entries_count; ++i) {
 			if (memcmp(msg->transaction_id, agent->entries[i].transaction_id,
 			           STUN_TRANSACTION_ID_SIZE) == 0) {
-				JLOG_DEBUG("STUN entry %d matching incoming transaction ID", i);
+				JLOG_VERBOSE("STUN entry %d matching incoming transaction ID", i);
 				entry = &agent->entries[i];
 				break;
 			}
 		}
 	} else {
 		entry = agent_find_entry_from_record(agent, source);
+		if (entry)
+			JLOG_VERBOSE("Found STUN entry matching remote address record");
 	}
 	if (!entry) {
 		JLOG_ERROR("STUN entry for message processing not found");
@@ -982,15 +985,17 @@ int agent_send_stun_binding(juice_agent_t *agent, const agent_stun_entry_t *entr
 		JLOG_ERROR("STUN message write failed");
 		return -1;
 	}
+
+	const addr_record_t *record = &entry->record;
 #if defined(_WIN32) || defined(__APPLE__)
-	addr_record_t tmp = entry->record;
+	addr_record_t tmp = *record;
 	addr_map_inet6_v4mapped(&tmp.addr, &tmp.len);
 	int ret = sendto(agent->sock, buffer, size, 0, (struct sockaddr *)&tmp.addr, tmp.len);
 #else
-	int ret = sendto(agent->sock, buffer, size, 0, (const struct sockaddr *)&entry->record.addr,
-	                 entry->record.len);
+	int ret =
+	    sendto(agent->sock, buffer, size, 0, (const struct sockaddr *)&record->addr, record->len);
 #endif
-	if (ret <= 0) {
+	if (ret < 0) {
 		JLOG_WARN("STUN message send failed, errno=%d", sockerrno);
 		return -1;
 	}
