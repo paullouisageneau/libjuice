@@ -229,6 +229,17 @@ int agent_set_remote_description(juice_agent_t *agent, const char *sdp) {
 		mutex_unlock(&agent->mutex);
 		return -1;
 	}
+	if (!*agent->remote.ice_ufrag || !*agent->remote.ice_pwd) {
+		JLOG_ERROR("Missing ICE user fragment or password in remote description");
+		mutex_unlock(&agent->mutex);
+		return -1;
+	}
+	// There is only one component, therefore we can unfreeze already existing pairs now
+	JLOG_DEBUG("Unfreezing %d existing candidate pairs", (int)agent->candidate_pairs_count);
+	for (size_t i = 0; i < agent->candidate_pairs_count; ++i) {
+		agent_unfreeze_candidate_pair(agent, agent->candidate_pairs + i);
+	}
+	JLOG_DEBUG("Adding %d remote candidates from description", (int)agent->remote.candidates_count);
 	for (size_t i = 0; i < agent->remote.candidates_count; ++i) {
 		if (agent_add_candidate_pair(agent, agent->remote.candidates + i))
 			JLOG_WARN("Failed to add remote candidate from description");
@@ -299,7 +310,8 @@ int agent_send(juice_agent_t *agent, const char *data, size_t size) {
 	int ret =
 	    sendto(agent->sock, data, size, 0, (const struct sockaddr *)&record->addr, record->len);
 #endif
-
+	if (ret < 0)
+		JLOG_WARN("Send failed, errno=%d", sockerrno);
 	return ret;
 }
 
@@ -344,7 +356,7 @@ void agent_run(juice_agent_t *agent) {
 		if (records_count > 0) {
 			if (records_count > MAX_STUN_SERVER_RECORDS_COUNT)
 				records_count = MAX_STUN_SERVER_RECORDS_COUNT;
-			JLOG_VERBOSE("Sending STUN binding request to %d server addresses", records_count);
+			JLOG_DEBUG("Sending STUN binding request to %d server addresses", records_count);
 			for (int i = 0; i < records_count; ++i) {
 				if (agent->entries_count >= MAX_STUN_ENTRIES_COUNT)
 					break;
@@ -715,18 +727,24 @@ int agent_dispatch_stun(juice_agent_t *agent, const stun_message_t *msg,
 		                                         msg->priority, source)) {
 			JLOG_WARN("Failed to add remote peer reflexive candidate from STUN message");
 		}
+	} else {
+		JLOG_VERBOSE("STUN message has no integrity");
 	}
 	if (STUN_IS_RESPONSE(msg->msg_class)) {
+		JLOG_VERBOSE("STUN message is a response, looking for transaction ID");
 		for (int i = 0; i < agent->entries_count; ++i) {
 			if (memcmp(msg->transaction_id, agent->entries[i].transaction_id,
 			           STUN_TRANSACTION_ID_SIZE) == 0) {
-				JLOG_DEBUG("STUN entry %d matching incoming transaction ID", i);
+				JLOG_VERBOSE("STUN entry %d matching incoming transaction ID", i);
 				entry = &agent->entries[i];
 				break;
 			}
 		}
 	} else {
+		JLOG_VERBOSE("STUN message is a request or indication, looking for remote address");
 		entry = agent_find_entry_from_record(agent, source);
+		if (entry)
+			JLOG_VERBOSE("Found STUN entry matching remote address record");
 	}
 	if (!entry) {
 		JLOG_ERROR("STUN entry for message processing not found");
@@ -926,6 +944,10 @@ int agent_send_stun_binding(juice_agent_t *agent, const agent_stun_entry_t *entr
 		// the peer.
 		switch (msg_class) {
 		case STUN_CLASS_REQUEST: {
+			if (!*agent->remote.ice_ufrag || !*agent->remote.ice_pwd) {
+				JLOG_ERROR("Attempted to send STUN binding to peer without remote ICE credentials");
+				return -1;
+			}
 			// Local candidates are undifferentiated, always set the maximum priority
 			uint32_t local_priority = 0;
 			for (int i = 0; i < agent->local.candidates_count; ++i) {
@@ -971,15 +993,17 @@ int agent_send_stun_binding(juice_agent_t *agent, const agent_stun_entry_t *entr
 		JLOG_ERROR("STUN message write failed");
 		return -1;
 	}
+
+	const addr_record_t *record = &entry->record;
 #if defined(_WIN32) || defined(__APPLE__)
-	addr_record_t tmp = entry->record;
+	addr_record_t tmp = *record;
 	addr_map_inet6_v4mapped(&tmp.addr, &tmp.len);
 	int ret = sendto(agent->sock, buffer, size, 0, (struct sockaddr *)&tmp.addr, tmp.len);
 #else
-	int ret = sendto(agent->sock, buffer, size, 0, (const struct sockaddr *)&entry->record.addr,
-	                 entry->record.len);
+	int ret =
+	    sendto(agent->sock, buffer, size, 0, (const struct sockaddr *)&record->addr, record->len);
 #endif
-	if (ret <= 0) {
+	if (ret < 0) {
 		JLOG_WARN("STUN message send failed, errno=%d", sockerrno);
 		return -1;
 	}
@@ -1080,8 +1104,10 @@ int agent_add_candidate_pair(juice_agent_t *agent, ice_candidate_t *remote) {
 
 	agent_update_ordered_pairs(agent);
 
-	// There is only one component, therefore we can unfreeze the pair and schedule it when possible
-	pos->state = ICE_CANDIDATE_PAIR_STATE_PENDING;
+	if (agent->entries_count == MAX_STUN_ENTRIES_COUNT) {
+		JLOG_WARN("No free STUN entry left for candidate pair checking");
+		return -1;
+	}
 
 	JLOG_VERBOSE("Registering STUN entry %d for candidate pair checking", agent->entries_count);
 	agent_stun_entry_t *entry = agent->entries + agent->entries_count;
@@ -1094,8 +1120,30 @@ int agent_add_candidate_pair(juice_agent_t *agent, ice_candidate_t *remote) {
 	if (remote->type == ICE_CANDIDATE_TYPE_HOST)
 		agent_translate_host_candidate_entry(agent, entry);
 
-	agent_arm_transmission(agent, entry, 0); // transmit now
+	// There is only one component, therefore we can unfreeze the pair and schedule it when possible
+	if (*agent->remote.ice_ufrag != '\0') {
+		JLOG_VERBOSE("Unfreezing the new candidate pair");
+		agent_unfreeze_candidate_pair(agent, pos);
+	}
+
 	return 0;
+}
+
+int agent_unfreeze_candidate_pair(juice_agent_t *agent, ice_candidate_pair_t *pair) {
+	if (pair->state != ICE_CANDIDATE_PAIR_STATE_FROZEN)
+		return 0;
+
+	for (size_t i = 0; i < agent->entries_count; ++i) {
+		agent_stun_entry_t *entry = agent->entries + i;
+		if (entry->pair == pair) {
+			pair->state = ICE_CANDIDATE_PAIR_STATE_PENDING;
+			agent_arm_transmission(agent, entry, 0); // transmit now
+			return 0;
+		}
+	}
+
+	JLOG_WARN("Unable to unfreeze the pair: no matching entry");
+	return -1;
 }
 
 void agent_arm_transmission(juice_agent_t *agent, agent_stun_entry_t *entry, timediff_t delay) {
@@ -1139,6 +1187,7 @@ void agent_update_gathering_done(juice_agent_t *agent) {
 	}
 	if (!agent->gathering_done) {
 		JLOG_INFO("Candidate gathering done");
+		agent->local.finished = true;
 		agent->gathering_done = true;
 
 		if (agent->config.cb_gathering_done)

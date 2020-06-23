@@ -293,8 +293,12 @@ int ice_generate_sdp(const ice_description_t *description, char *buffer, size_t 
 			ret = snprintf(begin, end - begin, "a=ice-ufrag:%s\r\na=ice-pwd:%s\r\n",
 			               description->ice_ufrag, description->ice_pwd);
 		} else if (i < description->candidates_count + 1) {
+			const ice_candidate_t *candidate = description->candidates + i - 1;
+			if (candidate->type == ICE_CANDIDATE_TYPE_UNKNOWN ||
+			    candidate->type == ICE_CANDIDATE_TYPE_PEER_REFLEXIVE)
+				continue;
 			char tmp[BUFFER_SIZE];
-			if (ice_generate_candidate_sdp(description->candidates + i - 1, tmp, BUFFER_SIZE) < 0)
+			if (ice_generate_candidate_sdp(candidate, tmp, BUFFER_SIZE) < 0)
 				continue;
 			ret = snprintf(begin, end - begin, "%s\r\n", tmp);
 		} else { // i == description->candidates_count + 1
