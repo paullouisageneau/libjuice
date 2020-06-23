@@ -229,6 +229,17 @@ int agent_set_remote_description(juice_agent_t *agent, const char *sdp) {
 		mutex_unlock(&agent->mutex);
 		return -1;
 	}
+	if (*agent->remote.ice_ufrag == '\0' || *agent->remote.ice_pwd == '\0') {
+		JLOG_ERROR("Missing ICE user fragment or password in remote description");
+		mutex_unlock(&agent->mutex);
+		return -1;
+	}
+	// There is only one component, therefore we can unfreeze already existing pairs now
+	JLOG_DEBUG("Unfreezing %d existing candidate pairs", (int)agent->candidate_pairs_count);
+	for (size_t i = 0; i < agent->candidate_pairs_count; ++i) {
+		agent_unfreeze_candidate_pair(agent, agent->candidate_pairs + i);
+	}
+	JLOG_DEBUG("Adding %d remote candidates from description", (int)agent->remote.candidates_count);
 	for (size_t i = 0; i < agent->remote.candidates_count; ++i) {
 		if (agent_add_candidate_pair(agent, agent->remote.candidates + i))
 			JLOG_WARN("Failed to add remote candidate from description");
@@ -1081,18 +1092,35 @@ int agent_add_candidate_pair(juice_agent_t *agent, ice_candidate_t *remote) {
 	agent_update_ordered_pairs(agent);
 
 	// There is only one component, therefore we can unfreeze the pair and schedule it when possible
-	pos->state = ICE_CANDIDATE_PAIR_STATE_PENDING;
+	if (*agent->remote.ice_ufrag != '\0') {
+		JLOG_DEBUG("Unfreezing the new candidate pair");
+		agent_unfreeze_candidate_pair(agent, pos);
+	}
+
+	return 0;
+}
+
+int agent_unfreeze_candidate_pair(juice_agent_t *agent, ice_candidate_pair_t *pair) {
+	if (pair->state != ICE_CANDIDATE_PAIR_STATE_FROZEN)
+		return 0;
+
+	if (agent->entries_count == MAX_STUN_ENTRIES_COUNT) {
+		JLOG_VERBOSE("No free STUN entry left for candidate pair checking");
+		return -1;
+	}
 
 	JLOG_VERBOSE("Registering STUN entry %d for candidate pair checking", agent->entries_count);
 	agent_stun_entry_t *entry = agent->entries + agent->entries_count;
 	entry->type = AGENT_STUN_ENTRY_TYPE_CHECK;
-	entry->pair = pos;
-	entry->record = pos->remote->resolved;
+	entry->pair = pair;
+	entry->record = pair->remote->resolved;
 	juice_random(entry->transaction_id, STUN_TRANSACTION_ID_SIZE);
 	++agent->entries_count;
 
-	if (remote->type == ICE_CANDIDATE_TYPE_HOST)
+	if (pair->remote->type == ICE_CANDIDATE_TYPE_HOST)
 		agent_translate_host_candidate_entry(agent, entry);
+
+	pair->state = ICE_CANDIDATE_PAIR_STATE_PENDING;
 
 	agent_arm_transmission(agent, entry, 0); // transmit now
 	return 0;

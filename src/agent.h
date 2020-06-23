@@ -145,6 +145,7 @@ int agent_add_local_reflexive_candidate(juice_agent_t *agent, ice_candidate_type
 int agent_add_remote_reflexive_candidate(juice_agent_t *agent, ice_candidate_type_t type,
                                          uint32_t priority, const addr_record_t *record);
 int agent_add_candidate_pair(juice_agent_t *agent, ice_candidate_t *remote);
+int agent_unfreeze_candidate_pair(juice_agent_t *agent, ice_candidate_pair_t *pair);
 
 void agent_arm_transmission(juice_agent_t *agent, agent_stun_entry_t *entry, timediff_t delay);
 void agent_update_gathering_done(juice_agent_t *agent);
