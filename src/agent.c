@@ -229,7 +229,7 @@ int agent_set_remote_description(juice_agent_t *agent, const char *sdp) {
 		mutex_unlock(&agent->mutex);
 		return -1;
 	}
-	if (*agent->remote.ice_ufrag == '\0' || *agent->remote.ice_pwd == '\0') {
+	if (!*agent->remote.ice_ufrag || !*agent->remote.ice_pwd) {
 		JLOG_ERROR("Missing ICE user fragment or password in remote description");
 		mutex_unlock(&agent->mutex);
 		return -1;
@@ -727,8 +727,11 @@ int agent_dispatch_stun(juice_agent_t *agent, const stun_message_t *msg,
 		                                         msg->priority, source)) {
 			JLOG_WARN("Failed to add remote peer reflexive candidate from STUN message");
 		}
+	} else {
+		JLOG_VERBOSE("STUN message has no integrity");
 	}
 	if (STUN_IS_RESPONSE(msg->msg_class)) {
+		JLOG_VERBOSE("STUN message is a response, looking for transaction ID");
 		for (int i = 0; i < agent->entries_count; ++i) {
 			if (memcmp(msg->transaction_id, agent->entries[i].transaction_id,
 			           STUN_TRANSACTION_ID_SIZE) == 0) {
@@ -738,6 +741,7 @@ int agent_dispatch_stun(juice_agent_t *agent, const stun_message_t *msg,
 			}
 		}
 	} else {
+		JLOG_VERBOSE("STUN message is a request or indication, looking for remote address");
 		entry = agent_find_entry_from_record(agent, source);
 		if (entry)
 			JLOG_VERBOSE("Found STUN entry matching remote address record");
@@ -940,6 +944,10 @@ int agent_send_stun_binding(juice_agent_t *agent, const agent_stun_entry_t *entr
 		// the peer.
 		switch (msg_class) {
 		case STUN_CLASS_REQUEST: {
+			if (!*agent->remote.ice_ufrag || !*agent->remote.ice_pwd) {
+				JLOG_ERROR("Attempted to send STUN binding to peer without remote ICE credentials");
+				return -1;
+			}
 			// Local candidates are undifferentiated, always set the maximum priority
 			uint32_t local_priority = 0;
 			for (int i = 0; i < agent->local.candidates_count; ++i) {
@@ -1096,9 +1104,25 @@ int agent_add_candidate_pair(juice_agent_t *agent, ice_candidate_t *remote) {
 
 	agent_update_ordered_pairs(agent);
 
+	if (agent->entries_count == MAX_STUN_ENTRIES_COUNT) {
+		JLOG_WARN("No free STUN entry left for candidate pair checking");
+		return -1;
+	}
+
+	JLOG_VERBOSE("Registering STUN entry %d for candidate pair checking", agent->entries_count);
+	agent_stun_entry_t *entry = agent->entries + agent->entries_count;
+	entry->type = AGENT_STUN_ENTRY_TYPE_CHECK;
+	entry->pair = pos;
+	entry->record = pos->remote->resolved;
+	juice_random(entry->transaction_id, STUN_TRANSACTION_ID_SIZE);
+	++agent->entries_count;
+
+	if (remote->type == ICE_CANDIDATE_TYPE_HOST)
+		agent_translate_host_candidate_entry(agent, entry);
+
 	// There is only one component, therefore we can unfreeze the pair and schedule it when possible
 	if (*agent->remote.ice_ufrag != '\0') {
-		JLOG_DEBUG("Unfreezing the new candidate pair");
+		JLOG_VERBOSE("Unfreezing the new candidate pair");
 		agent_unfreeze_candidate_pair(agent, pos);
 	}
 
@@ -1109,26 +1133,17 @@ int agent_unfreeze_candidate_pair(juice_agent_t *agent, ice_candidate_pair_t *pa
 	if (pair->state != ICE_CANDIDATE_PAIR_STATE_FROZEN)
 		return 0;
 
-	if (agent->entries_count == MAX_STUN_ENTRIES_COUNT) {
-		JLOG_WARN("No free STUN entry left for candidate pair checking");
-		return -1;
+	for (size_t i = 0; i < agent->entries_count; ++i) {
+		agent_stun_entry_t *entry = agent->entries + i;
+		if (entry->pair == pair) {
+			pair->state = ICE_CANDIDATE_PAIR_STATE_PENDING;
+			agent_arm_transmission(agent, entry, 0); // transmit now
+			return 0;
+		}
 	}
 
-	JLOG_VERBOSE("Registering STUN entry %d for candidate pair checking", agent->entries_count);
-	agent_stun_entry_t *entry = agent->entries + agent->entries_count;
-	entry->type = AGENT_STUN_ENTRY_TYPE_CHECK;
-	entry->pair = pair;
-	entry->record = pair->remote->resolved;
-	juice_random(entry->transaction_id, STUN_TRANSACTION_ID_SIZE);
-	++agent->entries_count;
-
-	if (pair->remote->type == ICE_CANDIDATE_TYPE_HOST)
-		agent_translate_host_candidate_entry(agent, entry);
-
-	pair->state = ICE_CANDIDATE_PAIR_STATE_PENDING;
-
-	agent_arm_transmission(agent, entry, 0); // transmit now
-	return 0;
+	JLOG_WARN("Unable to unfreeze the pair: no matching entry");
+	return -1;
 }
 
 void agent_arm_transmission(juice_agent_t *agent, agent_stun_entry_t *entry, timediff_t delay) {
