@@ -47,7 +47,6 @@ int main(int argc, char **argv) {
 		return -1;
 	}
 
-#ifndef _MSC_VER // TODO: fix CI
 	printf("\nRunning connectivity test...\n");
 	if (test_connectivity()) {
 		fprintf(stderr, "Connectivity test failed\n");
@@ -59,8 +58,6 @@ int main(int argc, char **argv) {
 		fprintf(stderr, "Non-trickled connectivity test failed\n");
 		return -1;
 	}
-
-#endif
 
 	return 0;
 }
