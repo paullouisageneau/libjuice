@@ -23,6 +23,7 @@
 int test_crc32(void);
 int test_stun(void);
 int test_connectivity(void);
+int test_notrickle(void);
 int test_server(void);
 
 int main(int argc, char **argv) {
@@ -52,6 +53,13 @@ int main(int argc, char **argv) {
 		fprintf(stderr, "Connectivity test failed\n");
 		return -1;
 	}
+
+	printf("\nRunning non-trickled connectivity test...\n");
+	if (test_notrickle()) {
+		fprintf(stderr, "Non-trickled connectivity test failed\n");
+		return -1;
+	}
+
 #endif
 
 	return 0;

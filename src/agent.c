@@ -1172,6 +1172,7 @@ void agent_update_gathering_done(juice_agent_t *agent) {
 	}
 	if (!agent->gathering_done) {
 		JLOG_INFO("Candidate gathering done");
+		agent->local.finished = true;
 		agent->gathering_done = true;
 
 		if (agent->config.cb_gathering_done)

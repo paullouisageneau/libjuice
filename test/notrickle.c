@@ -38,16 +38,13 @@ static juice_agent_t *agent2;
 static void on_state_changed1(juice_agent_t *agent, juice_state_t state, void *user_ptr);
 static void on_state_changed2(juice_agent_t *agent, juice_state_t state, void *user_ptr);
 
-static void on_candidate1(juice_agent_t *agent, const char *sdp, void *user_ptr);
-static void on_candidate2(juice_agent_t *agent, const char *sdp, void *user_ptr);
-
 static void on_gathering_done1(juice_agent_t *agent, void *user_ptr);
 static void on_gathering_done2(juice_agent_t *agent, void *user_ptr);
 
 static void on_recv1(juice_agent_t *agent, const char *data, size_t size, void *user_ptr);
 static void on_recv2(juice_agent_t *agent, const char *data, size_t size, void *user_ptr);
 
-int test_connectivity() {
+int test_notrickle() {
 	juice_set_log_level(JUICE_LOG_LEVEL_DEBUG);
 
 	// Agent 1: Create agent
@@ -56,7 +53,6 @@ int test_connectivity() {
 	// config1.stun_server_host = "stun.l.google.com";
 	// config1.stun_server_port = 19302;
 	config1.cb_state_changed = on_state_changed1;
-	config1.cb_candidate = on_candidate1;
 	config1.cb_gathering_done = on_gathering_done1;
 	config1.cb_recv = on_recv1;
 	config1.user_ptr = NULL;
@@ -69,7 +65,6 @@ int test_connectivity() {
 	// config2.stun_server_host = "stun.l.google.com";
 	// config2.stun_server_port = 19302;
 	config2.cb_state_changed = on_state_changed2;
-	config2.cb_candidate = on_candidate2;
 	config2.cb_gathering_done = on_gathering_done2;
 	config2.cb_recv = on_recv2;
 	config2.user_ptr = NULL;
@@ -79,29 +74,10 @@ int test_connectivity() {
 
 	agent2 = juice_create(&config2);
 
-	// Agent 1: Generate local description
-	char sdp1[JUICE_MAX_SDP_STRING_LEN];
-	juice_get_local_description(agent1, sdp1, JUICE_MAX_SDP_STRING_LEN);
-	printf("Local description 1:\n%s\n", sdp1);
-
-	// Agent 2: Receive description from agent 1
-	juice_set_remote_description(agent2, sdp1);
-
-	// Agent 2: Generate local description
-	char sdp2[JUICE_MAX_SDP_STRING_LEN];
-	juice_get_local_description(agent2, sdp2, JUICE_MAX_SDP_STRING_LEN);
-	printf("Local description 2:\n%s\n", sdp2);
-
-	// Agent 1: Receive description from agent 2
-	juice_set_remote_description(agent1, sdp2);
-
-	// Agent 1: Gather candidates (and send them to agent 2)
+	// Agent 1: Gather candidates
 	juice_gather_candidates(agent1);
-	sleep(2);
 
-	// Agent 2: Gather candidates (and send them to agent 1)
-	juice_gather_candidates(agent2);
-	sleep(2);
+	sleep(4);
 
 	// -- Connection should be finished --
 
@@ -162,32 +138,33 @@ static void on_state_changed2(juice_agent_t *agent, juice_state_t state, void *u
 	}
 }
 
-// Agent 1: on local candidate gathered
-static void on_candidate1(juice_agent_t *agent, const char *sdp, void *user_ptr) {
-	printf("Candidate 1: %s\n", sdp);
-
-	// Agent 2: Receive it from agent 1
-	juice_add_remote_candidate(agent2, sdp);
-}
-
-// Agent 2: on local candidate gathered
-static void on_candidate2(juice_agent_t *agent, const char *sdp, void *user_ptr) {
-	printf("Candidate 2: %s\n", sdp);
-
-	// Agent 1: Receive it from agent 2
-	juice_add_remote_candidate(agent1, sdp);
-}
-
 // Agent 1: on local candidates gathering done
 static void on_gathering_done1(juice_agent_t *agent, void *user_ptr) {
 	printf("Gathering done 1\n");
-	juice_set_remote_gathering_done(agent2); // optional
+
+	// Agent 1: Generate local description
+	char sdp1[JUICE_MAX_SDP_STRING_LEN];
+	juice_get_local_description(agent1, sdp1, JUICE_MAX_SDP_STRING_LEN);
+	printf("Local description 1:\n%s\n", sdp1);
+
+	// Agent 2: Receive description from agent 1
+	juice_set_remote_description(agent2, sdp1);
+
+	// Agent 2: Gather candidates
+	juice_gather_candidates(agent2);
 }
 
 // Agent 2: on local candidates gathering done
 static void on_gathering_done2(juice_agent_t *agent, void *user_ptr) {
 	printf("Gathering done 2\n");
-	juice_set_remote_gathering_done(agent1); // optional
+
+	// Agent 2: Generate local description
+	char sdp2[JUICE_MAX_SDP_STRING_LEN];
+	juice_get_local_description(agent2, sdp2, JUICE_MAX_SDP_STRING_LEN);
+	printf("Local description 2:\n%s\n", sdp2);
+
+	// Agent 1: Receive description from agent 2
+	juice_set_remote_description(agent1, sdp2);
 }
 
 // Agent 1: on message received
