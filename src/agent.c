@@ -310,7 +310,7 @@ int agent_send(juice_agent_t *agent, const char *data, size_t size) {
 	int ret =
 	    sendto(agent->sock, data, size, 0, (const struct sockaddr *)&record->addr, record->len);
 #endif
-	if (ret < 0)
+	if (ret < 0 && sockerrno != SEAGAIN && sockerrno != SEWOULDBLOCK)
 		JLOG_WARN("Send failed, errno=%d", sockerrno);
 	return ret;
 }
