@@ -125,7 +125,7 @@ void agent_destroy(juice_agent_t *agent) {
 	agent_do_destroy(agent);
 }
 
-thread_return_t agent_thread_entry(void *arg) {
+thread_return_t THREAD_CALL agent_thread_entry(void *arg) {
 	agent_run((juice_agent_t *)arg);
 	return (thread_return_t)0;
 }

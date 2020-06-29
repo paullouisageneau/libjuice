@@ -33,6 +33,7 @@
 typedef HANDLE mutex_t;
 typedef HANDLE thread_t;
 typedef DWORD thread_return_t;
+#define THREAD_CALL __stdcall
 
 #define MUTEX_INITIALIZER NULL
 
@@ -78,6 +79,7 @@ static inline void thread_join_impl(thread_t t, thread_return_t *res) {
 typedef pthread_mutex_t mutex_t;
 typedef pthread_t thread_t;
 typedef void *thread_return_t;
+#define THREAD_CALL
 
 #define MUTEX_INITIALIZER PTHREAD_MUTEX_INITIALIZER
 
