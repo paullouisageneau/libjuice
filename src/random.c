@@ -24,7 +24,7 @@
 #include <stdbool.h>
 #include <time.h>
 
-#if defined(__linux__)
+#if defined(__linux__) && !defined(__ANDROID__) // getrandom() not available in Android NDK API < 28
 #include <errno.h>
 #include <sys/random.h>
 
@@ -86,7 +86,7 @@ void juice_random(void *buf, size_t size) {
 	mutex_lock(&rand_mutex);
 
 	static bool srandom_called = false;
-#if defined(__unix__) || defined(__APPLE__)
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
 #define random_func random
 #define srandom_func srandom
 	if (!srandom_called)
