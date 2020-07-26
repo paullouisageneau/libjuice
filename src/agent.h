@@ -103,7 +103,7 @@ struct juice_agent {
 	agent_stun_entry_t entries[MAX_STUN_ENTRIES_COUNT];
 	size_t entries_count;
 #ifdef NO_ATOMICS
-	volatile agent_stun_entry_t *selected_entry;
+	agent_stun_entry_t *volatile selected_entry;
 #else
 	_Atomic(agent_stun_entry_t *) selected_entry;
 #endif
