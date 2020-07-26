@@ -36,6 +36,8 @@ jobs:
     steps:
     - uses: actions/checkout@v2
     - uses: ilammy/msvc-dev-cmd@v1
+    - name: install packages
+      run: choco install openssl
     - name: cmake
       run: cmake -B build -G "NMake Makefiles"
     - name: nmake
