@@ -272,7 +272,7 @@ int agent_add_remote_candidate(juice_agent_t *agent, const char *sdp) {
 	int ret = ice_parse_candidate_sdp(sdp, &candidate);
 	if (ret < 0) {
 		if (ret == ICE_PARSE_IGNORED)
-			JLOG_INFO("Ignored SDP candidate: %s", sdp);
+			JLOG_DEBUG("Ignored SDP candidate: %s", sdp);
 		else if (ret == ICE_PARSE_ERROR)
 			JLOG_ERROR("Failed to parse remote SDP candidate: %s", sdp);
 
