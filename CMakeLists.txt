@@ -5,6 +5,7 @@ project (libjuice
 	LANGUAGES C)
 
 option(USE_NETTLE "Use Nettle instead of OpenSSL for HMAC computation" OFF)
+option(WARNINGS_AS_ERRORS "Treat warnings as errors" OFF)
 if(MSVC)
 	option(NO_ATOMICS "Force disabling C11 atomics" ON)
 else()
@@ -103,6 +104,21 @@ add_library(LibJuice::LibJuiceStatic ALIAS juice-static)
 
 install(TARGETS juice LIBRARY DESTINATION lib)
 install(FILES ${LIBJUICE_HEADERS} DESTINATION include/juice)
+
+if(NOT MSVC)
+	target_compile_options(juice PRIVATE -Wall -Wextra)
+	target_compile_options(juice-static PRIVATE -Wall -Wextra)
+endif()
+
+if(WARNINGS_AS_ERRORS)
+	if(MSVC)
+		target_compile_options(juice PRIVATE /WX)
+		target_compile_options(juice-static PRIVATE /WX)
+	else()
+		target_compile_options(juice PRIVATE -Werror)
+		target_compile_options(juice-static PRIVATE -Werror)
+	endif()
+endif()
 
 # Main Test
 add_executable(juice-tests ${TESTS_SOURCES})
