@@ -61,7 +61,7 @@ static int parse_sdp_line(const char *line, ice_description_t *description) {
 		ice_add_candidate(&candidate, description);
 		return 0;
 	}
-	return -1;
+	return ICE_PARSE_IGNORED;
 }
 
 static int parse_sdp_candidate(const char *line, ice_candidate_t *candidate) {
@@ -76,8 +76,14 @@ static int parse_sdp_candidate(const char *line, ice_candidate_t *candidate) {
 	           &candidate->component, transport, &candidate->priority, candidate->hostname,
 	           candidate->service, type) != 7) {
 		JLOG_WARN("Failed to parse candidate: %s", line);
-		return -1;
+		return ICE_PARSE_ERROR;
 	}
+
+	for (size_t i = 0; transport[i]; ++i)
+		transport[i] = toupper((unsigned char)transport[i]);
+
+	for (size_t i = 0; type[i]; ++i)
+		type[i] = tolower((unsigned char)type[i]);
 
 	if (strcmp(type, "host") == 0)
 		candidate->type = ICE_CANDIDATE_TYPE_HOST;
@@ -87,12 +93,12 @@ static int parse_sdp_candidate(const char *line, ice_candidate_t *candidate) {
 		candidate->type = ICE_CANDIDATE_TYPE_RELAYED;
 	else {
 		JLOG_WARN("Ignoring candidate with unknown type \"%s\"", type);
-		return -1;
+		return ICE_PARSE_IGNORED;
 	}
 
-	if (strcmp(transport, "UDP") != 0 && strcmp(transport, "udp") != 0) {
-		JLOG_INFO("Ignoring candidate with transport \"%s\"", transport);
-		return -1;
+	if (strcmp(transport, "UDP") != 0) {
+		JLOG_INFO("Ignoring candidate with transport %s", transport);
+		return ICE_PARSE_IGNORED;
 	}
 
 	return 0;
@@ -160,18 +166,19 @@ int ice_parse_sdp(const char *sdp, ice_description_t *description) {
 	JLOG_DEBUG("Parsed remote description: ufrag=\"%s\", pwd=\"%s\", candidates=%d",
 	           description->ice_ufrag, description->ice_pwd, description->candidates_count);
 
-	return *description->ice_ufrag && *description->ice_pwd ? 0 : -1;
+	return *description->ice_ufrag && *description->ice_pwd ? 0 : ICE_PARSE_ERROR;
 }
 
 int ice_parse_candidate_sdp(const char *line, ice_candidate_t *candidate) {
 	const char *arg;
 	if (match_prefix(line, "a=candidate:", &arg)) {
-		if (parse_sdp_candidate(line, candidate) < 0)
-			return -1;
+		int ret = parse_sdp_candidate(line, candidate);
+		if (ret < 0)
+			return ret;
 		ice_resolve_candidate(candidate, ICE_RESOLVE_MODE_SIMPLE);
 		return 0;
 	}
-	return -1;
+	return ICE_PARSE_ERROR;
 }
 
 int ice_create_local_description(ice_description_t *description) {

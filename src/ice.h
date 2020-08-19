@@ -82,6 +82,9 @@ typedef enum ice_resolve_mode {
 	ICE_RESOLVE_MODE_LOOKUP,
 } ice_resolve_mode_t;
 
+#define ICE_PARSE_ERROR -1
+#define ICE_PARSE_IGNORED -2
+
 int ice_parse_sdp(const char *sdp, ice_description_t *description);
 int ice_parse_candidate_sdp(const char *line, ice_candidate_t *candidate);
 int ice_create_local_description(ice_description_t *description);

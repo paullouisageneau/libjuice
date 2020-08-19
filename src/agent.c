@@ -212,8 +212,12 @@ int agent_gather_candidates(juice_agent_t *agent) {
 
 int agent_get_local_description(juice_agent_t *agent, char *buffer, size_t size) {
 	mutex_lock(&agent->mutex);
-	if (ice_generate_sdp(&agent->local, buffer, size) < 0)
+	if (ice_generate_sdp(&agent->local, buffer, size) < 0) {
+		JLOG_ERROR("Failed to generate local SDP description");
 		return -1;
+	}
+	JLOG_VERBOSE("Generated local SDP description: %s", buffer);
+
 	if (agent->mode == AGENT_MODE_UNKNOWN) {
 		JLOG_DEBUG("Assuming controlling mode");
 		agent->mode = AGENT_MODE_CONTROLLING;
@@ -224,13 +228,22 @@ int agent_get_local_description(juice_agent_t *agent, char *buffer, size_t size)
 
 int agent_set_remote_description(juice_agent_t *agent, const char *sdp) {
 	mutex_lock(&agent->mutex);
-	if (ice_parse_sdp(sdp, &agent->remote) < 0) {
-		JLOG_ERROR("Failed to parse remote SDP description");
+	JLOG_VERBOSE("Setting remote SDP description: %s", sdp);
+	int ret = ice_parse_sdp(sdp, &agent->remote);
+	if (ret < 0) {
+		if (ret == ICE_PARSE_ERROR)
+			JLOG_ERROR("Failed to parse remote SDP description");
+
 		mutex_unlock(&agent->mutex);
 		return -1;
 	}
-	if (!*agent->remote.ice_ufrag || !*agent->remote.ice_pwd) {
-		JLOG_ERROR("Missing ICE user fragment or password in remote description");
+	if (!*agent->remote.ice_ufrag) {
+		JLOG_ERROR("Missing ICE user fragment in remote description");
+		mutex_unlock(&agent->mutex);
+		return -1;
+	}
+	if (!*agent->remote.ice_pwd) {
+		JLOG_ERROR("Missing ICE password in remote description");
 		mutex_unlock(&agent->mutex);
 		return -1;
 	}
@@ -239,10 +252,10 @@ int agent_set_remote_description(juice_agent_t *agent, const char *sdp) {
 	for (size_t i = 0; i < agent->candidate_pairs_count; ++i) {
 		agent_unfreeze_candidate_pair(agent, agent->candidate_pairs + i);
 	}
-	JLOG_DEBUG("Adding %d remote candidates from description", (int)agent->remote.candidates_count);
+	JLOG_DEBUG("Adding %d candidates from remote description", (int)agent->remote.candidates_count);
 	for (size_t i = 0; i < agent->remote.candidates_count; ++i) {
 		if (agent_add_candidate_pair(agent, agent->remote.candidates + i))
-			JLOG_WARN("Failed to add remote candidate from description");
+			JLOG_WARN("Failed to add candidate pair from remote description");
 	}
 	if (agent->mode == AGENT_MODE_UNKNOWN) {
 		JLOG_DEBUG("Assuming controlled mode");
@@ -256,8 +269,13 @@ int agent_set_remote_description(juice_agent_t *agent, const char *sdp) {
 int agent_add_remote_candidate(juice_agent_t *agent, const char *sdp) {
 	mutex_lock(&agent->mutex);
 	ice_candidate_t candidate;
-	if (ice_parse_candidate_sdp(sdp, &candidate) < 0) {
-		JLOG_ERROR("Failed to parse remote SDP candidate");
+	int ret = ice_parse_candidate_sdp(sdp, &candidate);
+	if (ret < 0) {
+		if (ret == ICE_PARSE_IGNORED)
+			JLOG_DEBUG("Ignored SDP candidate: %s", sdp);
+		else if (ret == ICE_PARSE_ERROR)
+			JLOG_ERROR("Failed to parse remote SDP candidate: %s", sdp);
+
 		mutex_unlock(&agent->mutex);
 		return -1;
 	}
@@ -267,7 +285,7 @@ int agent_add_remote_candidate(juice_agent_t *agent, const char *sdp) {
 		return -1;
 	}
 	ice_candidate_t *remote = agent->remote.candidates + agent->remote.candidates_count - 1;
-	int ret = agent_add_candidate_pair(agent, remote);
+	ret = agent_add_candidate_pair(agent, remote);
 	mutex_unlock(&agent->mutex);
 	agent_interrupt(agent);
 	return ret;
@@ -1092,8 +1110,10 @@ int agent_add_candidate_pair(juice_agent_t *agent, ice_candidate_t *remote) {
 		return -1;
 	}
 
-	if (agent->candidate_pairs_count >= MAX_CANDIDATE_PAIRS_COUNT)
+	if (agent->candidate_pairs_count >= MAX_CANDIDATE_PAIRS_COUNT) {
+		JLOG_WARN("Session already has the maximum number of candidate pairs");
 		return -1;
+	}
 
 	JLOG_VERBOSE("Adding new candidate pair, priority=%" PRIu64, pair.priority);
 
