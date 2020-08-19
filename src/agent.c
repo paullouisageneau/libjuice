@@ -252,10 +252,10 @@ int agent_set_remote_description(juice_agent_t *agent, const char *sdp) {
 	for (size_t i = 0; i < agent->candidate_pairs_count; ++i) {
 		agent_unfreeze_candidate_pair(agent, agent->candidate_pairs + i);
 	}
-	JLOG_DEBUG("Adding %d remote candidates from description", (int)agent->remote.candidates_count);
+	JLOG_DEBUG("Adding %d candidates from remote description", (int)agent->remote.candidates_count);
 	for (size_t i = 0; i < agent->remote.candidates_count; ++i) {
 		if (agent_add_candidate_pair(agent, agent->remote.candidates + i))
-			JLOG_WARN("Failed to add remote candidate from description");
+			JLOG_WARN("Failed to add candidate pair from remote description");
 	}
 	if (agent->mode == AGENT_MODE_UNKNOWN) {
 		JLOG_DEBUG("Assuming controlled mode");
@@ -1110,8 +1110,10 @@ int agent_add_candidate_pair(juice_agent_t *agent, ice_candidate_t *remote) {
 		return -1;
 	}
 
-	if (agent->candidate_pairs_count >= MAX_CANDIDATE_PAIRS_COUNT)
+	if (agent->candidate_pairs_count >= MAX_CANDIDATE_PAIRS_COUNT) {
+		JLOG_WARN("Session already has the maximum number of candidate pairs");
 		return -1;
+	}
 
 	JLOG_VERBOSE("Adding new candidate pair, priority=%" PRIu64, pair.priority);
 

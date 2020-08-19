@@ -49,12 +49,14 @@
 // use a value smaller than 15 seconds.
 #define STUN_KEEPALIVE_PERIOD 15000 // msecs
 
-#define MAX_CANDIDATE_PAIRS_COUNT ICE_MAX_CANDIDATES_COUNT
+// ICE trickling timeout
+#define ICE_FAIL_TIMEOUT 30000 // msecs
+
 #define MAX_STUN_SERVER_RECORDS_COUNT 2
 #define MAX_STUN_ENTRIES_COUNT (MAX_CANDIDATE_PAIRS_COUNT + MAX_STUN_SERVER_RECORDS_COUNT)
 #define MAX_HOST_CANDIDATES_COUNT (ICE_MAX_CANDIDATES_COUNT - MAX_STUN_SERVER_RECORDS_COUNT - 2)
 
-#define ICE_FAIL_TIMEOUT 30000 // msecs
+#define MAX_CANDIDATE_PAIRS_COUNT (ICE_MAX_CANDIDATES_COUNT * 2) // just to be safe
 
 typedef int64_t timestamp_t;
 typedef timestamp_t timediff_t;
