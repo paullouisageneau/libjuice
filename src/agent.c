@@ -249,11 +249,11 @@ int agent_set_remote_description(juice_agent_t *agent, const char *sdp) {
 	}
 	// There is only one component, therefore we can unfreeze already existing pairs now
 	JLOG_DEBUG("Unfreezing %d existing candidate pairs", (int)agent->candidate_pairs_count);
-	for (size_t i = 0; i < agent->candidate_pairs_count; ++i) {
+	for (int i = 0; i < agent->candidate_pairs_count; ++i) {
 		agent_unfreeze_candidate_pair(agent, agent->candidate_pairs + i);
 	}
 	JLOG_DEBUG("Adding %d candidates from remote description", (int)agent->remote.candidates_count);
-	for (size_t i = 0; i < agent->remote.candidates_count; ++i) {
+	for (int i = 0; i < agent->remote.candidates_count; ++i) {
 		if (agent_add_candidate_pair(agent, agent->remote.candidates + i))
 			JLOG_WARN("Failed to add candidate pair from remote description");
 	}
@@ -1153,7 +1153,7 @@ int agent_unfreeze_candidate_pair(juice_agent_t *agent, ice_candidate_pair_t *pa
 	if (pair->state != ICE_CANDIDATE_PAIR_STATE_FROZEN)
 		return 0;
 
-	for (size_t i = 0; i < agent->entries_count; ++i) {
+	for (int i = 0; i < agent->entries_count; ++i) {
 		agent_stun_entry_t *entry = agent->entries + i;
 		if (entry->pair == pair) {
 			pair->state = ICE_CANDIDATE_PAIR_STATE_PENDING;

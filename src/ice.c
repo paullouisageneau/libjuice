@@ -79,10 +79,10 @@ static int parse_sdp_candidate(const char *line, ice_candidate_t *candidate) {
 		return ICE_PARSE_ERROR;
 	}
 
-	for (size_t i = 0; transport[i]; ++i)
+	for (int i = 0; transport[i]; ++i)
 		transport[i] = toupper((unsigned char)transport[i]);
 
-	for (size_t i = 0; type[i]; ++i)
+	for (int i = 0; type[i]; ++i)
 		type[i] = tolower((unsigned char)type[i]);
 
 	if (strcmp(type, "host") == 0)
@@ -294,7 +294,7 @@ int ice_generate_sdp(const ice_description_t *description, char *buffer, size_t 
 	// Round 0: description
 	// Round i with i>0 and i<count+1: candidate i-1
 	// Round count + 1: ice-options:trickle/end-of-candidates line
-	for (size_t i = 0; i < description->candidates_count + 2; ++i) {
+	for (int i = 0; i < description->candidates_count + 2; ++i) {
 		int ret;
 		if (i == 0) {
 			ret = snprintf(begin, end - begin, "a=ice-ufrag:%s\r\na=ice-pwd:%s\r\n",

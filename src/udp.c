@@ -26,7 +26,7 @@
 #include <string.h>
 #include <time.h>
 
-static struct addrinfo *find_family(struct addrinfo *ai_list, unsigned int family) {
+static struct addrinfo *find_family(struct addrinfo *ai_list, int family) {
 	struct addrinfo *ai = ai_list;
 	while (ai && ai->ai_family != family)
 		ai = ai->ai_next;
