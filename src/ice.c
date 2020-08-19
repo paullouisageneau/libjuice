@@ -97,7 +97,7 @@ static int parse_sdp_candidate(const char *line, ice_candidate_t *candidate) {
 	}
 
 	if (strcmp(transport, "UDP") != 0) {
-		JLOG_INFO("Ignoring candidate with transport %s", transport);
+		JLOG_WARN("Ignoring candidate with transport %s", transport);
 		return ICE_PARSE_IGNORED;
 	}
 
