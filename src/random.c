@@ -62,7 +62,11 @@ static int random_bytes(void *buf, size_t size) {
 }
 
 #else
-static int random_bytes(void *buf, size_t size) { return -1; }
+static int random_bytes(void *buf, size_t size) {
+	(void)buf;
+	(void)size;
+	return -1;
+}
 #endif
 
 static unsigned int generate_seed() {
