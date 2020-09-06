@@ -308,6 +308,9 @@ int udp_get_addrs(socket_t sock, addr_record_t *records, size_t count) {
 		unsigned int flags = ifa->ifa_flags;
 		if (!(flags & IFF_UP) || (flags & IFF_LOOPBACK))
 			continue;
+		if (strcmp(ifa->ifa_name, "docker0") == 0)
+			continue;
+
 		if (ifa->ifa_addr && addr_is_temp_inet6(ifa->ifa_addr)) {
 			has_temp_inet6 = true;
 			break;
@@ -317,6 +320,8 @@ int udp_get_addrs(socket_t sock, addr_record_t *records, size_t count) {
 	for (struct ifaddrs *ifa = ifas; ifa; ifa = ifa->ifa_next) {
 		unsigned int flags = ifa->ifa_flags;
 		if (!(flags & IFF_UP) || (flags & IFF_LOOPBACK))
+			continue;
+		if (strcmp(ifa->ifa_name, "docker0") == 0)
 			continue;
 
 		struct sockaddr *sa = ifa->ifa_addr;
