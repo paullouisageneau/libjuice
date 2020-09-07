@@ -602,16 +602,22 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 		JLOG_DEBUG("New selected pair");
 		agent->selected_pair = selected_pair;
 
-		// Update selected entry
 		for (int i = 0; i < agent->entries_count; ++i) {
 			agent_stun_entry_t *entry = agent->entries + i;
+			if (!entry->pair)
+				continue;
+
 			if (entry->pair == agent->selected_pair) {
+				// Update selected entry
 #ifdef NO_ATOMICS
 				agent->selected_entry = entry;
 #else
 				atomic_store(&agent->selected_entry, entry);
 #endif
-				break;
+			} else if (entry->pair->state == ICE_CANDIDATE_PAIR_STATE_PENDING) {
+				// Limit retransmissions of still pending ones
+				if (entry->retransmissions > 1)
+					entry->retransmissions = 1;
 			}
 		}
 	}
