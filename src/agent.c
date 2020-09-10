@@ -551,7 +551,7 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 			} else {
 				JLOG_ERROR("Sending keepalive failed");
 			}
-		} else if (entry->retransmissions > 0) {
+		} else if (entry->retransmissions >= 0) {
 			// Request transmission or retransmission
 			JLOG_DEBUG("STUN entry %d: Sending request", i);
 			if (agent_send_stun_binding(agent, entry, STUN_CLASS_REQUEST, 0, NULL, NULL) >= 0) {
