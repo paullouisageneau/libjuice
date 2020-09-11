@@ -415,11 +415,16 @@ void agent_run(juice_agent_t *agent) {
 		mutex_unlock(&agent->mutex);
 		int ret = select(n, &readfds, NULL, NULL, &timeout);
 		mutex_lock(&agent->mutex);
-		if (ret < 0) {
-			JLOG_FATAL("select failed, errno=%d", sockerrno);
-			break;
-		}
 		JLOG_VERBOSE("Leaving select");
+		if (ret < 0) {
+			if (sockerrno == SEINTR || sockerrno == SEAGAIN) {
+				JLOG_VERBOSE("select interrupted");
+				continue;
+			} else {
+				JLOG_FATAL("select failed, errno=%d", sockerrno);
+				break;
+			}
+		}
 
 		if (agent->thread_stopped) {
 			JLOG_VERBOSE("Agent destruction requested");
