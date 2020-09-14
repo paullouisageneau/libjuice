@@ -52,12 +52,13 @@
 // ICE trickling timeout
 #define ICE_FAIL_TIMEOUT 30000 // msecs
 
+// Compute max candidates and entries count
+// This guarantees 8 (+1 to be safe) host candidates slots
 #define MAX_STUN_SERVER_RECORDS_COUNT 2
+#define MAX_HOST_CANDIDATES_COUNT ((ICE_MAX_CANDIDATES_COUNT - MAX_STUN_SERVER_RECORDS_COUNT) / 2)
+#define MAX_PEER_REFLEXIVE_CANDIDATES_COUNT MAX_HOST_CANDIDATES_COUNT
 #define MAX_CANDIDATE_PAIRS_COUNT (ICE_MAX_CANDIDATES_COUNT * 2) // just to be safe
 #define MAX_STUN_ENTRIES_COUNT (MAX_CANDIDATE_PAIRS_COUNT + MAX_STUN_SERVER_RECORDS_COUNT)
-#define MAX_PEER_REFLEXIVE_CANDIDATES_COUNT 4
-#define MAX_HOST_CANDIDATES_COUNT                                                                  \
-	(ICE_MAX_CANDIDATES_COUNT - MAX_STUN_SERVER_RECORDS_COUNT - MAX_PEER_REFLEXIVE_CANDIDATES_COUNT)
 
 typedef int64_t timestamp_t;
 typedef timestamp_t timediff_t;
