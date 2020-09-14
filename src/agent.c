@@ -1108,7 +1108,7 @@ int agent_add_remote_reflexive_candidate(juice_agent_t *agent, ice_candidate_typ
 	}
 	JLOG_DEBUG("Obtained a new remote reflexive candidate, priority=%lu", (unsigned long)priority);
 
-	if (ice_candidates_count(&agent->local, ICE_CANDIDATE_TYPE_PEER_REFLEXIVE) >=
+	if (ice_candidates_count(&agent->remote, ICE_CANDIDATE_TYPE_PEER_REFLEXIVE) >=
 	    MAX_PEER_REFLEXIVE_CANDIDATES_COUNT) {
 		JLOG_INFO(
 		    "Remote description has the maximum number of peer reflexive candidates, ignoring");
