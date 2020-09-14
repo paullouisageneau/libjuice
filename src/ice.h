@@ -25,7 +25,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#define ICE_MAX_CANDIDATES_COUNT 16 // ~ 500B * 16 = 8KB
+#define ICE_MAX_CANDIDATES_COUNT 20 // ~ 500B * 20 = 10KB
 
 typedef enum ice_candidate_type {
 	ICE_CANDIDATE_TYPE_UNKNOWN,
@@ -101,5 +101,7 @@ int ice_generate_candidate_sdp(const ice_candidate_t *candidate, char *buffer, s
 int ice_create_candidate_pair(ice_candidate_t *local, ice_candidate_t *remote, bool is_controlling,
                               ice_candidate_pair_t *pair);
 int ice_update_candidate_pair(bool is_controlling, ice_candidate_pair_t *pair);
+
+int ice_candidates_count(const ice_description_t *description, ice_candidate_type_t type);
 
 #endif
