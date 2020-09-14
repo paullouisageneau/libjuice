@@ -759,6 +759,7 @@ int agent_dispatch_stun(juice_agent_t *agent, const stun_message_t *msg,
 	} else {
 		JLOG_VERBOSE("STUN message has no integrity");
 	}
+
 	if (STUN_IS_RESPONSE(msg->msg_class)) {
 		JLOG_VERBOSE("STUN message is a response, looking for transaction ID");
 		for (int i = 0; i < agent->entries_count; ++i) {
@@ -769,16 +770,23 @@ int agent_dispatch_stun(juice_agent_t *agent, const stun_message_t *msg,
 				break;
 			}
 		}
+		if (!entry) {
+			JLOG_ERROR("No STUN entry matching transaction ID, ignoring");
+			return -1;
+		}
 	} else {
 		JLOG_VERBOSE("STUN message is a request or indication, looking for remote address");
 		entry = agent_find_entry_from_record(agent, source);
-		if (entry)
-			JLOG_VERBOSE("Found STUN entry matching remote address record");
+		if (entry) {
+			JLOG_VERBOSE("Found STUN entry matching remote address");
+		} else {
+			// This may happen normally, for instance when there is no space left for reflexive
+			// candidates
+			JLOG_DEBUG("No STUN entry matching remote address, ignoring");
+			return 0;
+		}
 	}
-	if (!entry) {
-		JLOG_ERROR("STUN entry for message processing not found");
-		return -1;
-	}
+
 	if (entry->type == AGENT_STUN_ENTRY_TYPE_CHECK && !msg->has_integrity &&
 	    (msg->msg_class == STUN_CLASS_REQUEST || msg->msg_class == STUN_CLASS_RESP_SUCCESS)) {
 		JLOG_WARN("STUN binding message from remote peer missing integrity");
@@ -1041,8 +1049,8 @@ int agent_send_stun_binding(juice_agent_t *agent, const agent_stun_entry_t *entr
 
 int agent_add_local_reflexive_candidate(juice_agent_t *agent, ice_candidate_type_t type,
                                         const addr_record_t *record) {
-	if (type == ICE_CANDIDATE_TYPE_HOST) {
-		JLOG_ERROR("Invalid type for reflexive candidate");
+	if (type != ICE_CANDIDATE_TYPE_SERVER_REFLEXIVE && type != ICE_CANDIDATE_TYPE_PEER_REFLEXIVE) {
+		JLOG_ERROR("Invalid type for local reflexive candidate");
 		return -1;
 	}
 	int family = record->addr.ss_family;
@@ -1063,8 +1071,11 @@ int agent_add_local_reflexive_candidate(juice_agent_t *agent, ice_candidate_type
 	}
 	JLOG_DEBUG("Gathered reflexive candidate: %s", buffer);
 
-	if (agent->local.candidates_count >= ICE_MAX_CANDIDATES_COUNT) {
-		JLOG_WARN("Local description already has the maximum number of candidates");
+	if (candidate.type == ICE_CANDIDATE_TYPE_PEER_REFLEXIVE &&
+	    ice_candidates_count(&agent->local, ICE_CANDIDATE_TYPE_PEER_REFLEXIVE) >=
+	        MAX_PEER_REFLEXIVE_CANDIDATES_COUNT) {
+		JLOG_INFO(
+		    "Local description has the maximum number of peer reflexive candidates, ignoring");
 		return 0;
 	}
 	if (ice_add_candidate(&candidate, &agent->local)) {
@@ -1080,8 +1091,8 @@ int agent_add_local_reflexive_candidate(juice_agent_t *agent, ice_candidate_type
 
 int agent_add_remote_reflexive_candidate(juice_agent_t *agent, ice_candidate_type_t type,
                                          uint32_t priority, const addr_record_t *record) {
-	if (type == ICE_CANDIDATE_TYPE_HOST) {
-		JLOG_ERROR("Invalid type for reflexive candidate");
+	if (type != ICE_CANDIDATE_TYPE_PEER_REFLEXIVE) {
+		JLOG_ERROR("Invalid type for remote reflexive candidate");
 		return -1;
 	}
 	int family = record->addr.ss_family;
@@ -1097,8 +1108,10 @@ int agent_add_remote_reflexive_candidate(juice_agent_t *agent, ice_candidate_typ
 	}
 	JLOG_DEBUG("Obtained a new remote reflexive candidate, priority=%lu", (unsigned long)priority);
 
-	if (agent->remote.candidates_count >= ICE_MAX_CANDIDATES_COUNT) {
-		JLOG_WARN("Remote description already has the maximum number of candidates");
+	if (ice_candidates_count(&agent->local, ICE_CANDIDATE_TYPE_PEER_REFLEXIVE) >=
+	    MAX_PEER_REFLEXIVE_CANDIDATES_COUNT) {
+		JLOG_INFO(
+		    "Remote description has the maximum number of peer reflexive candidates, ignoring");
 		return 0;
 	}
 	if (ice_add_candidate(&candidate, &agent->remote)) {

@@ -102,4 +102,6 @@ int ice_create_candidate_pair(ice_candidate_t *local, ice_candidate_t *remote, b
                               ice_candidate_pair_t *pair);
 int ice_update_candidate_pair(bool is_controlling, ice_candidate_pair_t *pair);
 
+int ice_candidates_count(const ice_description_t *description, ice_candidate_type_t type);
+
 #endif

@@ -240,8 +240,10 @@ int ice_add_candidate(ice_candidate_t *candidate, ice_description_t *description
 	if (candidate->type == ICE_CANDIDATE_TYPE_UNKNOWN)
 		return -1;
 
-	if (description->candidates_count >= ICE_MAX_CANDIDATES_COUNT)
+	if (description->candidates_count >= ICE_MAX_CANDIDATES_COUNT) {
+		JLOG_WARN("Description already has the maximum number of candidates");
 		return -1;
+	}
 
 	snprintf(candidate->foundation, 32, "%u", (unsigned int)(description->candidates_count + 1));
 
@@ -370,4 +372,14 @@ int ice_update_candidate_pair(bool is_controlling, ice_candidate_pair_t *pair) {
 	uint64_t max = g > d ? g : d;
 	pair->priority = (min << 32) + (max << 1) + (g > d ? 1 : 0);
 	return 0;
+}
+
+int ice_candidates_count(const ice_description_t *description, ice_candidate_type_t type) {
+	int count = 0;
+	for (int i = 0; i < description->candidates_count; ++i) {
+		const ice_candidate_t *candidate = description->candidates + i;
+		if (candidate->type == type)
+			++count;
+	}
+	return count;
 }
