@@ -450,6 +450,12 @@ int agent_recv(juice_agent_t *agent) {
 		int len = recvfrom(agent->sock, buffer, BUFFER_SIZE, 0, (struct sockaddr *)&record.addr,
 		                   &record.len);
 		if (len < 0) {
+			if (sockerrno == SECONNRESET) {
+				// On Windows, if a UDP socket receives an ICMP port unreachable response after
+				// sending a datagram, this error is stored, and the next call to recvfrom() returns
+				// WSAECONNRESET. Therefore, it may be ignored.
+				continue;
+			}
 			if (sockerrno == SEAGAIN || sockerrno == SEWOULDBLOCK) {
 				JLOG_VERBOSE("No more datagrams to receive");
 				break;
