@@ -275,7 +275,8 @@ int stun_read(void *data, size_t size, stun_message_t *msg) {
 	const struct stun_header *header = data;
 	const size_t length = ntohs(header->length);
 	if (size < sizeof(struct stun_header) + length) {
-		JLOG_ERROR("Invalid STUN message length", length, size - sizeof(struct stun_header));
+		JLOG_ERROR("Invalid STUN message length, length=%zu, available=%zu", length,
+		           size - sizeof(struct stun_header));
 		return -1;
 	}
 
