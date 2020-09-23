@@ -92,7 +92,8 @@ typedef enum {
 	JUICE_LOG_LEVEL_INFO,
 	JUICE_LOG_LEVEL_WARN,
 	JUICE_LOG_LEVEL_ERROR,
-	JUICE_LOG_LEVEL_FATAL
+	JUICE_LOG_LEVEL_FATAL,
+	JUICE_LOG_LEVEL_NONE
 } juice_log_level_t;
 
 typedef void (*juice_log_cb_t)(juice_log_level_t level, const char *message);
