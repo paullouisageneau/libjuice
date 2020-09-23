@@ -38,7 +38,7 @@ set(LIBJUICE_SOURCES
 )
 
 set(LIBJUICE_HEADERS
-	${CMAKE_CURRENT_SOURCE_DIR}/include/juice.h
+	${CMAKE_CURRENT_SOURCE_DIR}/include/juice/juice.h
 )
 
 set(TESTS_SOURCES
