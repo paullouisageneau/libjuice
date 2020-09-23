@@ -46,12 +46,11 @@ static const char *log_level_colors[] = {
 };
 
 static mutex_t log_mutex = MUTEX_INITIALIZER;
+static volatile juice_log_cb_t log_cb = NULL;
 #ifdef NO_ATOMICS
 static volatile juice_log_level_t log_level = JUICE_LOG_LEVEL_WARN;
-static volatile juice_log_cb_t log_cb = NULL;
 #else
 static _Atomic(juice_log_level_t) log_level = JUICE_LOG_LEVEL_WARN;
-static _Atomic(juice_log_cb_t) log_cb = NULL;
 #endif
 
 static bool use_color(void) {
@@ -73,13 +72,9 @@ JUICE_EXPORT void juice_set_log_level(juice_log_level_t level) {
 }
 
 JUICE_EXPORT void juice_set_log_handler(juice_log_cb_t cb) {
-#ifdef NO_ATOMICS
 	mutex_lock(&log_mutex);
 	log_cb = cb;
 	mutex_unlock(&log_mutex);
-#else
-	atomic_store(&log_cb, cb);
-#endif
 }
 
 void juice_log_write(juice_log_level_t level, const char *file, int line, const char *fmt, ...) {
@@ -90,7 +85,7 @@ void juice_log_write(juice_log_level_t level, const char *file, int line, const 
 		return;
 	}
 #else
-	if (level < atomic_load(&log_level))
+	if (level < atomic_load(&log_level) || level == JUICE_LOG_LEVEL_NONE)
 		return;
 
 	mutex_lock(&log_mutex);
