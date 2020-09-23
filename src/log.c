@@ -24,6 +24,10 @@
 #include <string.h>
 #include <time.h>
 
+#ifndef NO_ATOMICS
+#include <stdatomic.h>
+#endif
+
 #ifndef _WIN32
 #include <unistd.h>
 #endif
@@ -41,9 +45,14 @@ static const char *log_level_colors[] = {
     "\x1B[97m\x1B[41m" // white on red
 };
 
+static mutex_t log_mutex = MUTEX_INITIALIZER;
+#ifdef NO_ATOMICS
 static volatile juice_log_level_t log_level = JUICE_LOG_LEVEL_WARN;
 static volatile juice_log_cb_t log_cb = NULL;
-static mutex_t log_mutex = MUTEX_INITIALIZER;
+#else
+static _Atomic(juice_log_level_t) log_level = JUICE_LOG_LEVEL_WARN;
+static _Atomic(juice_log_cb_t) log_cb = NULL;
+#endif
 
 static bool use_color(void) {
 #ifdef _WIN32
@@ -54,23 +63,38 @@ static bool use_color(void) {
 }
 
 JUICE_EXPORT void juice_set_log_level(juice_log_level_t level) {
+#ifdef NO_ATOMICS
 	mutex_lock(&log_mutex);
 	log_level = level;
 	mutex_unlock(&log_mutex);
+#else
+	atomic_store(&log_level, level);
+#endif
 }
 
 JUICE_EXPORT void juice_set_log_handler(juice_log_cb_t cb) {
+#ifdef NO_ATOMICS
 	mutex_lock(&log_mutex);
 	log_cb = cb;
 	mutex_unlock(&log_mutex);
+#else
+	atomic_store(&log_cb, cb);
+#endif
 }
 
 void juice_log_write(juice_log_level_t level, const char *file, int line, const char *fmt, ...) {
+#ifdef NO_ATOMICS
 	mutex_lock(&log_mutex);
 	if (level < log_level) {
 		mutex_unlock(&log_mutex);
 		return;
 	}
+#else
+	if (level < atomic_load(&log_level))
+		return;
+
+	mutex_lock(&log_mutex);
+#endif
 
 	const char *filename = file + strlen(file);
 	while (filename != file && *filename != '/' && *filename != '\\')
