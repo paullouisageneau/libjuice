@@ -614,82 +614,86 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 		}
 	}
 
-	if (agent->selected_pair != selected_pair) {
-		JLOG_DEBUG("New selected pair");
-		agent->selected_pair = selected_pair;
+	if (selected_pair) {
+		// Succeeded
+		// Change selected entry if this is a new selected pair
+		if (agent->selected_pair != selected_pair) {
+			JLOG_DEBUG(selected_pair->nominated ? "New selected and nominated pair"
+			                                    : "New selected pair");
+			agent->selected_pair = selected_pair;
 
-		for (int i = 0; i < agent->entries_count; ++i) {
-			agent_stun_entry_t *entry = agent->entries + i;
-			if (!entry->pair)
-				continue;
+			// Change selected entry
+			for (int i = 0; i < agent->entries_count; ++i) {
+				agent_stun_entry_t *entry = agent->entries + i;
+				if (!entry->pair)
+					continue;
 
-			if (entry->pair == agent->selected_pair) {
-				// Update selected entry
+				if (entry->pair == selected_pair) {
 #ifdef NO_ATOMICS
-				agent->selected_entry = entry;
+					agent->selected_entry = entry;
 #else
-				atomic_store(&agent->selected_entry, entry);
+					atomic_store(&agent->selected_entry, entry);
 #endif
-			} else if (agent->mode == AGENT_MODE_CONTROLLING &&
-			           entry->pair->state == ICE_CANDIDATE_PAIR_STATE_PENDING) {
-				// Limit retransmissions of still pending ones
-				if (entry->retransmissions > 1)
-					entry->retransmissions = 1;
+				} else if (agent->mode == AGENT_MODE_CONTROLLING &&
+				           entry->pair->state == ICE_CANDIDATE_PAIR_STATE_PENDING) {
+					// Limit retransmissions of still pending ones
+					if (entry->retransmissions > 1)
+						entry->retransmissions = 1;
+				}
 			}
 		}
-	}
 
-	if (pending_count == 0) {
-		// Finished
-		if (selected_pair) {
-			// Succeeded
-			if (nominated_pair) {
-				// Finished
-				// Do not allow direct transition from connecting to completed
-				if (agent->state == JUICE_STATE_CONNECTING)
-					agent_change_state(agent, JUICE_STATE_CONNECTED);
-				agent_change_state(agent, JUICE_STATE_COMPLETED);
-				// Disable transmissions for other entries
-				for (int i = 0; i < agent->entries_count; ++i) {
-					agent_stun_entry_t *entry = agent->entries + i;
-					if (entry->pair != nominated_pair)
-						entry->next_transmission = 0;
-				}
-			} else {
-				// Connected
+		if (nominated_pair) {
+			// Completed
+			// Do not allow direct transition from connecting to completed
+			if (agent->state == JUICE_STATE_CONNECTING)
 				agent_change_state(agent, JUICE_STATE_CONNECTED);
 
-				if (agent->mode == AGENT_MODE_CONTROLLING && selected_pair &&
-				    !selected_pair->nomination_requested) {
-					// Nominate selected
-					JLOG_VERBOSE("Requesting pair nomination (controlling)");
-					selected_pair->nomination_requested = true;
-					for (int i = 0; i < agent->entries_count; ++i) {
-						agent_stun_entry_t *entry = agent->entries + i;
-						if (entry->pair == selected_pair) {
-							entry->finished = false; // We don't want to send keepalives
-							agent_arm_transmission(agent, entry, 0); // transmit now
-							break;
-						}
+			// Actually transition to finished only if controlled or if nothing is pending anymore
+			if (agent->mode == AGENT_MODE_CONTROLLED || pending_count == 0)
+				agent_change_state(agent, JUICE_STATE_COMPLETED);
+
+			// Disable transmissions for other non-pending entries
+			for (int i = 0; i < agent->entries_count; ++i) {
+				agent_stun_entry_t *entry = agent->entries + i;
+				if (!entry->pair)
+					continue;
+
+				if (entry->pair != nominated_pair &&
+				    entry->pair->state != ICE_CANDIDATE_PAIR_STATE_PENDING)
+					entry->next_transmission = 0;
+			}
+		} else {
+			// Connected
+			agent_change_state(agent, JUICE_STATE_CONNECTED);
+
+			if (agent->mode == AGENT_MODE_CONTROLLING && selected_pair &&
+			    !selected_pair->nomination_requested) {
+				// Nominate selected
+				JLOG_DEBUG("Requesting pair nomination (controlling)");
+				selected_pair->nomination_requested = true;
+				for (int i = 0; i < agent->entries_count; ++i) {
+					agent_stun_entry_t *entry = agent->entries + i;
+					if (!entry->pair)
+						continue;
+
+					if (entry->pair == selected_pair) {
+						entry->finished = false;                 // We don't want to send keepalives
+						agent_arm_transmission(agent, entry, 0); // transmit now
+						break;
 					}
 				}
 			}
-		} else {
-			// Failed
-			if (!agent->fail_timestamp)
-				agent->fail_timestamp = now + (agent->remote.finished ? 0 : ICE_FAIL_TIMEOUT);
-
-			if (agent->fail_timestamp && now >= agent->fail_timestamp)
-				agent_change_state(agent, JUICE_STATE_FAILED);
-			else if (*next_timestamp > agent->fail_timestamp)
-				*next_timestamp = agent->fail_timestamp;
 		}
-	} else {
-		// Pending
-		if (selected_pair)
-			agent_change_state(agent, JUICE_STATE_CONNECTED);
-		else
-			agent_change_state(agent, JUICE_STATE_CONNECTING);
+	} else if (pending_count == 0) {
+		// Failed
+		if (!agent->fail_timestamp)
+			agent->fail_timestamp = now + (agent->remote.finished ? 0 : ICE_FAIL_TIMEOUT);
+
+		if (agent->fail_timestamp && now >= agent->fail_timestamp)
+			agent_change_state(agent, JUICE_STATE_FAILED);
+		else if (*next_timestamp > agent->fail_timestamp)
+			*next_timestamp = agent->fail_timestamp;
 	}
 
 finally:
@@ -912,15 +916,15 @@ int agent_process_stun_binding(juice_agent_t *agent, const stun_message_t *msg,
 				pair->local = ice_find_candidate_from_addr(&agent->local, &msg->mapped,
 				                                           ICE_CANDIDATE_TYPE_UNKNOWN);
 			if (pair->state != ICE_CANDIDATE_PAIR_STATE_SUCCEEDED) {
-				JLOG_DEBUG("Got a working pair");
+				JLOG_DEBUG("Pair check succeeded");
 				pair->state = ICE_CANDIDATE_PAIR_STATE_SUCCEEDED;
 			}
 			if (pair->state == ICE_CANDIDATE_PAIR_STATE_SUCCEEDED) {
 				// RFC 8445 7.3.1.5. Updating the Nominated Flag:
 				// [...] once the check is sent and if it generates a successful response, and
 				// generates a valid pair, the agent sets the nominated flag of the pair to true.
-				if (pair->nomination_requested) {
-					JLOG_DEBUG("Got a nominated pair");
+				if (pair->nomination_requested && agent->mode == AGENT_MODE_CONTROLLING) {
+					JLOG_DEBUG("Got a nominated pair (controlling)");
 					pair->nominated = true;
 				}
 			}
@@ -1015,8 +1019,8 @@ int agent_send_stun_binding(juice_agent_t *agent, const agent_stun_entry_t *entr
 			// Once the controlling agent has picked a valid pair for nomination, it repeats the
 			// connectivity check that produced this valid pair [...], this time with the
 			// USE-CANDIDATE attribute.
-			msg.use_candidate =
-			    agent->mode == AGENT_MODE_CONTROLLING && entry->pair->nomination_requested;
+			msg.use_candidate = agent->mode == AGENT_MODE_CONTROLLING && entry->pair &&
+			                    entry->pair->nomination_requested;
 			break;
 		}
 		case STUN_CLASS_RESP_SUCCESS:
