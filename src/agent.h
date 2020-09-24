@@ -82,7 +82,7 @@ typedef struct agent_stun_entry {
 	timestamp_t next_transmission;
 	timediff_t retransmission_timeout;
 	int retransmissions;
-	bool finished;
+	bool keepalive;
 #ifdef NO_ATOMICS
 	volatile bool armed;
 #else
