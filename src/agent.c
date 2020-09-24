@@ -381,6 +381,7 @@ void agent_run(juice_agent_t *agent) {
 				JLOG_VERBOSE("Registering STUN entry %d for server request", agent->entries_count);
 				agent_stun_entry_t *entry = agent->entries + agent->entries_count;
 				entry->type = AGENT_STUN_ENTRY_TYPE_SERVER;
+				entry->state = AGENT_STUN_ENTRY_STATE_PENDING;
 				entry->pair = NULL;
 				entry->record = records[i];
 				juice_random(entry->transaction_id, STUN_TRANSACTION_ID_SIZE);
@@ -545,7 +546,36 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 
 	for (int i = 0; i < agent->entries_count; ++i) {
 		agent_stun_entry_t *entry = agent->entries + i;
-		if (entry->keepalive) {
+
+		// STUN requests transmission or retransmission
+		if (entry->state == AGENT_STUN_ENTRY_STATE_PENDING) {
+			if (!entry->next_transmission || entry->next_transmission > now)
+				continue;
+
+			if (entry->retransmissions >= 0) {
+				JLOG_DEBUG("STUN entry %d: Sending request", i);
+				if (agent_send_stun_binding(agent, entry, STUN_CLASS_REQUEST, 0, NULL, NULL) >= 0) {
+					--entry->retransmissions;
+					entry->next_transmission = now + entry->retransmission_timeout;
+					entry->retransmission_timeout *= 2;
+					continue;
+				}
+			}
+
+			// Send failure or end of retransmissions
+			JLOG_DEBUG("STUN entry %d: Failed", i);
+			entry->state = AGENT_STUN_ENTRY_STATE_FAILED;
+			entry->next_transmission = 0;
+			if (entry->pair)
+				entry->pair->state = ICE_CANDIDATE_PAIR_STATE_FAILED;
+
+			if (entry->type == AGENT_STUN_ENTRY_TYPE_SERVER)
+				agent_update_gathering_done(agent);
+
+		}
+		// STUN keepalives
+		// RFC 8445 11. Keepalives: All endpoints MUST send keepalives for each data session.
+		else if (entry->state == AGENT_STUN_ENTRY_STATE_SUCCEEDED_KEEPALIVE) {
 #ifdef NO_ATOMICS
 			bool must_arm = !entry->armed;
 #else
@@ -555,14 +585,10 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 				JLOG_VERBOSE("STUN entry %d: Must be rearmed", i);
 				agent_arm_transmission(agent, entry, STUN_KEEPALIVE_PERIOD);
 			}
-		}
 
-		if (!entry->next_transmission || entry->next_transmission > now)
-			continue;
+			if (!entry->next_transmission || entry->next_transmission > now)
+				continue;
 
-		JLOG_VERBOSE("STUN entry %d: Transmission time reached", i);
-		if (entry->keepalive) {
-			// RFC 8445 11. Keepalives: All endpoints MUST send keepalives for each data session.
 			JLOG_DEBUG("STUN entry %d: Sending keepalive", i);
 			if (agent_send_stun_binding(agent, entry, STUN_CLASS_INDICATION, 0, NULL, NULL) >= 0) {
 				agent_arm_transmission(agent, entry, STUN_KEEPALIVE_PERIOD);
@@ -570,24 +596,11 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 			} else {
 				JLOG_ERROR("Sending keepalive failed");
 			}
-		} else if (entry->retransmissions >= 0) {
-			// Request transmission or retransmission
-			JLOG_DEBUG("STUN entry %d: Sending request", i);
-			if (agent_send_stun_binding(agent, entry, STUN_CLASS_REQUEST, 0, NULL, NULL) >= 0) {
-				--entry->retransmissions;
-				entry->next_transmission = now + entry->retransmission_timeout;
-				entry->retransmission_timeout *= 2;
-				continue;
-			}
-		}
 
-		// End of request retransmissions
-		JLOG_DEBUG("STUN entry %d: Failed", i);
-		entry->next_transmission = 0; // No keepalive
-		if (entry->pair)
-			entry->pair->state = ICE_CANDIDATE_PAIR_STATE_FAILED;
-		if (entry->type == AGENT_STUN_ENTRY_TYPE_SERVER)
-			agent_update_gathering_done(agent);
+		} else {
+			// Entry does not transmit, unset next transmission
+			entry->next_transmission = 0;
+		}
 	}
 
 	if (agent->candidate_pairs_count == 0)
@@ -618,11 +631,13 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 		}
 	}
 
-	// Disable transmission for entries of frozen pairs
+	// Freeze entries of frozen pairs
 	for (int i = 0; i < agent->entries_count; ++i) {
 		agent_stun_entry_t *entry = agent->entries + i;
-		if (entry->pair && entry->pair->state == ICE_CANDIDATE_PAIR_STATE_FROZEN)
+		if (entry->pair && entry->pair->state == ICE_CANDIDATE_PAIR_STATE_FROZEN) {
+			entry->state = AGENT_STUN_ENTRY_STATE_FROZEN;
 			entry->next_transmission = 0;
+		}
 	}
 
 	if (selected_pair) {
@@ -667,9 +682,9 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 			for (int i = 0; i < agent->entries_count; ++i) {
 				agent_stun_entry_t *entry = agent->entries + i;
 				if (entry->pair && entry->pair == nominated_pair)
-					entry->keepalive = true;
-				else
-					entry->keepalive = false;
+					entry->state = AGENT_STUN_ENTRY_STATE_SUCCEEDED_KEEPALIVE;
+				else if (entry->state == AGENT_STUN_ENTRY_STATE_SUCCEEDED_KEEPALIVE)
+					entry->state = AGENT_STUN_ENTRY_STATE_SUCCEEDED;
 			}
 		} else {
 			// Connected
@@ -683,7 +698,7 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 				for (int i = 0; i < agent->entries_count; ++i) {
 					agent_stun_entry_t *entry = agent->entries + i;
 					if (entry->pair && entry->pair == selected_pair) {
-						entry->keepalive = false;                // We don't want to send keepalives
+						entry->state = AGENT_STUN_ENTRY_STATE_PENDING; // we don't want keepalives
 						agent_arm_transmission(agent, entry, 0); // transmit now
 						break;
 					}
@@ -889,6 +904,7 @@ int agent_process_stun_binding(juice_agent_t *agent, const stun_message_t *msg,
 				pair->nominated = true;
 			} else if (!pair->nomination_requested) {
 				pair->nomination_requested = true;
+				entry->state = AGENT_STUN_ENTRY_STATE_PENDING;
 				pair->state = ICE_CANDIDATE_PAIR_STATE_PENDING;
 				agent_arm_transmission(agent, entry, STUN_PACING_TIME); // transmit after response
 			}
@@ -904,9 +920,11 @@ int agent_process_stun_binding(juice_agent_t *agent, const stun_message_t *msg,
 		JLOG_DEBUG("Received STUN binding success response from %s",
 		           entry->type == AGENT_STUN_ENTRY_TYPE_CHECK ? "client" : "server");
 
+		entry->state = AGENT_STUN_ENTRY_STATE_SUCCEEDED;
+
 		if (!agent->selected_pair || !agent->selected_pair->nominated) {
 			// We want to send keepalives now
-			entry->keepalive = true;
+			entry->state = AGENT_STUN_ENTRY_STATE_SUCCEEDED_KEEPALIVE;
 			agent_arm_transmission(agent, entry, STUN_KEEPALIVE_PERIOD);
 		}
 
@@ -960,6 +978,7 @@ int agent_process_stun_binding(juice_agent_t *agent, const stun_message_t *msg,
 				agent->mode = msg->ice_controlling ? AGENT_MODE_CONTROLLED : AGENT_MODE_CONTROLLING;
 				agent_update_candidate_pairs(agent);
 			}
+			entry->state = AGENT_STUN_ENTRY_STATE_PENDING;
 			entry->pair->state = ICE_CANDIDATE_PAIR_STATE_PENDING;
 			juice_random(&agent->ice_tiebreaker, sizeof(agent->ice_tiebreaker));
 
@@ -1218,6 +1237,7 @@ int agent_unfreeze_candidate_pair(juice_agent_t *agent, ice_candidate_pair_t *pa
 	for (int i = 0; i < agent->entries_count; ++i) {
 		agent_stun_entry_t *entry = agent->entries + i;
 		if (entry->pair == pair) {
+			entry->state = AGENT_STUN_ENTRY_STATE_PENDING;
 			pair->state = ICE_CANDIDATE_PAIR_STATE_PENDING;
 			agent_arm_transmission(agent, entry, 0); // transmit now
 			return 0;
@@ -1234,6 +1254,9 @@ void agent_arm_transmission(juice_agent_t *agent, agent_stun_entry_t *entry, tim
 #else
 	atomic_flag_test_and_set(&entry->armed);
 #endif
+
+	if (entry->state != AGENT_STUN_ENTRY_STATE_SUCCEEDED_KEEPALIVE)
+		entry->state = AGENT_STUN_ENTRY_STATE_PENDING;
 
 	// Arm transmission
 	entry->next_transmission = current_timestamp() + delay;
@@ -1262,8 +1285,8 @@ void agent_update_gathering_done(juice_agent_t *agent) {
 	JLOG_VERBOSE("Updating gathering status");
 	for (int i = 0; i < agent->entries_count; ++i) {
 		agent_stun_entry_t *entry = agent->entries + i;
-		if (entry->type == AGENT_STUN_ENTRY_TYPE_SERVER && entry->next_transmission > 0 &&
-		    !entry->keepalive) {
+		if (entry->type == AGENT_STUN_ENTRY_TYPE_SERVER &&
+		    entry->state == AGENT_STUN_ENTRY_STATE_PENDING) {
 			JLOG_VERBOSE("STUN server entry %d is still pending", i);
 			return;
 		}
