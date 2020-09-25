@@ -1260,10 +1260,13 @@ void agent_arm_transmission(juice_agent_t *agent, agent_stun_entry_t *entry, tim
 
 	// Arm transmission
 	entry->next_transmission = current_timestamp() + delay;
-	entry->retransmissions = (agent->mode == AGENT_MODE_CONTROLLING && agent->selected_pair)
-	                             ? 1
-	                             : MAX_STUN_RETRANSMISSION_COUNT;
-	entry->retransmission_timeout = MIN_STUN_RETRANSMISSION_TIMEOUT;
+
+	if (entry->state == AGENT_STUN_ENTRY_STATE_PENDING) {
+		entry->retransmissions = (agent->mode == AGENT_MODE_CONTROLLING && agent->selected_pair)
+		                             ? 1
+		                             : MAX_STUN_RETRANSMISSION_COUNT;
+		entry->retransmission_timeout = MIN_STUN_RETRANSMISSION_TIMEOUT;
+	}
 
 	// Find a time slot
 	agent_stun_entry_t *other = agent->entries;
