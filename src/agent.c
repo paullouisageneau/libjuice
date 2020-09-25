@@ -635,7 +635,7 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 	for (int i = 0; i < agent->entries_count; ++i) {
 		agent_stun_entry_t *entry = agent->entries + i;
 		if (entry->pair && entry->pair->state == ICE_CANDIDATE_PAIR_STATE_FROZEN) {
-			entry->state = AGENT_STUN_ENTRY_STATE_FROZEN;
+			entry->state = AGENT_STUN_ENTRY_STATE_CANCELLED;
 			entry->next_transmission = 0;
 		}
 	}
