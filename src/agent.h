@@ -74,15 +74,23 @@ typedef enum agent_stun_entry_type {
 	AGENT_STUN_ENTRY_TYPE_CHECK,
 } agent_stun_entry_type_t;
 
+typedef enum agent_stun_entry_state {
+	AGENT_STUN_ENTRY_STATE_PENDING,
+	AGENT_STUN_ENTRY_STATE_CANCELLED,
+	AGENT_STUN_ENTRY_STATE_FAILED,
+	AGENT_STUN_ENTRY_STATE_SUCCEEDED,
+	AGENT_STUN_ENTRY_STATE_SUCCEEDED_KEEPALIVE,
+} agent_stun_entry_state_t;
+
 typedef struct agent_stun_entry {
 	agent_stun_entry_type_t type;
+	agent_stun_entry_state_t state;
 	ice_candidate_pair_t *pair;
 	addr_record_t record;
 	uint8_t transaction_id[STUN_TRANSACTION_ID_SIZE];
 	timestamp_t next_transmission;
 	timediff_t retransmission_timeout;
 	int retransmissions;
-	bool finished;
 #ifdef NO_ATOMICS
 	volatile bool armed;
 #else
