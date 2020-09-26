@@ -1194,19 +1194,6 @@ int agent_add_candidate_pair(juice_agent_t *agent, ice_candidate_t *remote) {
 
 	agent_update_ordered_pairs(agent);
 
-	for (int i = 0; i < agent->candidate_pairs_count; ++i) {
-		ice_candidate_pair_t *ordered_pair = agent->ordered_pairs[i];
-		if (ordered_pair == pos) {
-			JLOG_VERBOSE("Candidate pair has priority");
-			break;
-		}
-		if (ordered_pair->state == ICE_CANDIDATE_PAIR_STATE_SUCCEEDED) {
-			// We found a succeeded pair with higher priority, ignore this one
-			JLOG_VERBOSE("Candidate pair doesn't have priority, keeping it frozen");
-			return 0;
-		}
-	}
-
 	if (agent->entries_count == MAX_STUN_ENTRIES_COUNT) {
 		JLOG_WARN("No free STUN entry left for candidate pair checking");
 		return -1;
@@ -1222,6 +1209,21 @@ int agent_add_candidate_pair(juice_agent_t *agent, ice_candidate_t *remote) {
 
 	if (remote->type == ICE_CANDIDATE_TYPE_HOST)
 		agent_translate_host_candidate_entry(agent, entry);
+
+	if (agent->mode == AGENT_MODE_CONTROLLING) {
+		for (int i = 0; i < agent->candidate_pairs_count; ++i) {
+			ice_candidate_pair_t *ordered_pair = agent->ordered_pairs[i];
+			if (ordered_pair == pos) {
+				JLOG_VERBOSE("Candidate pair has priority");
+				break;
+			}
+			if (ordered_pair->state == ICE_CANDIDATE_PAIR_STATE_SUCCEEDED) {
+				// We found a succeeded pair with higher priority, ignore this one
+				JLOG_VERBOSE("Candidate pair doesn't have priority, keeping it frozen");
+				return 0;
+			}
+		}
+	}
 
 	// There is only one component, therefore we can unfreeze the pair and schedule it when possible
 	if (*agent->remote.ice_ufrag != '\0') {
