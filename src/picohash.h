@@ -17,7 +17,9 @@
 #include <inttypes.h>
 #include <string.h>
 
-#ifdef __BIG_ENDIAN__
+#ifdef _WIN32
+/* assume Windows is little endian */
+#elif defined __BIG_ENDIAN__
 #define _PICOHASH_BIG_ENDIAN
 #elif defined __LITTLE_ENDIAN__
 /* override */
