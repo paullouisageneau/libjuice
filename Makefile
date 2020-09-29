@@ -17,7 +17,6 @@ ifneq ($(USE_NETTLE), 0)
         LIBS+=nettle
 else
         CFLAGS+=-DUSE_NETTLE=0
-        LIBS+=openssl
 endif
 
 NO_ATOMICS ?= 0
