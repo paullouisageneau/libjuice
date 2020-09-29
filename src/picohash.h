@@ -280,9 +280,9 @@ inline void _picohash_md5_update(_picohash_md5_ctx_t *ctx, const void *data, siz
     saved_lo = ctx->lo;
     if ((ctx->lo = (saved_lo + size) & 0x1fffffff) < saved_lo)
         ctx->hi++;
-	ctx->hi += (uint_fast32_t)(size >> 29);
+    ctx->hi += (uint_fast32_t)(size >> 29);
 
-	used = saved_lo & 0x3f;
+    used = saved_lo & 0x3f;
 
     if (used) {
         free = 64 - used;
@@ -449,14 +449,14 @@ inline void _picohash_sha1_final(_picohash_sha1_ctx_t *s, void *digest)
         _picohash_sha1_add_uncounted(s, 0x00);
 
     // Append length in the last 8 bytes
-	_picohash_sha1_add_uncounted(s, (uint8_t)(s->byteCount >> 53)); // Shifting to multiply by 8
-	_picohash_sha1_add_uncounted(s, (uint8_t)(s->byteCount >> 45)); // as SHA-1 supports bitstreams
-	_picohash_sha1_add_uncounted(s, (uint8_t)(s->byteCount >> 37)); // as well as byte.
-	_picohash_sha1_add_uncounted(s, (uint8_t)(s->byteCount >> 29));
-	_picohash_sha1_add_uncounted(s, (uint8_t)(s->byteCount >> 21));
-	_picohash_sha1_add_uncounted(s, (uint8_t)(s->byteCount >> 13));
-	_picohash_sha1_add_uncounted(s, (uint8_t)(s->byteCount >> 5));
-	_picohash_sha1_add_uncounted(s, (uint8_t)(s->byteCount << 3));
+    _picohash_sha1_add_uncounted(s, (uint8_t)(s->byteCount >> 53)); // Shifting to multiply by 8
+    _picohash_sha1_add_uncounted(s, (uint8_t)(s->byteCount >> 45)); // as SHA-1 supports bitstreams
+    _picohash_sha1_add_uncounted(s, (uint8_t)(s->byteCount >> 37)); // as well as byte.
+    _picohash_sha1_add_uncounted(s, (uint8_t)(s->byteCount >> 29));
+    _picohash_sha1_add_uncounted(s, (uint8_t)(s->byteCount >> 21));
+    _picohash_sha1_add_uncounted(s, (uint8_t)(s->byteCount >> 13));
+    _picohash_sha1_add_uncounted(s, (uint8_t)(s->byteCount >> 5));
+    _picohash_sha1_add_uncounted(s, (uint8_t)(s->byteCount << 3));
 
 #ifndef SHA_BIG_ENDIAN
     { // Swap byte order back
@@ -562,8 +562,8 @@ static inline void _picohash_sha256_do_final(_picohash_sha256_ctx_t *ctx, void *
 
     /* store length */
     for (i = 0; i != 8; ++i)
-		ctx->buf[56 + i] = (unsigned char)(ctx->length >> (56 - 8 * i));
-	_picohash_sha256_compress(ctx, ctx->buf);
+        ctx->buf[56 + i] = (unsigned char)(ctx->length >> (56 - 8 * i));
+    _picohash_sha256_compress(ctx, ctx->buf);
 
     /* copy output */
     for (i = 0; i != len / 4; ++i) {
@@ -603,9 +603,9 @@ inline void _picohash_sha256_update(_picohash_sha256_ctx_t *ctx, const void *dat
             n = PICOHASH_SHA256_BLOCK_LENGTH - ctx->curlen;
             if (n > len)
                 n = len;
-			memcpy(ctx->buf + ctx->curlen, in, n);
-			ctx->curlen += (uint32_t)n;
-			in += n;
+            memcpy(ctx->buf + ctx->curlen, in, n);
+            ctx->curlen += (uint32_t)n;
+            in += n;
             len -= n;
             if (ctx->curlen == 64) {
                 _picohash_sha256_compress(ctx, ctx->buf);
