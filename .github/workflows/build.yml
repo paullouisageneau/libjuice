@@ -23,10 +23,8 @@ jobs:
     runs-on: macos-latest
     steps:
     - uses: actions/checkout@v2
-    - name: install packages
-      run: brew install nettle
     - name: cmake
-      run: cmake -B build -DUSE_NETTLE=1 -DWARNINGS_AS_ERRORS=1
+      run: cmake -B build -DWARNINGS_AS_ERRORS=1
     - name: make
       run: (cd build; make)
     - name: test
@@ -36,8 +34,6 @@ jobs:
     steps:
     - uses: actions/checkout@v2
     - uses: ilammy/msvc-dev-cmd@v1
-    - name: install packages
-      run: choco install openssl
     - name: cmake
       run: cmake -B build -G "NMake Makefiles" -DWARNINGS_AS_ERRORS=1
     - name: nmake

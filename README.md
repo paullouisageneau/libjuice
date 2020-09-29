@@ -2,7 +2,7 @@
 
 libjuice :lemon::sweat_drops: (_JUICE is a UDP Interactive Connectivity Establishment library_) allows to open bidirectionnal User Datagram Protocol (UDP) streams with Network Address Translator (NAT) traversal.
 
-The library is a simplified implementation of the Interactive Connectivity Establishment (ICE) protocol in C for POSIX platforms (including Linux and Apple macOS) and Microsoft Windows. It supports only a single component over UDP per session in a standard single-gateway network topology, as this should be sufficient for the majority of use cases nowadays.
+The library is a simplified implementation of the Interactive Connectivity Establishment (ICE) protocol written in pure C without dependencies for POSIX platforms (including Linux and Apple macOS) and Microsoft Windows. It supports only a single component over UDP per session in a standard single-gateway network topology, as this should be sufficient for the majority of use cases nowadays.
 
 Licensed under LGPLv2, see [LICENSE](https://github.com/paullouisageneau/libjuice/blob/master/LICENSE).
 
@@ -17,8 +17,9 @@ The limitations compared to a fully-featured ICE agent are:
 
 ## Dependencies
 
-- Nettle (https://www.lysator.liu.se/~nisse/nettle/) or OpenSSL (https://www.openssl.org/) for HMAC-SHA1
-- That's it!
+None!
+
+Optionally, Nettle (https://www.lysator.liu.se/~nisse/nettle/) can provide the HMAC-SHA1 algorithm instead of the internal implementation.
 
 ## Building
 
@@ -35,6 +36,13 @@ The CMake library targets `libjuice` and `libjuice-static` respectively correspo
 
 #### POSIX-compliant operating systems (including Linux and Apple macOS)
 
+```bash
+$ cmake -B build
+$ cd build
+$ make -j2
+```
+
+The option `USE_NETTLE` allows to use the Nettle library instead of the internal implementation for HMAC-SHA1:
 ```bash
 $ cmake -B build -DUSE_NETTLE=1
 $ cd build
@@ -59,6 +67,11 @@ $ nmake
 
 ### Building directly with Make (Linux only)
 
+```bash
+$ make
+```
+
+The option `USE_NETTLE` allows to use the Nettle library instead of the internal implementation for HMAC-SHA1:
 ```bash
 $ make USE_NETTLE=1
 ```

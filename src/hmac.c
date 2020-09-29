@@ -21,7 +21,7 @@
 #if USE_NETTLE
 #include <nettle/hmac.h>
 #else
-#include <openssl/hmac.h>
+#include "picohash.h"
 #endif
 
 void hmac_sha1(const void *message, size_t size, const void *key, size_t key_size, void *digest) {
@@ -31,6 +31,9 @@ void hmac_sha1(const void *message, size_t size, const void *key, size_t key_siz
 	hmac_sha1_update(&ctx, size, message);
 	hmac_sha1_digest(&ctx, HMAC_SHA1_SIZE, digest);
 #else
-	HMAC(EVP_sha1(), key, (int)key_size, message, size, digest, NULL);
+	picohash_ctx_t ctx;
+	picohash_init_hmac(&ctx, picohash_init_sha1, key, key_size);
+	picohash_update(&ctx, message, size);
+	picohash_final(&ctx, digest);
 #endif
 }
