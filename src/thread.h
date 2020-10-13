@@ -22,7 +22,7 @@
 #ifdef _WIN32
 
 #ifndef _WIN32_WINNT
-#define _WIN32_WINNT 0x0601
+#define _WIN32_WINNT 0x0601 // Windows 7
 #endif
 #ifndef __MSVCRT_VERSION__
 #define __MSVCRT_VERSION__ 0x0601
