@@ -42,23 +42,19 @@ static int random_bytes(void *buf, size_t size) {
 }
 
 #elif defined(_WIN32)
+
+#ifndef _WIN32_WINNT
+#define _WIN32_WINNT 0x0601 // Windows 7
+#endif
+
 #include <windows.h>
 //
-#include <wincrypt.h>
+#include <bcrypt.h>
 
 static int random_bytes(void *buf, size_t size) {
-	HCRYPTPROV prov;
-	if (!CryptAcquireContext(&prov, NULL, NULL, PROV_RSA_FULL,
-	                         CRYPT_VERIFYCONTEXT | CRYPT_SILENT)) {
-		JLOG_WARN("Win32: CryptAcquireContext failed");
-		return -1;
-	}
-	BOOL success = CryptGenRandom(prov, (DWORD)size, (BYTE *)buf);
-	if (!success) {
-		JLOG_WARN("Win32: CryptGenRandom failed");
-	}
-	CryptReleaseContext(prov, 0);
-	return success ? 0 : -1;
+	// Requires Windows 7 or later
+	NTSTATUS status = BCryptGenRandom(NULL, (PUCHAR)buf, (ULONG)size, BCRYPT_USE_SYSTEM_PREFERRED_RNG);
+	return !status ? 0 : -1;
 }
 
 #else
