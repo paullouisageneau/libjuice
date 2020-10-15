@@ -36,6 +36,7 @@ extern "C" {
 // ICE Agent
 
 #define JUICE_MAX_ADDRESS_STRING_LEN 56
+#define JUICE_MAX_CANDIDATE_SDP_STRING_LEN 256
 #define JUICE_MAX_SDP_STRING_LEN 4096
 
 typedef struct juice_agent juice_agent_t;
@@ -77,6 +78,8 @@ JUICE_EXPORT int juice_add_remote_candidate(juice_agent_t *agent, const char *sd
 JUICE_EXPORT int juice_set_remote_gathering_done(juice_agent_t *agent);
 JUICE_EXPORT int juice_send(juice_agent_t *agent, const char *data, size_t size);
 JUICE_EXPORT juice_state_t juice_get_state(juice_agent_t *agent);
+JUICE_EXPORT int juice_get_selected_candidates(juice_agent_t *agent, char *local, size_t local_size,
+                                               char *remote, size_t remote_size);
 JUICE_EXPORT int juice_get_selected_addresses(juice_agent_t *agent, char *local, size_t local_size,
                                               char *remote, size_t remote_size);
 
