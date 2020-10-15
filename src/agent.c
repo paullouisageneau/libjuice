@@ -1335,32 +1335,48 @@ agent_stun_entry_t *agent_find_entry_from_record(juice_agent_t *agent,
 #else
 	agent_stun_entry_t *selected_entry = atomic_load(&agent->selected_entry);
 #endif
-	if (selected_entry) {
-		// As an optimization, try to match selected entry first
+	if (agent->state == JUICE_STATE_COMPLETED && selected_entry) {
+		// As an optimization, try to match the selected entry first
 		if (addr_is_equal((struct sockaddr *)&selected_entry->record.addr,
 		                  (struct sockaddr *)&record->addr, true)) {
 			JLOG_DEBUG("STUN selected entry matching incoming address");
 			return selected_entry;
 		}
 	}
-	for (int i = 0; i < agent->entries_count; ++i) {
-		agent_stun_entry_t *entry = agent->entries + i;
-		if (entry != selected_entry) {
+
+	// Try to match pairs by priority first
+	ice_candidate_pair_t *matching_pair = NULL;
+	for(int i = 0; i<agent->candidate_pairs_count; ++i) {
+		ice_candidate_pair_t *pair = agent->ordered_pairs[i];
+		if (addr_is_equal((struct sockaddr *)&pair->remote->resolved.addr,
+			                  (struct sockaddr *)&record->addr, true)) {
+			matching_pair = pair;
+			break;
+		}
+	}
+
+	if(matching_pair) {
+		// Just find the corresponding entry
+		for (int i = 0; i < agent->entries_count; ++i) {
+			agent_stun_entry_t *entry = agent->entries + i;
+			if (entry->pair == matching_pair) {
+				JLOG_DEBUG("STUN entry %d matching incoming address", i);
+				return entry;
+			}
+		}
+	} else {
+		// Try to match entries directly
+		for (int i = 0; i < agent->entries_count; ++i) {
+			agent_stun_entry_t *entry = agent->entries + i;
 			if (addr_is_equal((struct sockaddr *)&entry->record.addr,
 			                  (struct sockaddr *)&record->addr, true)) {
 				JLOG_DEBUG("STUN entry %d matching incoming address", i);
 				return entry;
 			}
 		}
-		if (entry->pair) {
-			// Entry record might have been translated, so also check remote cadidate
-			if (addr_is_equal((struct sockaddr *)&entry->pair->remote->resolved.addr,
-			                  (struct sockaddr *)&record->addr, true)) {
-				JLOG_DEBUG("STUN entry %d remote candidate matching incoming address", i);
-				return entry;
-			}
-		}
 	}
+
+	JLOG_DEBUG("No STUN entry matches incoming address");
 	return NULL;
 }
 
