@@ -1403,7 +1403,7 @@ void agent_translate_host_candidate_entry(juice_agent_t *agent, agent_stun_entry
 	if (!entry->pair || entry->pair->remote->type != ICE_CANDIDATE_TYPE_HOST)
 		return;
 
-#ifndef JUICE_DISABLE_LOCAL_ADDRESS_TRANSLATION
+#if JUICE_ENABLE_LOCAL_ADDRESS_TRANSLATION
 	for (int i = 0; i < agent->local.candidates_count; ++i) {
 		ice_candidate_t *candidate = agent->local.candidates + i;
 		if (candidate->type != ICE_CANDIDATE_TYPE_HOST)
