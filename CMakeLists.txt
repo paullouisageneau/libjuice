@@ -79,6 +79,11 @@ if(WIN32)
 		bcrypt)
 endif()
 
+if(APPLE)
+	# This is necessary for connections to the local machine to succeed on macOS
+	target_compile_definitions(juice PRIVATE JUICE_ENABLE_LOCAL_ADDRESS_TRANSLATION=1)
+endif()
+
 if (USE_NETTLE)
 	find_package(Nettle REQUIRED)
     target_compile_definitions(juice PRIVATE USE_NETTLE=1)

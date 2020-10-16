@@ -549,11 +549,13 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 
 		// STUN requests transmission or retransmission
 		if (entry->state == AGENT_STUN_ENTRY_STATE_PENDING) {
-			if (!entry->next_transmission || entry->next_transmission > now)
+			if (entry->next_transmission > now)
 				continue;
 
 			if (entry->retransmissions >= 0) {
-				JLOG_DEBUG("STUN entry %d: Sending request", i);
+				JLOG_DEBUG("STUN entry %d: Sending request (%d retransmissions left)",
+				           entry->retransmissions);
+
 				if (agent_send_stun_binding(agent, entry, STUN_CLASS_REQUEST, 0, NULL, NULL) >= 0) {
 					--entry->retransmissions;
 					entry->next_transmission = now + entry->retransmission_timeout;
@@ -571,7 +573,6 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 
 			if (entry->type == AGENT_STUN_ENTRY_TYPE_SERVER)
 				agent_update_gathering_done(agent);
-
 		}
 		// STUN keepalives
 		// RFC 8445 11. Keepalives: All endpoints MUST send keepalives for each data session.
@@ -586,7 +587,7 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 				agent_arm_transmission(agent, entry, STUN_KEEPALIVE_PERIOD);
 			}
 
-			if (!entry->next_transmission || entry->next_transmission > now)
+			if (entry->next_transmission > now)
 				continue;
 
 			JLOG_DEBUG("STUN entry %d: Sending keepalive", i);
@@ -620,7 +621,7 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 			if (!selected_pair)
 				selected_pair = pair;
 		} else if (pair->state == ICE_CANDIDATE_PAIR_STATE_PENDING) {
-			if (nominated_pair || (selected_pair && agent->mode == AGENT_MODE_CONTROLLING)) {
+			if (agent->mode == AGENT_MODE_CONTROLLING && selected_pair) {
 				// A higher-priority pair will be used, we can stop checking
 				// Entries will be synchronized after the current loop
 				JLOG_VERBOSE("Cancelling check for lower-priority pair");
@@ -652,21 +653,23 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 
 			for (int i = 0; i < agent->entries_count; ++i) {
 				agent_stun_entry_t *entry = agent->entries + i;
-				if (!entry->pair)
-					continue;
-
 				if (entry->pair == selected_pair) {
 #ifdef NO_ATOMICS
 					agent->selected_entry = entry;
 #else
 					atomic_store(&agent->selected_entry, entry);
 #endif
-				} else if (agent->mode == AGENT_MODE_CONTROLLING &&
-				           entry->pair->state == ICE_CANDIDATE_PAIR_STATE_PENDING) {
-					// Limit retransmissions of still pending ones
-					if (entry->retransmissions > 1)
-						entry->retransmissions = 1;
+					break;
 				}
+			}
+		}
+
+		if(selected_pair->nominated || agent->mode == AGENT_MODE_CONTROLLING) {
+			// Limit retransmissions of still pending entries
+			for (int i = 0; i < agent->entries_count; ++i) {
+				agent_stun_entry_t *entry = agent->entries + i;
+				if (entry->state == AGENT_STUN_ENTRY_STATE_PENDING && entry->retransmissions > 1)
+					entry->retransmissions = 1;
 			}
 		}
 
@@ -683,10 +686,16 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 			// Enable keepalive only for the entry of the nominated pair
 			for (int i = 0; i < agent->entries_count; ++i) {
 				agent_stun_entry_t *entry = agent->entries + i;
-				if (entry->pair && entry->pair == nominated_pair)
-					entry->state = AGENT_STUN_ENTRY_STATE_SUCCEEDED_KEEPALIVE;
-				else if (entry->state == AGENT_STUN_ENTRY_STATE_SUCCEEDED_KEEPALIVE)
-					entry->state = AGENT_STUN_ENTRY_STATE_SUCCEEDED;
+				if (entry->pair && entry->pair == nominated_pair) {
+					if(entry->state != AGENT_STUN_ENTRY_STATE_SUCCEEDED_KEEPALIVE) {
+						entry->state = AGENT_STUN_ENTRY_STATE_SUCCEEDED_KEEPALIVE;
+						agent_arm_transmission(agent, entry, STUN_KEEPALIVE_PERIOD);
+					}
+				}
+				else {
+					if (entry->state == AGENT_STUN_ENTRY_STATE_SUCCEEDED_KEEPALIVE)
+						entry->state = AGENT_STUN_ENTRY_STATE_SUCCEEDED;
+				}
 			}
 		} else {
 			// Connected
@@ -858,7 +867,7 @@ int agent_process_stun_binding(juice_agent_t *agent, const stun_message_t *msg,
 		//  ERROR-CODE attribute with a value of 487 (Role Conflict) but retains its role.
 		//  * If the agent's tiebreaker value is less than the contents of the ICE-CONTROLLING
 		//  attribute, the agent switches to the controlled role.
-		if (msg->ice_controlling && agent->mode == AGENT_MODE_CONTROLLING) {
+		if (agent->mode == AGENT_MODE_CONTROLLING && msg->ice_controlling) {
 			JLOG_WARN("ICE role conflict (both controlling)");
 			if (agent->ice_tiebreaker >= msg->ice_controlling) {
 				JLOG_DEBUG("Asking remote peer to switch roles");
@@ -893,6 +902,7 @@ int agent_process_stun_binding(juice_agent_t *agent, const stun_message_t *msg,
 		}
 		if (msg->use_candidate) {
 			if (!msg->ice_controlling) {
+				JLOG_WARN("STUN message use_candidate missing ice_controlling attribute");
 				agent_send_stun_binding(agent, entry, STUN_CLASS_RESP_ERROR, 400,
 				                        msg->transaction_id, NULL);
 				return -1;
@@ -922,7 +932,10 @@ int agent_process_stun_binding(juice_agent_t *agent, const stun_message_t *msg,
 		JLOG_DEBUG("Received STUN binding success response from %s",
 		           entry->type == AGENT_STUN_ENTRY_TYPE_CHECK ? "client" : "server");
 
-		entry->state = AGENT_STUN_ENTRY_STATE_SUCCEEDED;
+		if(entry->state != AGENT_STUN_ENTRY_STATE_SUCCEEDED_KEEPALIVE) {
+			entry->state = AGENT_STUN_ENTRY_STATE_SUCCEEDED;
+			entry->next_transmission = 0;
+		}
 
 		if (!agent->selected_pair || !agent->selected_pair->nominated) {
 			// We want to send keepalives now
@@ -941,21 +954,24 @@ int agent_process_stun_binding(juice_agent_t *agent, const stun_message_t *msg,
 		}
 		if (entry->type == AGENT_STUN_ENTRY_TYPE_CHECK) {
 			ice_candidate_pair_t *pair = entry->pair;
-			if (!pair->local && msg->mapped.len)
-				pair->local = ice_find_candidate_from_addr(&agent->local, &msg->mapped,
-				                                           ICE_CANDIDATE_TYPE_UNKNOWN);
+
 			if (pair->state != ICE_CANDIDATE_PAIR_STATE_SUCCEEDED) {
 				JLOG_DEBUG("Pair check succeeded");
 				pair->state = ICE_CANDIDATE_PAIR_STATE_SUCCEEDED;
 			}
-			if (pair->state == ICE_CANDIDATE_PAIR_STATE_SUCCEEDED) {
-				// RFC 8445 7.3.1.5. Updating the Nominated Flag:
-				// [...] once the check is sent and if it generates a successful response, and
-				// generates a valid pair, the agent sets the nominated flag of the pair to true.
-				if (pair->nomination_requested && agent->mode == AGENT_MODE_CONTROLLING) {
-					JLOG_DEBUG("Got a nominated pair (controlling)");
-					pair->nominated = true;
-				}
+
+			if (!pair->local && msg->mapped.len)
+				pair->local = ice_find_candidate_from_addr(&agent->local, &msg->mapped,
+				                                           ICE_CANDIDATE_TYPE_UNKNOWN);
+
+			// RFC 8445 7.3.1.5. Updating the Nominated Flag:
+			// [...] once the check is sent and if it generates a successful response, and
+			// generates a valid pair, the agent sets the nominated flag of the pair to true.
+			if (pair->nomination_requested) {
+				JLOG_DEBUG("Got a nominated pair (%s)", agent->mode == AGENT_MODE_CONTROLLING
+				           ? "controlling"
+				           : "controlled");
+				pair->nominated = true;
 			}
 		} else { // entry->type == AGENT_STUN_ENTRY_TYPE_SERVER
 			agent_update_gathering_done(agent);
@@ -980,10 +996,11 @@ int agent_process_stun_binding(juice_agent_t *agent, const stun_message_t *msg,
 				agent->mode = msg->ice_controlling ? AGENT_MODE_CONTROLLED : AGENT_MODE_CONTROLLING;
 				agent_update_candidate_pairs(agent);
 			}
-			entry->state = AGENT_STUN_ENTRY_STATE_PENDING;
-			entry->pair->state = ICE_CANDIDATE_PAIR_STATE_PENDING;
+
 			juice_random(&agent->ice_tiebreaker, sizeof(agent->ice_tiebreaker));
 
+			entry->state = AGENT_STUN_ENTRY_STATE_PENDING;
+			entry->pair->state = ICE_CANDIDATE_PAIR_STATE_PENDING;
 			agent_arm_transmission(agent, entry, 0);
 		}
 		break;
@@ -1004,7 +1021,7 @@ int agent_send_stun_binding(juice_agent_t *agent, const agent_stun_entry_t *entr
                             stun_class_t msg_class, unsigned int error_code,
                             const uint8_t *transaction_id, const addr_record_t *mapped) {
 	// Send STUN binding request
-	JLOG_DEBUG("Sending STUN binding %s",
+	JLOG_VERBOSE("Sending STUN binding %s",
 	           msg_class == STUN_CLASS_REQUEST
 	               ? "request"
 	               : (msg_class == STUN_CLASS_INDICATION ? "indication" : "response"));
@@ -1266,9 +1283,9 @@ void agent_arm_transmission(juice_agent_t *agent, agent_stun_entry_t *entry, tim
 	entry->next_transmission = current_timestamp() + delay;
 
 	if (entry->state == AGENT_STUN_ENTRY_STATE_PENDING) {
-		entry->retransmissions = (agent->mode == AGENT_MODE_CONTROLLING && agent->selected_pair)
-		                             ? 1
-		                             : MAX_STUN_RETRANSMISSION_COUNT;
+		bool limit = agent->selected_pair &&
+		             (agent->selected_pair->nominated || agent->mode == AGENT_MODE_CONTROLLING);
+		entry->retransmissions = limit ? 1 : MAX_STUN_RETRANSMISSION_COUNT;
 		entry->retransmission_timeout = MIN_STUN_RETRANSMISSION_TIMEOUT;
 	}
 
@@ -1310,13 +1327,18 @@ void agent_update_gathering_done(juice_agent_t *agent) {
 
 void agent_update_candidate_pairs(juice_agent_t *agent) {
 	bool is_controlling = agent->mode == AGENT_MODE_CONTROLLING;
-	for (int i = 0; i < agent->candidate_pairs_count; ++i)
-		ice_update_candidate_pair(is_controlling, agent->candidate_pairs + i);
+	for (int i = 0; i < agent->candidate_pairs_count; ++i) {
+		ice_candidate_pair_t *pair = agent->candidate_pairs + i;
+		ice_candidate_t *local = pair->local;
+		pair->local = NULL; // don't take local candidate into account
+		ice_update_candidate_pair(pair, is_controlling);
+		pair->local = local;
+	}
 	agent_update_ordered_pairs(agent);
 }
 
 void agent_update_ordered_pairs(juice_agent_t *agent) {
-	JLOG_VERBOSE("Updated ordered candidate pairs");
+	JLOG_VERBOSE("Updating ordered candidate pairs");
 	for (int i = 0; i < agent->candidate_pairs_count; ++i) {
 		ice_candidate_pair_t **begin = agent->ordered_pairs;
 		ice_candidate_pair_t **end = begin + i;
@@ -1335,32 +1357,47 @@ agent_stun_entry_t *agent_find_entry_from_record(juice_agent_t *agent,
 #else
 	agent_stun_entry_t *selected_entry = atomic_load(&agent->selected_entry);
 #endif
-	if (selected_entry) {
-		// As an optimization, try to match selected entry first
+	if (agent->state == JUICE_STATE_COMPLETED && selected_entry) {
+		// As an optimization, try to match the selected entry first
 		if (addr_is_equal((struct sockaddr *)&selected_entry->record.addr,
 		                  (struct sockaddr *)&record->addr, true)) {
 			JLOG_DEBUG("STUN selected entry matching incoming address");
 			return selected_entry;
 		}
 	}
-	for (int i = 0; i < agent->entries_count; ++i) {
-		agent_stun_entry_t *entry = agent->entries + i;
-		if (entry != selected_entry) {
-			if (addr_is_equal((struct sockaddr *)&entry->record.addr,
+
+	// Try to match pairs by priority first
+	ice_candidate_pair_t *matching_pair = NULL;
+	for(int i = 0; i<agent->candidate_pairs_count; ++i) {
+		ice_candidate_pair_t *pair = agent->ordered_pairs[i];
+		if (addr_is_equal((struct sockaddr *)&pair->remote->resolved.addr,
 			                  (struct sockaddr *)&record->addr, true)) {
+			matching_pair = pair;
+			break;
+		}
+	}
+
+	if(matching_pair) {
+		// Just find the corresponding entry
+		for (int i = 0; i < agent->entries_count; ++i) {
+			agent_stun_entry_t *entry = agent->entries + i;
+			if (entry->pair == matching_pair) {
 				JLOG_DEBUG("STUN entry %d matching incoming address", i);
 				return entry;
 			}
 		}
-		if (entry->pair) {
-			// Entry record might have been translated, so also check remote cadidate
-			if (addr_is_equal((struct sockaddr *)&entry->pair->remote->resolved.addr,
-			                  (struct sockaddr *)&record->addr, true)) {
-				JLOG_DEBUG("STUN entry %d remote candidate matching incoming address", i);
-				return entry;
-			}
+	}
+
+	// Try to match entries directly
+	for (int i = 0; i < agent->entries_count; ++i) {
+		agent_stun_entry_t *entry = agent->entries + i;
+		if (addr_is_equal((struct sockaddr *)&entry->record.addr,
+		                  (struct sockaddr *)&record->addr, true)) {
+			JLOG_DEBUG("STUN entry %d matching incoming address", i);
+			return entry;
 		}
 	}
+
 	return NULL;
 }
 
@@ -1368,7 +1405,7 @@ void agent_translate_host_candidate_entry(juice_agent_t *agent, agent_stun_entry
 	if (!entry->pair || entry->pair->remote->type != ICE_CANDIDATE_TYPE_HOST)
 		return;
 
-#ifndef JUICE_DISABLE_LOCAL_ADDRESS_TRANSLATION
+#if JUICE_ENABLE_LOCAL_ADDRESS_TRANSLATION
 	for (int i = 0; i < agent->local.candidates_count; ++i) {
 		ice_candidate_t *candidate = agent->local.candidates + i;
 		if (candidate->type != ICE_CANDIDATE_TYPE_HOST)
@@ -1398,6 +1435,8 @@ void agent_translate_host_candidate_entry(juice_agent_t *agent, agent_stun_entry
 			break;
 		}
 	}
+#else
+	(void)agent;
 #endif
 }
 

@@ -71,6 +71,20 @@ JUICE_EXPORT int juice_send(juice_agent_t *agent, const char *data, size_t size)
 
 JUICE_EXPORT juice_state_t juice_get_state(juice_agent_t *agent) { return agent_get_state(agent); }
 
+JUICE_EXPORT int juice_get_selected_candidates(juice_agent_t *agent, char *local, size_t local_size,
+                                              char *remote, size_t remote_size) {
+	if (!agent || (!local && local_size) || (!remote && remote_size))
+		return -1;
+	ice_candidate_t local_cand, remote_cand;
+	if (agent_get_selected_candidate_pair(agent, &local_cand, &remote_cand))
+		return -1;
+	if (local_size && ice_generate_candidate_sdp(&local_cand, local, local_size) < 0)
+		return -1;
+	if (remote_size && ice_generate_candidate_sdp(&remote_cand, remote, remote_size) < 0)
+		return -1;
+	return 0;
+}
+
 JUICE_EXPORT int juice_get_selected_addresses(juice_agent_t *agent, char *local, size_t local_size,
                                               char *remote, size_t remote_size) {
 	if (!agent || (!local && local_size) || (!remote && remote_size))

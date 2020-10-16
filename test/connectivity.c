@@ -106,21 +106,36 @@ int test_connectivity() {
 	// -- Connection should be finished --
 
 	// Check states
-	bool success = juice_get_state(agent1) == JUICE_STATE_COMPLETED &&
-	               juice_get_state(agent2) == JUICE_STATE_COMPLETED;
+	juice_state_t state1 = juice_get_state(agent1);
+	juice_state_t state2 = juice_get_state(agent2);
+	bool success = (state1 == JUICE_STATE_COMPLETED && state2 == JUICE_STATE_COMPLETED);
+
+	// Retrieve candidates
+	char local[JUICE_MAX_CANDIDATE_SDP_STRING_LEN];
+	char remote[JUICE_MAX_CANDIDATE_SDP_STRING_LEN];
+	if (success &= (juice_get_selected_candidates(agent1, local, JUICE_MAX_CANDIDATE_SDP_STRING_LEN,
+	                                             remote, JUICE_MAX_CANDIDATE_SDP_STRING_LEN) == 0)) {
+		printf("Local candidate  1: %s\n", local);
+		printf("Remote candidate 1: %s\n", remote);
+	}
+	if (success &= (juice_get_selected_candidates(agent2, local, JUICE_MAX_CANDIDATE_SDP_STRING_LEN,
+	                                             remote, JUICE_MAX_CANDIDATE_SDP_STRING_LEN) == 0)) {
+		printf("Local candidate  2: %s\n", local);
+		printf("Remote candidate 2: %s\n", remote);
+	}
 
 	// Retrieve addresses
-	char local[JUICE_MAX_ADDRESS_STRING_LEN];
-	char remote[JUICE_MAX_ADDRESS_STRING_LEN];
-	if (success &= (juice_get_selected_addresses(agent1, local, JUICE_MAX_ADDRESS_STRING_LEN,
-	                                             remote, JUICE_MAX_ADDRESS_STRING_LEN) == 0)) {
-		printf("Local address  1: %s\n", local);
-		printf("Remote address 1: %s\n", remote);
+	char localAddr[JUICE_MAX_ADDRESS_STRING_LEN];
+	char remoteAddr[JUICE_MAX_ADDRESS_STRING_LEN];
+	if (success &= (juice_get_selected_addresses(agent1, localAddr, JUICE_MAX_ADDRESS_STRING_LEN,
+	                                             remoteAddr, JUICE_MAX_ADDRESS_STRING_LEN) == 0)) {
+		printf("Local address  1: %s\n", localAddr);
+		printf("Remote address 1: %s\n", remoteAddr);
 	}
-	if (success &= (juice_get_selected_addresses(agent2, local, JUICE_MAX_ADDRESS_STRING_LEN,
-	                                             remote, JUICE_MAX_ADDRESS_STRING_LEN) == 0)) {
-		printf("Local address  2: %s\n", local);
-		printf("Remote address 2: %s\n", remote);
+	if (success &= (juice_get_selected_addresses(agent2, localAddr, JUICE_MAX_ADDRESS_STRING_LEN,
+	                                             remoteAddr, JUICE_MAX_ADDRESS_STRING_LEN) == 0)) {
+		printf("Local address  2: %s\n", localAddr);
+		printf("Remote address 2: %s\n", remoteAddr);
 	}
 
 	// Agent 1: destroy
