@@ -106,8 +106,9 @@ int test_connectivity() {
 	// -- Connection should be finished --
 
 	// Check states
-	bool success = juice_get_state(agent1) == JUICE_STATE_COMPLETED &&
-	               juice_get_state(agent2) == JUICE_STATE_COMPLETED;
+	juice_state_t state1 = juice_get_state(agent1);
+	juice_state_t state2 = juice_get_state(agent2);
+	bool success = (state1 == JUICE_STATE_COMPLETED && state2 == JUICE_STATE_COMPLETED);
 
 	// Retrieve candidates
 	char local[JUICE_MAX_CANDIDATE_SDP_STRING_LEN];
@@ -122,7 +123,7 @@ int test_connectivity() {
 		printf("Local candidate  2: %s\n", local);
 		printf("Remote candidate 2: %s\n", remote);
 	}
-	
+
 	// Retrieve addresses
 	char localAddr[JUICE_MAX_ADDRESS_STRING_LEN];
 	char remoteAddr[JUICE_MAX_ADDRESS_STRING_LEN];

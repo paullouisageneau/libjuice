@@ -358,10 +358,10 @@ int ice_create_candidate_pair(ice_candidate_t *local, ice_candidate_t *remote, b
 	pair->local = local;
 	pair->remote = remote;
 	pair->state = ICE_CANDIDATE_PAIR_STATE_FROZEN;
-	return ice_update_candidate_pair(is_controlling, pair);
+	return ice_update_candidate_pair(pair, is_controlling);
 }
 
-int ice_update_candidate_pair(bool is_controlling, ice_candidate_pair_t *pair) {
+int ice_update_candidate_pair(ice_candidate_pair_t *pair, bool is_controlling) {
 	// Compute pair priority according to RFC 8445
 	// See https://tools.ietf.org/html/rfc8445#section-6.1.2.3
 	uint64_t local_priority = pair->local ? pair->local->priority : 0;
