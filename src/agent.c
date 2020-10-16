@@ -932,8 +932,10 @@ int agent_process_stun_binding(juice_agent_t *agent, const stun_message_t *msg,
 		JLOG_DEBUG("Received STUN binding success response from %s",
 		           entry->type == AGENT_STUN_ENTRY_TYPE_CHECK ? "client" : "server");
 
-		entry->state = AGENT_STUN_ENTRY_STATE_SUCCEEDED;
-		entry->next_transmission = 0;
+		if(entry->state != AGENT_STUN_ENTRY_STATE_SUCCEEDED_KEEPALIVE) {
+			entry->state = AGENT_STUN_ENTRY_STATE_SUCCEEDED;
+			entry->next_transmission = 0;
+		}
 
 		if (!agent->selected_pair || !agent->selected_pair->nominated) {
 			// We want to send keepalives now
