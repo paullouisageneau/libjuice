@@ -552,7 +552,7 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 			if (entry->next_transmission > now)
 				continue;
 
-			if (entry->next_transmission && entry->retransmissions >= 0) {
+			if (entry->retransmissions >= 0) {
 				JLOG_DEBUG("STUN entry %d: Sending request (%d retransmissions left)",
 				           entry->retransmissions);
 
@@ -689,7 +689,7 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 				if (entry->pair && entry->pair == nominated_pair) {
 					if(entry->state != AGENT_STUN_ENTRY_STATE_SUCCEEDED_KEEPALIVE) {
 						entry->state = AGENT_STUN_ENTRY_STATE_SUCCEEDED_KEEPALIVE;
-						agent_arm_transmission(agent, entry, 0); // transmit now
+						agent_arm_transmission(agent, entry, STUN_KEEPALIVE_PERIOD);
 					}
 				}
 				else {
