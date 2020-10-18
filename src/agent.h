@@ -80,6 +80,7 @@ typedef enum agent_stun_entry_state {
 	AGENT_STUN_ENTRY_STATE_FAILED,
 	AGENT_STUN_ENTRY_STATE_SUCCEEDED,
 	AGENT_STUN_ENTRY_STATE_SUCCEEDED_KEEPALIVE,
+	AGENT_STUN_ENTRY_STATE_IDLE,
 } agent_stun_entry_state_t;
 
 typedef struct agent_stun_entry {

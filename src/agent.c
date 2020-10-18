@@ -381,7 +381,7 @@ void agent_run(juice_agent_t *agent) {
 				JLOG_VERBOSE("Registering STUN entry %d for server request", agent->entries_count);
 				agent_stun_entry_t *entry = agent->entries + agent->entries_count;
 				entry->type = AGENT_STUN_ENTRY_TYPE_SERVER;
-				entry->state = AGENT_STUN_ENTRY_STATE_PENDING;
+				entry->state = AGENT_STUN_ENTRY_STATE_IDLE;
 				entry->pair = NULL;
 				entry->record = records[i];
 				juice_random(entry->transaction_id, STUN_TRANSACTION_ID_SIZE);
@@ -916,8 +916,8 @@ int agent_process_stun_binding(juice_agent_t *agent, const stun_message_t *msg,
 				pair->nominated = true;
 			} else if (!pair->nomination_requested) {
 				pair->nomination_requested = true;
-				entry->state = AGENT_STUN_ENTRY_STATE_PENDING;
 				pair->state = ICE_CANDIDATE_PAIR_STATE_PENDING;
+				entry->state = AGENT_STUN_ENTRY_STATE_PENDING;
 				agent_arm_transmission(agent, entry, STUN_PACING_TIME); // transmit after response
 			}
 		}
@@ -999,8 +999,6 @@ int agent_process_stun_binding(juice_agent_t *agent, const stun_message_t *msg,
 
 			juice_random(&agent->ice_tiebreaker, sizeof(agent->ice_tiebreaker));
 
-			entry->state = AGENT_STUN_ENTRY_STATE_PENDING;
-			entry->pair->state = ICE_CANDIDATE_PAIR_STATE_PENDING;
 			agent_arm_transmission(agent, entry, 0);
 		}
 		break;
@@ -1044,7 +1042,7 @@ int agent_send_stun_binding(juice_agent_t *agent, const agent_stun_entry_t *entr
 		// the peer.
 		switch (msg_class) {
 		case STUN_CLASS_REQUEST: {
-			if (!*agent->remote.ice_ufrag || !*agent->remote.ice_pwd) {
+			if (*agent->remote.ice_ufrag == '\0' || *agent->remote.ice_pwd == '\0') {
 				JLOG_ERROR("Attempted to send STUN binding to peer without remote ICE credentials");
 				return -1;
 			}
@@ -1219,6 +1217,7 @@ int agent_add_candidate_pair(juice_agent_t *agent, ice_candidate_t *remote) {
 	JLOG_VERBOSE("Registering STUN entry %d for candidate pair checking", agent->entries_count);
 	agent_stun_entry_t *entry = agent->entries + agent->entries_count;
 	entry->type = AGENT_STUN_ENTRY_TYPE_CHECK;
+	entry->state = AGENT_STUN_ENTRY_STATE_IDLE;
 	entry->pair = pos;
 	entry->record = pos->remote->resolved;
 	juice_random(entry->transaction_id, STUN_TRANSACTION_ID_SIZE);
@@ -1258,8 +1257,8 @@ int agent_unfreeze_candidate_pair(juice_agent_t *agent, ice_candidate_pair_t *pa
 	for (int i = 0; i < agent->entries_count; ++i) {
 		agent_stun_entry_t *entry = agent->entries + i;
 		if (entry->pair == pair) {
-			entry->state = AGENT_STUN_ENTRY_STATE_PENDING;
 			pair->state = ICE_CANDIDATE_PAIR_STATE_PENDING;
+			entry->state = AGENT_STUN_ENTRY_STATE_PENDING;
 			agent_arm_transmission(agent, entry, 0); // transmit now
 			return 0;
 		}
