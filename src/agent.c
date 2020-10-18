@@ -554,7 +554,7 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 
 			if (entry->retransmissions >= 0) {
 				JLOG_DEBUG("STUN entry %d: Sending request (%d retransmissions left)",
-				           entry->retransmissions);
+				           i, entry->retransmissions);
 
 				if (agent_send_stun_binding(agent, entry, STUN_CLASS_REQUEST, 0, NULL, NULL) >= 0) {
 					--entry->retransmissions;
