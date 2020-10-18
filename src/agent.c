@@ -381,7 +381,7 @@ void agent_run(juice_agent_t *agent) {
 				JLOG_VERBOSE("Registering STUN entry %d for server request", agent->entries_count);
 				agent_stun_entry_t *entry = agent->entries + agent->entries_count;
 				entry->type = AGENT_STUN_ENTRY_TYPE_SERVER;
-				entry->state = AGENT_STUN_ENTRY_STATE_IDLE;
+				entry->state = AGENT_STUN_ENTRY_STATE_PENDING;
 				entry->pair = NULL;
 				entry->record = records[i];
 				juice_random(entry->transaction_id, STUN_TRANSACTION_ID_SIZE);
@@ -997,6 +997,7 @@ int agent_process_stun_binding(juice_agent_t *agent, const stun_message_t *msg,
 
 			juice_random(&agent->ice_tiebreaker, sizeof(agent->ice_tiebreaker));
 
+			entry->state = AGENT_STUN_ENTRY_STATE_PENDING;
 			agent_arm_transmission(agent, entry, 0);
 		}
 		break;
