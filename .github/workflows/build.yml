@@ -24,7 +24,7 @@ jobs:
     steps:
     - uses: actions/checkout@v2
     - name: cmake
-      run: cmake -B build -DWARNINGS_AS_ERRORS=1
+      run: cmake -B build -DWARNINGS_AS_ERRORS=1 -DENABLE_LOCAL_ADDRESS_TRANSLATION=1
     - name: make
       run: (cd build; make)
     - name: test
