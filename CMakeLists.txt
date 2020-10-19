@@ -7,6 +7,11 @@ set(PROJECT_DESCRIPTION "JUICE is a UDP ICE library")
 option(USE_NETTLE "Use Nettle instead of OpenSSL for HMAC computation" OFF)
 option(NO_TESTS "Disable tests build" OFF)
 option(WARNINGS_AS_ERRORS "Treat warnings as errors" OFF)
+
+# Mitigations
+option(ENABLE_LOCALHOST_ADDRESS "List locahost addresses in candidates" OFF)
+option(ENABLE_LOCAL_ADDRESS_TRANSLATION "Translate local addresses to localhost" OFF)
+
 if(MSVC)
 	option(NO_ATOMICS "Force disabling C11 atomics" ON)
 else()
@@ -79,11 +84,6 @@ if(WIN32)
 		bcrypt)
 endif()
 
-if(APPLE)
-	# This is necessary for connections to the local machine to succeed on macOS
-	target_compile_definitions(juice PRIVATE JUICE_ENABLE_LOCAL_ADDRESS_TRANSLATION=1)
-endif()
-
 if (USE_NETTLE)
 	find_package(Nettle REQUIRED)
     target_compile_definitions(juice PRIVATE USE_NETTLE=1)
@@ -125,6 +125,14 @@ if(WARNINGS_AS_ERRORS)
 		target_compile_options(juice PRIVATE -Werror)
 		target_compile_options(juice-static PRIVATE -Werror)
 	endif()
+endif()
+
+if(ENABLE_LOCALHOST_ADDRESS)
+	target_compile_definitions(juice PRIVATE JUICE_ENABLE_LOCALHOST_ADDRESS=1)
+endif()
+
+if(ENABLE_LOCAL_ADDRESS_TRANSLATION)
+	target_compile_definitions(juice PRIVATE JUICE_ENABLE_LOCAL_ADDRESS_TRANSLATION=1)
 endif()
 
 # Tests

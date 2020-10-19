@@ -234,7 +234,7 @@ int udp_get_addrs(socket_t sock, addr_record_t *records, size_t count) {
 	addr_record_t *end = records + count;
 	int ret = 0;
 
-#ifdef JUICE_ENABLE_ADDRS_LOCALHOST
+#if JUICE_ENABLE_LOCALHOST_ADDRESS
 	// Add localhost for test purposes
 	if (current != end) {
 		++ret;
