@@ -77,10 +77,10 @@ target_link_libraries(juice-static PUBLIC Threads::Threads)
 
 if(WIN32)
 	target_link_libraries(juice PRIVATE
-		wsock32 ws2_32 # winsock2
+		ws2_32 # winsock2
 		bcrypt)
 	target_link_libraries(juice-static PRIVATE
-		wsock32 ws2_32 # winsock2
+		ws2_32 # winsock2
 		bcrypt)
 endif()
 
