@@ -25,6 +25,7 @@
 JUICE_EXPORT juice_agent_t *juice_create(const juice_config_t *config) {
 	if (!config)
 		return NULL;
+
 	return agent_create(config);
 }
 
@@ -35,38 +36,62 @@ JUICE_EXPORT void juice_destroy(juice_agent_t *agent) {
 
 JUICE_EXPORT int juice_gather_candidates(juice_agent_t *agent) {
 	if (!agent)
-		return -1;
-	return agent_gather_candidates(agent);
+		return JUICE_ERR_INVALID;
+
+	if (agent_gather_candidates(agent) < 0)
+		return JUICE_ERR_FAILED;
+
+	return JUICE_ERR_SUCCESS;
 }
 
 JUICE_EXPORT int juice_get_local_description(juice_agent_t *agent, char *buffer, size_t size) {
 	if (!agent || (!buffer && size))
-		return -1;
-	return agent_get_local_description(agent, buffer, size);
+		return JUICE_ERR_INVALID;
+
+	if (agent_get_local_description(agent, buffer, size) < 0)
+		return JUICE_ERR_FAILED;
+
+	return JUICE_ERR_SUCCESS;
 }
 
 JUICE_EXPORT int juice_set_remote_description(juice_agent_t *agent, const char *sdp) {
 	if (!agent || !sdp)
-		return -1;
-	return agent_set_remote_description(agent, sdp);
+		return JUICE_ERR_INVALID;
+
+	if (agent_set_remote_description(agent, sdp) < 0)
+		return JUICE_ERR_FAILED;
+
+	return JUICE_ERR_SUCCESS;
 }
 
 JUICE_EXPORT int juice_add_remote_candidate(juice_agent_t *agent, const char *sdp) {
 	if (!agent || !sdp)
-		return -1;
-	return agent_add_remote_candidate(agent, sdp);
+		return JUICE_ERR_INVALID;
+
+	if (agent_add_remote_candidate(agent, sdp) < 0)
+		return JUICE_ERR_FAILED;
+
+	return JUICE_ERR_SUCCESS;
 }
 
 JUICE_EXPORT int juice_set_remote_gathering_done(juice_agent_t *agent) {
 	if (!agent)
-		return -1;
-	return agent_set_remote_gathering_done(agent);
+		return JUICE_ERR_INVALID;
+
+	if (agent_set_remote_gathering_done(agent) < 0)
+		return JUICE_ERR_FAILED;
+
+	return JUICE_ERR_SUCCESS;
 }
 
 JUICE_EXPORT int juice_send(juice_agent_t *agent, const char *data, size_t size) {
 	if (!agent || (!data && size))
-		return -1;
-	return agent_send(agent, data, size);
+		return JUICE_ERR_INVALID;
+
+	if (agent_send(agent, data, size) < 0)
+		return JUICE_ERR_FAILED;
+
+	return JUICE_ERR_SUCCESS;
 }
 
 JUICE_EXPORT juice_state_t juice_get_state(juice_agent_t *agent) { return agent_get_state(agent); }
@@ -74,31 +99,39 @@ JUICE_EXPORT juice_state_t juice_get_state(juice_agent_t *agent) { return agent_
 JUICE_EXPORT int juice_get_selected_candidates(juice_agent_t *agent, char *local, size_t local_size,
                                               char *remote, size_t remote_size) {
 	if (!agent || (!local && local_size) || (!remote && remote_size))
-		return -1;
+		return JUICE_ERR_INVALID;
+
 	ice_candidate_t local_cand, remote_cand;
 	if (agent_get_selected_candidate_pair(agent, &local_cand, &remote_cand))
-		return -1;
+		return JUICE_ERR_NOT_AVAIL;
+
 	if (local_size && ice_generate_candidate_sdp(&local_cand, local, local_size) < 0)
-		return -1;
+		return JUICE_ERR_FAILED;
+
 	if (remote_size && ice_generate_candidate_sdp(&remote_cand, remote, remote_size) < 0)
-		return -1;
-	return 0;
+		return JUICE_ERR_FAILED;
+
+	return JUICE_ERR_SUCCESS;
 }
 
 JUICE_EXPORT int juice_get_selected_addresses(juice_agent_t *agent, char *local, size_t local_size,
                                               char *remote, size_t remote_size) {
 	if (!agent || (!local && local_size) || (!remote && remote_size))
-		return -1;
+		return JUICE_ERR_INVALID;
+
 	ice_candidate_t local_cand, remote_cand;
 	if (agent_get_selected_candidate_pair(agent, &local_cand, &remote_cand))
-		return -1;
+		return JUICE_ERR_NOT_AVAIL;
+
 	if (local_size &&
 	    snprintf(local, local_size, "%s:%s", local_cand.hostname, local_cand.service) < 0)
-		return -1;
+		return JUICE_ERR_FAILED;
+
 	if (remote_size &&
 	    snprintf(remote, remote_size, "%s:%s", remote_cand.hostname, remote_cand.service) < 0)
-		return -1;
-	return 0;
+		return JUICE_ERR_FAILED;
+
+	return JUICE_ERR_SUCCESS;
 }
 
 JUICE_EXPORT const char *juice_state_to_string(juice_state_t state) {

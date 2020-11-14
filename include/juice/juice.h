@@ -39,6 +39,11 @@ extern "C" {
 #define JUICE_MAX_CANDIDATE_SDP_STRING_LEN 256
 #define JUICE_MAX_SDP_STRING_LEN 4096
 
+#define JUICE_ERR_SUCCESS 0
+#define JUICE_ERR_INVALID -1   // invalid argument
+#define JUICE_ERR_FAILED -2    // runtime error
+#define JUICE_ERR_NOT_AVAIL -3 // element not available
+
 typedef struct juice_agent juice_agent_t;
 
 typedef enum juice_state {
