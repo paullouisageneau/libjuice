@@ -33,8 +33,7 @@
 #define STUN_ATTR_SIZE sizeof(struct stun_attr)
 
 #ifndef htonll
-#define htonll(x)                                                                                  \
-	((uint64_t)htonl(((uint64_t)(x)&0xFFFFFFFF) << 32) | (uint64_t)htonl((uint64_t)(x) >> 32))
+#define htonll(x) ((uint64_t)(((uint64_t)htonl(x)) << 32) | (uint64_t)htonl((x) >> 32))
 #endif
 #ifndef ntohll
 #define ntohll(x) htonll(x)
