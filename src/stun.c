@@ -33,8 +33,7 @@
 #define STUN_ATTR_SIZE sizeof(struct stun_attr)
 
 #ifndef htonll
-#define htonll(x)                                                                                  \
-	((uint64_t)htonl(((uint64_t)(x)&0xFFFFFFFF) << 32) | (uint64_t)htonl((uint64_t)(x) >> 32))
+#define htonll(x) ((uint64_t)(((uint64_t)htonl((uint32_t)(x))) << 32) | (uint64_t)htonl((uint32_t)((x) >> 32)))
 #endif
 #ifndef ntohll
 #define ntohll(x) htonll(x)
@@ -100,13 +99,15 @@ int stun_write(void *buf, size_t size, const stun_message_t *msg) {
 		pos += len;
 	}
 	if (msg->ice_controlling) {
-		len = stun_write_attr(pos, end - pos, STUN_ATTR_ICE_CONTROLLING, &msg->ice_controlling, 8);
+		uint64_t ice_controlling = htonll(msg->ice_controlling);
+		len = stun_write_attr(pos, end - pos, STUN_ATTR_ICE_CONTROLLING, &ice_controlling, 8);
 		if (len <= 0)
 			goto overflow;
 		pos += len;
 	}
 	if (msg->ice_controlled) {
-		len = stun_write_attr(pos, end - pos, STUN_ATTR_ICE_CONTROLLED, &msg->ice_controlled, 8);
+		uint64_t ice_controlled = htonll(msg->ice_controlled);
+		len = stun_write_attr(pos, end - pos, STUN_ATTR_ICE_CONTROLLED, &ice_controlled, 8);
 		if (len <= 0)
 			goto overflow;
 		pos += len;
