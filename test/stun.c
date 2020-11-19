@@ -65,7 +65,7 @@ int test_stun(void) {
 	if (msg.priority != 0x6e0001ff)
 		return -1;
 
-	if (!msg.ice_controlled)
+	if (msg.ice_controlled != 0x932ff9b151263b36LL)
 		return -1;
 
 	if (!msg.has_integrity)
