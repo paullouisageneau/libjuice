@@ -72,8 +72,10 @@ juice_agent_t *agent_create(const juice_config_t *config) {
 	agent->state = JUICE_STATE_DISCONNECTED;
 	agent->mode = AGENT_MODE_UNKNOWN;
 	agent->sock = INVALID_SOCKET;
+	agent->send_ds = 0;
 
 	mutex_init(&agent->mutex, MUTEX_RECURSIVE);
+	mutex_init(&agent->send_mutex, 0);
 
 #ifdef NO_ATOMICS
 	agent->selected_entry = NULL;
@@ -100,7 +102,10 @@ void agent_do_destroy(juice_agent_t *agent) {
 	JLOG_DEBUG("Destroying agent");
 	if (agent->sock != INVALID_SOCKET)
 		closesocket(agent->sock);
+
 	mutex_destroy(&agent->mutex);
+	mutex_destroy(&agent->send_mutex);
+
 	free(agent);
 
 #ifdef _WIN32
@@ -299,8 +304,8 @@ int agent_set_remote_gathering_done(juice_agent_t *agent) {
 	return 0;
 }
 
-int agent_send(juice_agent_t *agent, const char *data, size_t size) {
-	// For performance reasons, this function is lock-free if the platform has atomics
+int agent_send(juice_agent_t *agent, const char *data, size_t size, int ds) {
+	// For performance reasons, do not lock the global mutex if the platform has atomics
 #ifdef NO_ATOMICS
 	mutex_lock(&agent->mutex);
 	agent_stun_entry_t *selected_entry = agent->selected_entry;
@@ -315,9 +320,21 @@ int agent_send(juice_agent_t *agent, const char *data, size_t size) {
 
 	if (!selected_entry) {
 		JLOG_ERROR("Send called before ICE is connected");
-		mutex_unlock(&agent->mutex);
 		return -1;
 	}
+
+	// Lock the send-specific mutex
+	mutex_lock(&agent->send_mutex);
+
+	if (agent->send_ds >= 0 && agent->send_ds != ds) {
+		JLOG_VERBOSE("Setting Differentiated Services field to 0x%X", ds);
+		if(udp_set_diffserv(agent->sock, ds) < 0)
+			agent->send_ds = -1; // disable for next time
+		else
+			agent->send_ds = ds;
+	}
+
+	JLOG_VERBOSE("Sending datagram, size=%d", size);
 
 	const addr_record_t *record = &selected_entry->record;
 #if defined(_WIN32) || defined(__APPLE__)
@@ -330,6 +347,8 @@ int agent_send(juice_agent_t *agent, const char *data, size_t size) {
 #endif
 	if (ret < 0 && sockerrno != SEAGAIN && sockerrno != SEWOULDBLOCK)
 		JLOG_WARN("Send failed, errno=%d", sockerrno);
+
+	mutex_unlock(&agent->send_mutex);
 	return ret;
 }
 

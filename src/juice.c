@@ -88,7 +88,17 @@ JUICE_EXPORT int juice_send(juice_agent_t *agent, const char *data, size_t size)
 	if (!agent || (!data && size))
 		return JUICE_ERR_INVALID;
 
-	if (agent_send(agent, data, size) < 0)
+	if (agent_send(agent, data, size, 0) < 0)
+		return JUICE_ERR_FAILED;
+
+	return JUICE_ERR_SUCCESS;
+}
+
+JUICE_EXPORT int juice_send_diffserv(juice_agent_t *agent, const char *data, size_t size, int ds) {
+	if (!agent || (!data && size))
+		return JUICE_ERR_INVALID;
+
+	if (agent_send(agent, data, size, ds) < 0)
 		return JUICE_ERR_FAILED;
 
 	return JUICE_ERR_SUCCESS;
