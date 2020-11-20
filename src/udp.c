@@ -104,7 +104,7 @@ socket_t udp_create_socket(const udp_socket_config_t *config) {
 
 	ctl_t b = 1;
 	if (ioctlsocket(sock, FIONBIO, &b)) {
-		JLOG_ERROR("setting non-blocking mode on UDP socket failed, errno=%d", sockerrno);
+		JLOG_ERROR("Setting non-blocking mode on UDP socket failed, errno=%d", sockerrno);
 		goto error;
 	}
 
@@ -140,6 +140,52 @@ socket_t udp_create_socket(const udp_socket_config_t *config) {
 error:
 	freeaddrinfo(ai_list);
 	return INVALID_SOCKET;
+}
+
+int udp_set_diffserv(socket_t sock, int ds) {
+#ifdef _WIN32
+	// IP_TOS has been intentionally broken on Windows in favor of a convoluted proprietary
+	// mechanism called qWave. Thank you Microsoft!
+	// TODO: Investigate if DSCP can be still set directly without administrator flow configuration.
+	JLOG_INFO("IP Differentiated Services are not supported on Windows");
+	return -1;
+#else
+	addr_record_t name;
+	name.len = sizeof(name.addr);
+	if (getsockname(sock, (struct sockaddr *)&name.addr, &name.len) < 0) {
+		JLOG_WARN("getsockname failed, errno=%d", sockerrno);
+		return -1;
+	}
+
+	switch (name.addr.ss_family) {
+	case AF_INET:
+#ifdef IP_TOS
+		if (setsockopt(sock, IPPROTO_IP, IP_TOS, &ds, sizeof(ds)) < 0) {
+			JLOG_WARN("Setting IP ToS failed, errno=%d", sockerrno);
+			return -1;
+		}
+		return 0;
+#else
+		JLOG_INFO("Setting IP ToS is not supported");
+		return -1;
+#endif
+
+	case AF_INET6:
+#ifdef IPV6_TCLASS
+		if (setsockopt(sock, IPPROTO_IPV6, IPV6_TCLASS, &ds, sizeof(ds)) < 0) {
+			JLOG_WARN("Setting IPv6 traffic class failed, errno=%d", sockerrno);
+			return -1;
+		}
+		return 0;
+#else
+		JLOG_INFO("Setting IPv6 traffic class is not supported");
+		return -1;
+#endif
+
+	default:
+		return -1;
+	}
+#endif
 }
 
 uint16_t udp_get_port(socket_t sock) {
@@ -395,7 +441,7 @@ int udp_get_addrs(socket_t sock, addr_record_t *records, size_t count) {
 				break;
 			}
 		}
-	    for (struct addrinfo *ai = ai_list; ai; ai = ai->ai_next) {
+		for (struct addrinfo *ai = ai_list; ai; ai = ai->ai_next) {
 			if (!addr_is_local(ai->ai_addr) &&
 			    !(has_temp_inet6 && !addr_is_temp_inet6(ai->ai_addr))) {
 				if (!has_duplicate_addr(ai->ai_addr, records, current - records)) {

@@ -106,13 +106,15 @@ struct juice_agent {
 	socket_t sock;
 	thread_t thread;
 	mutex_t mutex;
-	uint64_t ice_tiebreaker;
+
 	ice_description_t local;
 	ice_description_t remote;
+
 	ice_candidate_pair_t candidate_pairs[MAX_CANDIDATE_PAIRS_COUNT];
 	ice_candidate_pair_t *ordered_pairs[MAX_CANDIDATE_PAIRS_COUNT];
 	ice_candidate_pair_t *selected_pair;
 	int candidate_pairs_count;
+
 	agent_stun_entry_t entries[MAX_STUN_ENTRIES_COUNT];
 	int entries_count;
 #ifdef NO_ATOMICS
@@ -120,10 +122,15 @@ struct juice_agent {
 #else
 	_Atomic(agent_stun_entry_t *) selected_entry;
 #endif
+
+	uint64_t ice_tiebreaker;
 	timestamp_t fail_timestamp;
 	bool gathering_done;
 	bool thread_started;
 	bool thread_stopped;
+
+	mutex_t send_mutex;
+	int send_ds;
 };
 
 juice_agent_t *agent_create(const juice_config_t *config);
@@ -134,7 +141,7 @@ int agent_get_local_description(juice_agent_t *agent, char *buffer, size_t size)
 int agent_set_remote_description(juice_agent_t *agent, const char *sdp);
 int agent_add_remote_candidate(juice_agent_t *agent, const char *sdp);
 int agent_set_remote_gathering_done(juice_agent_t *agent);
-int agent_send(juice_agent_t *agent, const char *data, size_t size);
+int agent_send(juice_agent_t *agent, const char *data, size_t size, int ds);
 juice_state_t agent_get_state(juice_agent_t *agent);
 int agent_get_selected_candidate_pair(juice_agent_t *agent, ice_candidate_t *local,
                                       ice_candidate_t *remote);
