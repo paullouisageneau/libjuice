@@ -323,20 +323,22 @@ int agent_send(juice_agent_t *agent, const char *data, size_t size, int ds) {
 		return -1;
 	}
 
-	// Lock the send-specific mutex
+	return agent_internal_send(agent, &selected_entry->record, data, size, ds);
+}
+
+int agent_internal_send(juice_agent_t *agent, const addr_record_t *record, const char *data, size_t size, int ds) {
 	mutex_lock(&agent->send_mutex);
 
 	if (agent->send_ds >= 0 && agent->send_ds != ds) {
 		JLOG_VERBOSE("Setting Differentiated Services field to 0x%X", ds);
-		if(udp_set_diffserv(agent->sock, ds) < 0)
-			agent->send_ds = -1; // disable for next time
-		else
+		if(udp_set_diffserv(agent->sock, ds) == 0)
 			agent->send_ds = ds;
+		else
+			agent->send_ds = -1; // disable for next time
 	}
 
 	JLOG_VERBOSE("Sending datagram, size=%d", size);
 
-	const addr_record_t *record = &selected_entry->record;
 #if defined(_WIN32) || defined(__APPLE__)
 	addr_record_t tmp = *record;
 	addr_map_inet6_v4mapped(&tmp.addr, &tmp.len);
@@ -1110,16 +1112,7 @@ int agent_send_stun_binding(juice_agent_t *agent, const agent_stun_entry_t *entr
 		return -1;
 	}
 
-	const addr_record_t *record = &entry->record;
-#if defined(_WIN32) || defined(__APPLE__)
-	addr_record_t tmp = *record;
-	addr_map_inet6_v4mapped(&tmp.addr, &tmp.len);
-	int ret = sendto(agent->sock, buffer, size, 0, (struct sockaddr *)&tmp.addr, tmp.len);
-#else
-	int ret =
-	    sendto(agent->sock, buffer, size, 0, (const struct sockaddr *)&record->addr, record->len);
-#endif
-	if (ret < 0) {
+	if (agent_internal_send(agent, &entry->record, buffer, size, 0) < 0) {
 		JLOG_WARN("STUN message send failed, errno=%d", sockerrno);
 		return -1;
 	}
