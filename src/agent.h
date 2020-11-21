@@ -142,6 +142,8 @@ int agent_set_remote_description(juice_agent_t *agent, const char *sdp);
 int agent_add_remote_candidate(juice_agent_t *agent, const char *sdp);
 int agent_set_remote_gathering_done(juice_agent_t *agent);
 int agent_send(juice_agent_t *agent, const char *data, size_t size, int ds);
+int agent_internal_send(juice_agent_t *agent, const addr_record_t *record, const char *data,
+                        size_t size, int ds);
 juice_state_t agent_get_state(juice_agent_t *agent);
 int agent_get_selected_candidate_pair(juice_agent_t *agent, ice_candidate_t *local,
                                       ice_candidate_t *remote);
