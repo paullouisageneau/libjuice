@@ -198,7 +198,7 @@ int ice_create_local_candidate(ice_candidate_type_t type, int component,
 	candidate->type = type;
 	candidate->component = component;
 	candidate->resolved = *record;
-	strcpy(candidate->foundation, "0");
+	strcpy(candidate->foundation, "-");
 
 	compute_candidate_priority(candidate);
 
@@ -245,7 +245,8 @@ int ice_add_candidate(ice_candidate_t *candidate, ice_description_t *description
 		return -1;
 	}
 
-	snprintf(candidate->foundation, 32, "%u", (unsigned int)(description->candidates_count + 1));
+	if(strcmp(candidate->foundation, "-") == 0)
+		snprintf(candidate->foundation, 32, "%u", (unsigned int)(description->candidates_count + 1));
 
 	ice_candidate_t *pos = description->candidates + description->candidates_count;
 	*pos = *candidate;
