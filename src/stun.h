@@ -78,6 +78,15 @@ typedef enum stun_class {
 
 typedef enum stun_method {
 	STUN_METHOD_BINDING = 0x0001,
+
+	// Methods for TURN
+	// See https://tools.ietf.org/html/rfc5766#section-13
+	STUN_METHOD_ALLOCATE = 0x003,
+	STUN_METHOD_REFRESH = 0x004,
+	STUN_METHOD_SEND = 0x006,
+	STUN_METHOD_DATA = 0x007,
+	STUN_METHOD_CREATE_PERMISSION = 0x008,
+	STUN_METHOD_CHANNEL_BIND = 0x009
 } stun_method_t;
 
 #define STUN_IS_RESPONSE(msg_class) (msg_class & 0x0100)
@@ -115,6 +124,18 @@ typedef enum stun_attr_type {
 	STUN_ATTR_FINGERPRINT = 0x8028,
 	STUN_ATTR_ICE_CONTROLLED = 0x8029,
 	STUN_ATTR_ICE_CONTROLLING = 0x802A,
+
+	// Attributes for TURN
+	// See https://tools.ietf.org/html/rfc5766#section-14
+	STUN_ATTR_CHANNEL_NUMBER = 0x000C,
+	STUN_ATTR_LIFETIME = 0x000D,
+	STUN_ATTR_XOR_PEER_ADDRESS = 0x0012,
+	STUN_ATTR_DATA = 0x0013,
+	STUN_ATTR_XOR_RELAYED_ADDRESS = 0x0016,
+	STUN_ATTR_EVEN_PORT = 0x0018,
+	STUN_ATTR_REQUESTED_TRANSPORT = 0x0019,
+	STUN_ATTR_DONT_FRAGMENT = 0x001A,
+	STUN_ATTR_RESERVATION_TOKEN = 0x0022
 } stun_attr_type_t;
 
 /*
@@ -154,17 +175,71 @@ typedef enum stun_address_family {
  * +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
  */
 struct stun_value_error_code {
-	uint16_t padding;
+	uint16_t reserved;
 	uint8_t code_class; // lower 3 bits only
 	uint8_t code_number;
 	uint8_t reason[];
 };
 
+/*
+ * STUN attribute for CHANNEL-NUMBER
+ *
+ *  0                   1                   2                   3
+ *  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+ * +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+ * |        Channel Number         |         RFFU = 0              |
+ * +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+ */
+struct stun_value_channel_number {
+	uint16_t channel_number;
+	uint16_t reserved;
+};
+
+/*
+ * STUN attribute for EVEN-PORT
+ *
+ *  0
+ *  0 1 2 3 4 5 6 7
+ * +-+-+-+-+-+-+-+-+
+ * |R|    RFFU     |
+ * +-+-+-+-+-+-+-+-+
+ */
+struct stun_value_even_port {
+	uint8_t r;
+};
+
+/*
+ * STUN attribute for REQUESTED-TRANSPORT
+ *
+ *  0                   1                   2                   3
+ *  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+ * +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+ * |    Protocol   |                    RFFU                       |
+ * +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+ */
+struct stun_value_requested_transport {
+	uint8_t protocol;
+	uint8_t reserved1;
+	uint16_t reserved2;
+};
+
 #pragma pack(pop)
 
-// The value of USERNAME is a variable-length value. It MUST contain a UTF-8 [RFC3629]
-// encoded sequence of less than 513 bytes [...]
+// The value of USERNAME is a variable-length value. It MUST contain a UTF-8 [RFC3629] encoded
+// sequence of less than 513 bytes [...]
 #define STUN_MAX_USERNAME_LEN 513 + 1
+
+// The REALM attribute [...] MUST be a UTF-8 [RFC3629] encoded sequence of less than 128 characters
+// (which can be as long as 763 bytes)
+#define STUN_MAX_REALM_LEN 763 + 1
+
+// The NONCE attribute may be present in requests and responses. It [...] MUST be less than 128
+// characters (which can be as long as 763 bytes)
+#define STUN_MAX_NONCE_LEN 763 + 1
+
+// The value of SOFTWARE is variable length. It MUST be a UTF-8 [RFC3629] encoded sequence of less
+// than 128 characters (which can be as long as 763 bytes)
+#define STUN_MAX_SOFTWARE_LEN 763 + 1
 
 typedef struct stun_message {
 	stun_class_t msg_class;
@@ -184,6 +259,22 @@ typedef struct stun_message {
 
 	// Only for writing
 	const char *password;
+
+	// TURN
+	uint16_t channel_number;
+	uint32_t lifetime;
+	addr_record_t peer;
+	addr_record_t relayed;
+	const uint8_t *data;
+	bool even_port;
+	bool next_port;
+	bool dont_fragment;
+	uint64_t reservation_token;
+
+	// TODO
+	char realm[STUN_MAX_REALM_LEN];
+	char nonce[STUN_MAX_NONCE_LEN];
+
 } stun_message_t;
 
 int stun_write(void *buf, size_t size, const stun_message_t *msg);
@@ -199,7 +290,7 @@ bool is_stun_datagram(const void *data, size_t size);
 int stun_read(void *data, size_t size, stun_message_t *msg);
 int stun_read_attr(const void *data, size_t size, stun_message_t *msg, uint8_t *begin,
                    uint8_t *attr_begin);
-int stun_read_value_mapped_address(const void *data, size_t size, stun_message_t *msg,
+int stun_read_value_mapped_address(const void *data, size_t size, addr_record_t *mapped,
                                    const uint8_t *mask);
 
 bool stun_check_integrity(void *buf, size_t size, const stun_message_t *msg, const char *password);
