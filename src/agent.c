@@ -51,6 +51,18 @@ static timestamp_t current_timestamp() {
 #endif
 }
 
+static char *alloc_string_copy(const char *orig) {
+	char *copy = malloc(strlen(orig) + 1);
+	strcpy(copy, orig);
+	return copy;
+}
+
+static void *alloc_copy(const void *orig, size_t size) {
+	char *copy = malloc(size);
+	memcpy(copy, orig, size);
+	return copy;
+}
+
 juice_agent_t *agent_create(const juice_config_t *config) {
 	JLOG_VERBOSE("Creating agent");
 
@@ -68,7 +80,19 @@ juice_agent_t *agent_create(const juice_config_t *config) {
 		return NULL;
 	}
 	memset(agent, 0, sizeof(*agent));
+
+	// Copy and reallocate strings
 	agent->config = *config;
+	agent->config.stun_server_host = alloc_string_copy(agent->config.stun_server_host);
+	agent->config.turn_servers = alloc_copy(
+	    agent->config.turn_servers, agent->config.turn_servers_count * sizeof(juice_turn_server_t));
+	for (unsigned int i = 0; i < agent->config.turn_servers_count; ++i) {
+		juice_turn_server_t *stun_server = agent->config.turn_servers + i;
+		stun_server->host = alloc_string_copy(stun_server->host);
+		stun_server->username = alloc_string_copy(stun_server->username);
+		stun_server->password = alloc_string_copy(stun_server->password);
+	}
+
 	agent->state = JUICE_STATE_DISCONNECTED;
 	agent->mode = AGENT_MODE_UNKNOWN;
 	agent->sock = INVALID_SOCKET;
@@ -116,6 +140,16 @@ void agent_do_destroy(juice_agent_t *agent) {
 
 void agent_destroy(juice_agent_t *agent) {
 	mutex_lock(&agent->mutex);
+
+	// Free strings and erase config
+	free((void*)agent->config.stun_server_host);
+	for (unsigned int i = 0; i < agent->config.turn_servers_count; ++i) {
+		juice_turn_server_t *stun_server = agent->config.turn_servers + i;
+		free((void*)stun_server->host);
+		free((void*)stun_server->username);
+		free((void*)stun_server->password);
+	}
+	free(agent->config.turn_servers);
 	memset(&agent->config, 0, sizeof(agent->config));
 
 	if (agent->thread_started) {
@@ -326,12 +360,13 @@ int agent_send(juice_agent_t *agent, const char *data, size_t size, int ds) {
 	return agent_internal_send(agent, &selected_entry->record, data, size, ds);
 }
 
-int agent_internal_send(juice_agent_t *agent, const addr_record_t *record, const char *data, size_t size, int ds) {
+int agent_internal_send(juice_agent_t *agent, const addr_record_t *record, const char *data,
+                        size_t size, int ds) {
 	mutex_lock(&agent->send_mutex);
 
 	if (agent->send_ds >= 0 && agent->send_ds != ds) {
 		JLOG_VERBOSE("Setting Differentiated Services field to 0x%X", ds);
-		if(udp_set_diffserv(agent->sock, ds) == 0)
+		if (udp_set_diffserv(agent->sock, ds) == 0)
 			agent->send_ds = ds;
 		else
 			agent->send_ds = -1; // disable for next time
