@@ -23,6 +23,7 @@
 
 #include "addr.h"
 #include "hmac.h"
+#include "md5.h"
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -80,7 +81,7 @@ typedef enum stun_method {
 	STUN_METHOD_BINDING = 0x0001,
 
 	// Methods for TURN
-	// See https://tools.ietf.org/html/rfc5766#section-13
+	// See https://tools.ietf.org/html/rfc8656#section-17
 	STUN_METHOD_ALLOCATE = 0x003,
 	STUN_METHOD_REFRESH = 0x004,
 	STUN_METHOD_SEND = 0x006,
@@ -126,7 +127,7 @@ typedef enum stun_attr_type {
 	STUN_ATTR_ICE_CONTROLLING = 0x802A,
 
 	// Attributes for TURN
-	// See https://tools.ietf.org/html/rfc5766#section-14
+	// See https://tools.ietf.org/html/rfc8656#section-18
 	STUN_ATTR_CHANNEL_NUMBER = 0x000C,
 	STUN_ATTR_LIFETIME = 0x000D,
 	STUN_ATTR_XOR_PEER_ADDRESS = 0x0012,
@@ -241,6 +242,14 @@ struct stun_value_requested_transport {
 // than 128 characters (which can be as long as 763 bytes)
 #define STUN_MAX_SOFTWARE_LEN 763 + 1
 
+#define STUN_MAX_PASSWORD_LEN STUN_MAX_USERNAME_LEN
+
+typedef struct stun_credentials {
+	char username[STUN_MAX_USERNAME_LEN];
+	char realm[STUN_MAX_REALM_LEN];
+	char nonce[STUN_MAX_NONCE_LEN];
+} stun_credentials_t;
+
 typedef struct stun_message {
 	stun_class_t msg_class;
 	stun_method_t msg_method;
@@ -252,32 +261,29 @@ typedef struct stun_message {
 	bool use_candidate;
 	addr_record_t mapped;
 
+	stun_credentials_t credentials;
+
 	// Only for reading
 	bool has_integrity;
 	bool has_fingerprint;
-	char username[STUN_MAX_USERNAME_LEN];
-
-	// Only for writing
-	const char *password;
 
 	// TURN
 	uint16_t channel_number;
 	uint32_t lifetime;
 	addr_record_t peer;
 	addr_record_t relayed;
-	const uint8_t *data;
+	const char *data;
+	size_t data_size;
 	bool even_port;
 	bool next_port;
 	bool dont_fragment;
+	bool requested_transport;
 	uint64_t reservation_token;
-
-	// TODO
-	char realm[STUN_MAX_REALM_LEN];
-	char nonce[STUN_MAX_NONCE_LEN];
 
 } stun_message_t;
 
-int stun_write(void *buf, size_t size, const stun_message_t *msg);
+int stun_write(void *buf, size_t size, const stun_message_t *msg,
+               const char *password); // password may be NULL
 int stun_write_header(void *buf, size_t size, stun_class_t class, stun_method_t method,
                       const uint8_t *transaction_id);
 size_t stun_update_header_length(void *buf, size_t length);

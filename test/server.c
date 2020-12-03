@@ -41,13 +41,24 @@ static void on_candidate(juice_agent_t *agent, const char *sdp, void *user_ptr);
 static void on_gathering_done(juice_agent_t *agent, void *user_ptr);
 
 int test_server() {
-	juice_set_log_level(JUICE_LOG_LEVEL_DEBUG);
+	juice_set_log_level(JUICE_LOG_LEVEL_VERBOSE);
 
 	// Create agent
 	juice_config_t config;
 	memset(&config, 0, sizeof(config));
+/*
 	config.stun_server_host = "stun.l.google.com"; // Set a STUN server
 	config.stun_server_port = 19302;
+*/
+	juice_turn_server_t turn_server; // Set a TURN server
+	memset(&turn_server, 0, sizeof(turn_server));
+	turn_server.host = "stun.ageneau.net";
+	turn_server.port = 3478;
+	turn_server.username = "telebot";
+	turn_server.password = "982364878597767";
+	config.turn_servers = &turn_server;
+	config.turn_servers_count = 1;
+
 	config.cb_state_changed = on_state_changed;
 	config.cb_candidate = on_candidate;
 	config.cb_gathering_done = on_gathering_done;
@@ -92,8 +103,8 @@ static void on_state_changed(juice_agent_t *agent, juice_state_t state, void *us
 static void on_candidate(juice_agent_t *agent, const char *sdp, void *user_ptr) {
 	printf("Candidate: %s\n", sdp);
 
-	// Success if a valid server reflexive candidate is emitted
-	if (strstr(sdp, " typ srflx raddr 0.0.0.0 rport 0"))
+	// Success if a valid relay candidate is emitted
+	if (strstr(sdp, " typ relay raddr 0.0.0.0 rport 0"))
 		success = true;
 }
 

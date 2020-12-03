@@ -53,8 +53,7 @@ int test_stun(void) {
 	};
 
 	stun_message_t msg;
-	strcpy(msg.username, "evtj:h6vY");
-	msg.password = "VOkJxbRl1RmTxUk/WvJxBt";
+	memset(&msg, 0, sizeof(msg));
 
 	if (_juice_stun_read(message, sizeof(message), &msg) <= 0)
 		return -1;
@@ -70,6 +69,9 @@ int test_stun(void) {
 
 	if (!msg.has_integrity)
 		return -1;
-
+/*
+	if(stun_check_integrity(message, sizeof(message), msg, "VOkJxbRl1RmTxUk/WvJxBt") < 0)
+		return -1;
+*/
 	return 0;
 }

@@ -52,12 +52,19 @@
 // ICE trickling timeout
 #define ICE_FAIL_TIMEOUT 30000 // msecs
 
+// TURN refresh period
+#define TURN_REFRESH_PERIOD 300000 // msecs, 5 min
+
+// Max STUN and TURN server entries
+#define MAX_SERVER_ENTRIES_COUNT 2 // max STUN server entries
+#define MAX_RELAY_ENTRIES_COUNT 2  // max TURN server entries
+
 // Compute max candidates and entries count
 // This guarantees 8 (+1 to be safe) host candidates slots
-#define MAX_STUN_SERVER_RECORDS_COUNT 2
+#define MAX_STUN_SERVER_RECORDS_COUNT MAX_SERVER_ENTRIES_COUNT
 #define MAX_HOST_CANDIDATES_COUNT ((ICE_MAX_CANDIDATES_COUNT - MAX_STUN_SERVER_RECORDS_COUNT) / 2)
 #define MAX_PEER_REFLEXIVE_CANDIDATES_COUNT MAX_HOST_CANDIDATES_COUNT
-#define MAX_CANDIDATE_PAIRS_COUNT (ICE_MAX_CANDIDATES_COUNT * 2) // just to be safe
+#define MAX_CANDIDATE_PAIRS_COUNT (ICE_MAX_CANDIDATES_COUNT * (1 + MAX_RELAY_ENTRIES_COUNT))
 #define MAX_STUN_ENTRIES_COUNT (MAX_CANDIDATE_PAIRS_COUNT + MAX_STUN_SERVER_RECORDS_COUNT)
 
 typedef int64_t timestamp_t;
@@ -66,12 +73,13 @@ typedef timestamp_t timediff_t;
 typedef enum agent_mode {
 	AGENT_MODE_UNKNOWN,
 	AGENT_MODE_CONTROLLED,
-	AGENT_MODE_CONTROLLING,
+	AGENT_MODE_CONTROLLING
 } agent_mode_t;
 
 typedef enum agent_stun_entry_type {
 	AGENT_STUN_ENTRY_TYPE_SERVER,
-	AGENT_STUN_ENTRY_TYPE_CHECK,
+	AGENT_STUN_ENTRY_TYPE_RELAY,
+	AGENT_STUN_ENTRY_TYPE_CHECK
 } agent_stun_entry_type_t;
 
 typedef enum agent_stun_entry_state {
@@ -80,7 +88,7 @@ typedef enum agent_stun_entry_state {
 	AGENT_STUN_ENTRY_STATE_FAILED,
 	AGENT_STUN_ENTRY_STATE_SUCCEEDED,
 	AGENT_STUN_ENTRY_STATE_SUCCEEDED_KEEPALIVE,
-	AGENT_STUN_ENTRY_STATE_IDLE,
+	AGENT_STUN_ENTRY_STATE_IDLE
 } agent_stun_entry_state_t;
 
 typedef struct agent_stun_entry {
@@ -88,10 +96,13 @@ typedef struct agent_stun_entry {
 	agent_stun_entry_state_t state;
 	ice_candidate_pair_t *pair;
 	addr_record_t record;
+	addr_record_t relayed;
 	uint8_t transaction_id[STUN_TRANSACTION_ID_SIZE];
 	timestamp_t next_transmission;
 	timediff_t retransmission_timeout;
 	int retransmissions;
+	stun_credentials_t *credentials; // for TURN
+	const char *password;            // for TURN
 #ifdef NO_ATOMICS
 	volatile bool armed;
 #else
@@ -142,31 +153,50 @@ int agent_set_remote_description(juice_agent_t *agent, const char *sdp);
 int agent_add_remote_candidate(juice_agent_t *agent, const char *sdp);
 int agent_set_remote_gathering_done(juice_agent_t *agent);
 int agent_send(juice_agent_t *agent, const char *data, size_t size, int ds);
-int agent_internal_send(juice_agent_t *agent, const addr_record_t *record, const char *data,
-                        size_t size, int ds);
+int agent_direct_send(juice_agent_t *agent, const addr_record_t *record, const char *data,
+                      size_t size, int ds);
+int agent_relay_send(juice_agent_t *agent, agent_stun_entry_t *entry, const addr_record_t *record,
+                     const char *data, size_t size, int ds);
 juice_state_t agent_get_state(juice_agent_t *agent);
 int agent_get_selected_candidate_pair(juice_agent_t *agent, ice_candidate_t *local,
                                       ice_candidate_t *remote);
 
 void agent_run(juice_agent_t *agent);
 int agent_recv(juice_agent_t *agent);
+int agent_input(juice_agent_t *agent, char *buffer, size_t len, const addr_record_t *source,
+                const addr_record_t *relayed); // relayed may be NULL
 int agent_interrupt(juice_agent_t *agent);
 void agent_change_state(juice_agent_t *agent, juice_state_t state);
 int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp);
-int agent_verify_stun(juice_agent_t *agent, void *buf, size_t size, const stun_message_t *msg);
-int agent_dispatch_stun(juice_agent_t *agent, const stun_message_t *msg,
-                        const addr_record_t *source);
+int agent_verify_stun_binding(juice_agent_t *agent, void *buf, size_t size,
+                              const stun_message_t *msg);
+int agent_dispatch_stun(juice_agent_t *agent, void *buf, size_t size, const stun_message_t *msg,
+                        const addr_record_t *source,
+                        const addr_record_t *relayed); // relayed may be NULL
 int agent_process_stun_binding(juice_agent_t *agent, const stun_message_t *msg,
-                               agent_stun_entry_t *entry, const addr_record_t *source);
+                               agent_stun_entry_t *entry, const addr_record_t *source,
+                               const addr_record_t *relayed); // relayed may be NULL
 int agent_send_stun_binding(juice_agent_t *agent, const agent_stun_entry_t *entry,
                             stun_class_t msg_class, unsigned int error_code,
                             const uint8_t *transaction_id, const addr_record_t *mapped);
+int agent_process_turn_allocate(juice_agent_t *agent, const stun_message_t *msg,
+                                agent_stun_entry_t *entry);
+int agent_send_turn_allocate_request(juice_agent_t *agent, const agent_stun_entry_t *entry);
+int agent_process_turn_create_permission(juice_agent_t *agent, const stun_message_t *msg,
+                                         agent_stun_entry_t *entry);
+int agent_send_turn_create_permission_request(juice_agent_t *agent, agent_stun_entry_t *entry,
+                                              const addr_record_t *record);
+int agent_process_turn_data(juice_agent_t *agent, const stun_message_t *msg,
+                            agent_stun_entry_t *entry);
 
+int agent_add_local_relayed_candidate(juice_agent_t *agent, const addr_record_t *record);
 int agent_add_local_reflexive_candidate(juice_agent_t *agent, ice_candidate_type_t type,
                                         const addr_record_t *record);
 int agent_add_remote_reflexive_candidate(juice_agent_t *agent, ice_candidate_type_t type,
                                          uint32_t priority, const addr_record_t *record);
-int agent_add_candidate_pair(juice_agent_t *agent, ice_candidate_t *remote);
+int agent_add_candidate_pair(juice_agent_t *agent, ice_candidate_t *local,
+                             ice_candidate_t *remote); // local may be NULL
+int agent_add_candidate_pairs_for_remote(juice_agent_t *agent, ice_candidate_t *remote);
 int agent_unfreeze_candidate_pair(juice_agent_t *agent, ice_candidate_pair_t *pair);
 
 void agent_arm_transmission(juice_agent_t *agent, agent_stun_entry_t *entry, timediff_t delay);
@@ -174,7 +204,9 @@ void agent_update_gathering_done(juice_agent_t *agent);
 void agent_update_candidate_pairs(juice_agent_t *agent);
 void agent_update_ordered_pairs(juice_agent_t *agent);
 
-agent_stun_entry_t *agent_find_entry_from_record(juice_agent_t *agent, const addr_record_t *record);
+agent_stun_entry_t *
+agent_find_entry_from_record(juice_agent_t *agent, const addr_record_t *record,
+                             const addr_record_t *relayed); // relayed may be NULL
 void agent_translate_host_candidate_entry(juice_agent_t *agent, agent_stun_entry_t *entry);
 
 #endif

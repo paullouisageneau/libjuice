@@ -25,6 +25,7 @@
 #include <assert.h>
 #include <math.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -46,7 +47,29 @@ static size_t align32(size_t len) {
 	return len;
 }
 
-int stun_write(void *buf, size_t size, const stun_message_t *msg) {
+#define MAX_HMAC_KEY_LEN                                                                           \
+	(STUN_MAX_PASSWORD_LEN >= HASH_MD5_SIZE ? STUN_MAX_PASSWORD_LEN : HASH_MD5_SIZE)
+
+static size_t generate_hmac_key(const stun_message_t *msg, const char *password, void *key) {
+	if (*msg->credentials.realm != '\0') {
+		// long-term credentials
+		const size_t max_input_len =
+		    STUN_MAX_USERNAME_LEN + STUN_MAX_REALM_LEN + STUN_MAX_PASSWORD_LEN + 3;
+		char input[max_input_len];
+		size_t input_len = snprintf(input, max_input_len, "%s:%s:%s", msg->credentials.username,
+		                            msg->credentials.realm, password ? password : "");
+		// TODO: check input_len
+		hash_md5(input, input_len, key);
+		return HASH_MD5_SIZE;
+	} else {
+		// short-term credentials
+		size_t key_len = snprintf((char *)key, MAX_HMAC_KEY_LEN, "%s", password ? password : "");
+		// TODO: check key_len
+		return key_len;
+	}
+}
+
+int stun_write(void *buf, size_t size, const stun_message_t *msg, const char *password) {
 	uint8_t *begin = buf;
 	uint8_t *pos = begin;
 	uint8_t *end = begin + size;
@@ -113,20 +136,129 @@ int stun_write(void *buf, size_t size, const stun_message_t *msg) {
 			goto overflow;
 		pos += len;
 	}
-	if (*msg->username != '\0') {
-		len = stun_write_attr(pos, end - pos, STUN_ATTR_USERNAME, msg->username,
-		                      strlen(msg->username));
+	if (msg->channel_number) {
+		struct stun_value_channel_number channel_number;
+		memset(&channel_number, 0, sizeof(channel_number));
+		channel_number.channel_number = htons(msg->channel_number);
+		len = stun_write_attr(pos, end - pos, STUN_ATTR_CHANNEL_NUMBER, &channel_number,
+		                      sizeof(channel_number));
 		if (len <= 0)
 			goto overflow;
 		pos += len;
 	}
-	if (msg->password) {
+	if (msg->lifetime) {
+		uint32_t lifetime = htonl(msg->lifetime);
+		len = stun_write_attr(pos, end - pos, STUN_ATTR_LIFETIME, &lifetime, 4);
+		if (len <= 0)
+			goto overflow;
+		pos += len;
+	}
+	if (msg->peer.len) {
+		JLOG_VERBOSE("Writing XOR peer address");
+		uint8_t value[32];
+		uint8_t mask[16];
+		*((uint32_t *)mask) = htonl(STUN_MAGIC);
+		memcpy(mask + 4, msg->transaction_id, 12);
+		int value_len = stun_write_value_mapped_address(
+		    value, 32, (const struct sockaddr *)&msg->peer.addr, msg->peer.len, mask);
+		if (value_len > 0) {
+			len = stun_write_attr(pos, end - pos, STUN_ATTR_XOR_PEER_ADDRESS, value, value_len);
+			if (len <= 0)
+				goto overflow;
+			pos += len;
+		}
+	}
+	if (msg->relayed.len) {
+		JLOG_VERBOSE("Writing XOR relay address");
+		uint8_t value[32];
+		uint8_t mask[16];
+		*((uint32_t *)mask) = htonl(STUN_MAGIC);
+		memcpy(mask + 4, msg->transaction_id, 12);
+		int value_len = stun_write_value_mapped_address(
+		    value, 32, (const struct sockaddr *)&msg->relayed.addr, msg->relayed.len, mask);
+		if (value_len > 0) {
+			len = stun_write_attr(pos, end - pos, STUN_ATTR_XOR_RELAYED_ADDRESS, value, value_len);
+			if (len <= 0)
+				goto overflow;
+			pos += len;
+		}
+	}
+	if (msg->data) {
+		len = stun_write_attr(pos, end - pos, STUN_ATTR_DATA, (const uint8_t *)msg->data,
+		                      msg->data_size);
+		if (len <= 0)
+			goto overflow;
+		pos += len;
+	}
+	if (msg->even_port) {
+		struct stun_value_even_port even_port;
+		memset(&even_port, 0, sizeof(even_port));
+		if (msg->next_port)
+			even_port.r |= 0x80;
+		len = stun_write_attr(pos, end - pos, STUN_ATTR_CHANNEL_NUMBER, &even_port,
+		                      sizeof(even_port));
+		if (len <= 0)
+			goto overflow;
+		pos += len;
+	}
+	if (msg->requested_transport) {
+		struct stun_value_requested_transport requested_transport;
+		memset(&requested_transport, 0, sizeof(requested_transport));
+		requested_transport.protocol = 17;
+		len = stun_write_attr(pos, end - pos, STUN_ATTR_REQUESTED_TRANSPORT, &requested_transport,
+		                      sizeof(requested_transport));
+		if (len <= 0)
+			goto overflow;
+		pos += len;
+	}
+	if (msg->dont_fragment) {
+		len = stun_write_attr(pos, end - pos, STUN_ATTR_DONT_FRAGMENT, NULL, 0);
+		if (len <= 0)
+			goto overflow;
+		pos += len;
+	}
+	if (msg->reservation_token) {
+		uint64_t reservation_token = htonll(msg->reservation_token);
+		len = stun_write_attr(pos, end - pos, STUN_ATTR_RESERVATION_TOKEN, &reservation_token, 8);
+		if (len <= 0)
+			goto overflow;
+		pos += len;
+	}
+
+	const char *software = "libjuice";
+	len = stun_write_attr(pos, end - pos, STUN_ATTR_SOFTWARE, software, strlen(software));
+	if (len <= 0)
+		goto overflow;
+	pos += len;
+
+	if (*msg->credentials.username != '\0') {
+		len = stun_write_attr(pos, end - pos, STUN_ATTR_USERNAME, msg->credentials.username,
+		                      strlen(msg->credentials.username));
+		if (len <= 0)
+			goto overflow;
+		pos += len;
+	}
+	if (*msg->credentials.realm != '\0') {
+		len = stun_write_attr(pos, end - pos, STUN_ATTR_REALM, msg->credentials.realm,
+		                      strlen(msg->credentials.realm));
+		if (len <= 0)
+			goto overflow;
+		pos += len;
+	}
+	if (*msg->credentials.nonce != '\0') {
+		len = stun_write_attr(pos, end - pos, STUN_ATTR_NONCE, msg->credentials.nonce,
+		                      strlen(msg->credentials.nonce));
+		if (len <= 0)
+			goto overflow;
+		pos += len;
+	}
+	if (password) {
 		size_t tmp_length = pos - attr_begin + STUN_ATTR_SIZE + HMAC_SHA1_SIZE;
 		stun_update_header_length(begin, tmp_length);
-
-		const char *password = msg->password; // TODO: long-term
+		uint8_t key[MAX_HMAC_KEY_LEN];
 		uint8_t hmac[HMAC_SHA1_SIZE];
-		hmac_sha1(begin, pos - begin, password, strlen(password), hmac);
+		size_t key_len = generate_hmac_key(msg, password, key);
+		hmac_sha1(begin, pos - begin, key, key_len, hmac);
 		len = stun_write_attr(pos, end - pos, STUN_ATTR_MESSAGE_INTEGRITY, hmac, HMAC_SHA1_SIZE);
 		if (len <= 0)
 			goto overflow;
@@ -309,7 +441,7 @@ int stun_read(void *data, size_t size, stun_message_t *msg) {
 
 int stun_read_attr(const void *data, size_t size, stun_message_t *msg, uint8_t *begin,
                    uint8_t *attr_begin) {
-	// RFC5389: When present, the FINGERPRINT attribute MUST be the last attribute in the message.
+	// RFC 5389: When present, the FINGERPRINT attribute MUST be the last attribute in the message.
 	if (msg->has_fingerprint) {
 		JLOG_DEBUG("Invalid STUN attribute after fingerprint");
 		return -1;
@@ -365,7 +497,7 @@ int stun_read_attr(const void *data, size_t size, stun_message_t *msg, uint8_t *
 		const struct stun_value_error_code *error =
 		    (const struct stun_value_error_code *)attr->value;
 		msg->error_code = (error->code_class & 0x07) * 100 + error->code_number;
-		JLOG_DEBUG("Got STUN error code %u", msg->error_code);
+		JLOG_VERBOSE("Got STUN error code %u", msg->error_code);
 		break;
 	}
 	case STUN_ATTR_USERNAME: {
@@ -374,8 +506,9 @@ int stun_read_attr(const void *data, size_t size, stun_message_t *msg, uint8_t *
 			JLOG_WARN("STUN username attribute value too long, length=%zu", length);
 			return -1;
 		}
-		strncpy(msg->username, (const char *)attr->value, length);
-		JLOG_VERBOSE("Got username: %s", msg->username);
+		memcpy(msg->credentials.username, (const char *)attr->value, length);
+		msg->credentials.username[length] = '\0';
+		JLOG_VERBOSE("Got username: %s", msg->credentials.username);
 		break;
 	}
 	case STUN_ATTR_MESSAGE_INTEGRITY: {
@@ -414,8 +547,9 @@ int stun_read_attr(const void *data, size_t size, stun_message_t *msg, uint8_t *
 			JLOG_WARN("STUN realm attribute value too long, length=%zu", length);
 			return -1;
 		}
-		strncpy(msg->realm, (const char *)attr->value, length);
-		JLOG_VERBOSE("Got realm: %s", msg->realm);
+		memcpy(msg->credentials.realm, (const char *)attr->value, length);
+		msg->credentials.realm[length] = '\0';
+		JLOG_VERBOSE("Got realm: %s", msg->credentials.realm);
 		break;
 	}
 	case STUN_ATTR_NONCE: {
@@ -424,8 +558,9 @@ int stun_read_attr(const void *data, size_t size, stun_message_t *msg, uint8_t *
 			JLOG_WARN("STUN nonce attribute value too long, length=%zu", length);
 			return -1;
 		}
-		strncpy(msg->nonce, (const char *)attr->value, length);
-		JLOG_VERBOSE("Got nonce: %s", msg->nonce);
+		memcpy(msg->credentials.nonce, (const char *)attr->value, length);
+		msg->credentials.nonce[length] = '\0';
+		JLOG_VERBOSE("Got nonce: %s", msg->credentials.nonce);
 		break;
 	}
 	case STUN_ATTR_SOFTWARE: {
@@ -435,7 +570,8 @@ int stun_read_attr(const void *data, size_t size, stun_message_t *msg, uint8_t *
 			return -1;
 		}
 		char buffer[STUN_MAX_SOFTWARE_LEN];
-		strncpy(buffer, (const char *)attr->value, length);
+		memcpy(buffer, (const char *)attr->value, length);
+		buffer[length] = '\0';
 		JLOG_DEBUG("Remote software is \"%s\"", buffer);
 		break;
 	}
@@ -480,7 +616,7 @@ int stun_read_attr(const void *data, size_t size, stun_message_t *msg, uint8_t *
 		}
 		const struct stun_value_channel_number *channel_number =
 		    (const struct stun_value_channel_number *)attr->value;
-		msg->channel_number = channel_number->channel_number;
+		msg->channel_number = ntohs(channel_number->channel_number);
 		break;
 	}
 	case STUN_ATTR_LIFETIME: {
@@ -512,7 +648,8 @@ int stun_read_attr(const void *data, size_t size, stun_message_t *msg, uint8_t *
 	}
 	case STUN_ATTR_DATA: {
 		JLOG_VERBOSE("Found data");
-		msg->data = attr->value;
+		msg->data = (const char *)attr->value;
+		msg->data_size = length;
 		break;
 	}
 	case STUN_ATTR_EVEN_PORT: {
@@ -522,7 +659,7 @@ int stun_read_attr(const void *data, size_t size, stun_message_t *msg, uint8_t *
 			return -1;
 		}
 		msg->even_port = true;
-		msg->next_port = *attr->value & 0x80;
+		msg->next_port = ((struct stun_value_even_port *)attr->value)->r & 0x80;
 		break;
 	}
 	case STUN_ATTR_REQUESTED_TRANSPORT: {
@@ -538,6 +675,7 @@ int stun_read_attr(const void *data, size_t size, stun_message_t *msg, uint8_t *
 			          (int)requested_transport->protocol);
 			return -1;
 		}
+		msg->requested_transport = true;
 		break;
 	}
 	case STUN_ATTR_DONT_FRAGMENT: {
@@ -628,8 +766,10 @@ bool stun_check_integrity(void *buf, size_t size, const stun_message_t *msg, con
 
 	size_t tmp_length = end - attr_begin + STUN_ATTR_SIZE + HMAC_SHA1_SIZE;
 	size_t prev_length = stun_update_header_length(begin, tmp_length);
+	uint8_t key[MAX_HMAC_KEY_LEN];
 	uint8_t hmac[HMAC_SHA1_SIZE];
-	hmac_sha1(begin, end - begin, password, strlen(password), hmac);
+	size_t key_len = generate_hmac_key(msg, password, key);
+	hmac_sha1(begin, end - begin, key, key_len, hmac);
 	stun_update_header_length(begin, prev_length);
 
 	const uint8_t *expected_hmac = end + STUN_ATTR_SIZE;

@@ -39,5 +39,6 @@ typedef struct addr_record {
 } addr_record_t;
 
 int addr_resolve(const char *hostname, const char *service, addr_record_t *records, size_t count);
+bool addr_record_is_equal(const addr_record_t *a, const addr_record_t *b, bool compare_ports);
 
 #endif // JUICE_ADDR_H
