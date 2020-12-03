@@ -454,12 +454,12 @@ void agent_run(juice_agent_t *agent) {
 		}
 
 		if (FD_ISSET(agent->sock, &readfds)) {
-			mutex_lock(&agent->mutex);
+			mutex_unlock(&agent->mutex);
 			if (agent_recv(agent) < 0) {
-				mutex_unlock(&agent->mutex);
+				mutex_lock(&agent->mutex);
 				break;
 			}
-			mutex_unlock(&agent->mutex);
+			mutex_lock(&agent->mutex);
 		}
 	}
 	JLOG_DEBUG("Leaving agent thread");
