@@ -16,14 +16,21 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#ifndef JUICE_HMAC_H
-#define JUICE_HMAC_H
+#include "timestamp.h"
 
-#include <stdint.h>
-#include <stdlib.h>
-
-#define HMAC_SHA1_SIZE 20
-
-void hmac_sha1(const void *message, size_t size, const void *key, size_t key_size, void *digest);
-
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <time.h>
 #endif
+
+timestamp_t current_timestamp() {
+#ifdef _WIN32
+	return (timestamp_t)GetTickCount();
+#else // POSIX
+	struct timespec ts;
+	if (clock_gettime(CLOCK_REALTIME, &ts))
+		return 0;
+	return (timestamp_t)ts.tv_sec * 1000 + (timestamp_t)ts.tv_nsec / 1000000;
+#endif
+}

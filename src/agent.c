@@ -22,6 +22,7 @@
 #include "log.h"
 #include "random.h"
 #include "stun.h"
+#include "turn.h"
 #include "udp.h"
 
 #include <assert.h>
@@ -39,17 +40,6 @@
 #endif
 
 #define BUFFER_SIZE 4096
-
-static timestamp_t current_timestamp() {
-#ifdef _WIN32
-	return (timestamp_t)GetTickCount();
-#else // POSIX
-	struct timespec ts;
-	if (clock_gettime(CLOCK_REALTIME, &ts))
-		return 0;
-	return (timestamp_t)ts.tv_sec * 1000 + (timestamp_t)ts.tv_nsec / 1000000;
-#endif
-}
 
 static char *alloc_string_copy(const char *orig) {
 	if (!orig)
@@ -136,9 +126,7 @@ void agent_do_destroy(juice_agent_t *agent) {
 	// Free credentials in entries
 	for (int i = 0; i < agent->entries_count; ++i) {
 		agent_stun_entry_t *entry = agent->entries + i;
-		free(entry->credentials);
-		entry->credentials = NULL;
-		entry->password = NULL; // this is a pointer on config structure
+		free(entry->turn);
 	}
 
 	// Free strings in config
@@ -426,9 +414,15 @@ int agent_direct_send(juice_agent_t *agent, const addr_record_t *record, const c
 
 int agent_relay_send(juice_agent_t *agent, agent_stun_entry_t *entry, const addr_record_t *record,
                      const char *data, size_t size, int ds) {
-	// TODO: send only if not created already
-	if (agent_send_turn_create_permission_request(agent, entry, record))
-		return -1;
+	if (!entry->turn) {
+          JLOG_ERROR("Missing TURN state on relay entry");
+          return -1;
+    }
+
+	// Send CreatePermission if necessary
+	if(!turn_has_permission(entry->turn, record))
+		if (agent_send_turn_create_permission_request(agent, entry, record))
+			return -1;
 
 	// Send the data in a TURN Send indication
 	stun_message_t msg;
@@ -558,14 +552,14 @@ void agent_run(juice_agent_t *agent) {
 					entry->state = AGENT_STUN_ENTRY_STATE_PENDING;
 					entry->pair = NULL;
 					entry->record = *record;
-					entry->credentials = calloc(1, sizeof(stun_credentials_t));
-					if (!entry->credentials) {
-						JLOG_ERROR("calloc for credentials failed");
+					entry->turn = calloc(1, sizeof(turn_state_t));
+					if (!entry->turn) {
+						JLOG_ERROR("calloc for TURN state failed");
 						break;
 					}
-					snprintf(entry->credentials->username, STUN_MAX_USERNAME_LEN, "%s",
+					snprintf(entry->turn->credentials.username, STUN_MAX_USERNAME_LEN, "%s",
 					         turn_server->username);
-					entry->password = turn_server->password;
+					entry->turn->password = turn_server->password;
 					juice_random(entry->transaction_id, STUN_TRANSACTION_ID_SIZE);
 					++agent->entries_count;
 
@@ -952,8 +946,13 @@ int agent_verify_stun_binding(juice_agent_t *agent, void *buf, size_t size,
 	if (msg->msg_method != STUN_METHOD_BINDING)
 		return -1;
 
-	if (!msg->has_integrity)
+	if (msg->msg_class == STUN_CLASS_INDICATION || msg->msg_class == STUN_CLASS_RESP_ERROR)
 		return 0;
+
+	if (!msg->has_integrity) {
+		JLOG_WARN("Missing integrity in STUN message");
+		return -1;
+	}
 
 	// Check username (The USERNAME attribute is not present in responses)
 	if (msg->msg_class == STUN_CLASS_REQUEST) {
@@ -1005,21 +1004,50 @@ int agent_verify_stun_binding(juice_agent_t *agent, void *buf, size_t size,
 	return 0;
 }
 
-int agent_dispatch_stun(juice_agent_t *agent, void *buf, size_t size, const stun_message_t *msg,
+int agent_verify_credentials(juice_agent_t *agent, const agent_stun_entry_t *entry, void *buf,
+                             size_t size, stun_message_t *msg) {
+	(void)agent;
+
+	if (msg->msg_class == STUN_CLASS_INDICATION || msg->msg_class == STUN_CLASS_RESP_ERROR)
+		return 0;
+
+	if (!msg->has_integrity) {
+		JLOG_WARN("Missing integrity in STUN message");
+		return -1;
+	}
+	if (!entry->turn) {
+		JLOG_WARN("No credentials for entry");
+		return -1;
+	}
+	stun_credentials_t *credentials = &entry->turn->credentials;
+	const char *password = entry->turn->password;
+
+	// Prepare credentials
+	strcpy(msg->credentials.realm, credentials->realm);
+	strcpy(msg->credentials.nonce, credentials->nonce);
+	strcpy(msg->credentials.username, credentials->username);
+
+	// Check credentials
+	if (!stun_check_integrity(buf, size, msg, password)) {
+		JLOG_WARN("STUN integrity check failed");
+		return -1;
+	}
+	return 0;
+}
+
+int agent_dispatch_stun(juice_agent_t *agent, void *buf, size_t size, stun_message_t *msg,
                         const addr_record_t *source, const addr_record_t *relayed) {
-	if (msg->msg_method == STUN_METHOD_BINDING) {
+	if (msg->msg_method == STUN_METHOD_BINDING && msg->has_integrity) {
+		JLOG_VERBOSE("STUN message is from the remote peer");
+		// Verify the message now
 		if (agent_verify_stun_binding(agent, buf, size, msg)) {
 			JLOG_WARN("STUN message verification failed");
 			return -1;
 		}
-
-		if (msg->has_integrity) { // this is a check from the remote peer
-			JLOG_VERBOSE("STUN message is from the remote peer");
-			if (!relayed) {
-				if (agent_add_remote_reflexive_candidate(agent, ICE_CANDIDATE_TYPE_PEER_REFLEXIVE,
-				                                         msg->priority, source)) {
-					JLOG_WARN("Failed to add remote peer reflexive candidate from STUN message");
-				}
+		if (!relayed) {
+			if (agent_add_remote_reflexive_candidate(agent, ICE_CANDIDATE_TYPE_PEER_REFLEXIVE,
+			                                         msg->priority, source)) {
+				JLOG_WARN("Failed to add remote peer reflexive candidate from STUN message");
 			}
 		}
 	}
@@ -1054,21 +1082,26 @@ int agent_dispatch_stun(juice_agent_t *agent, void *buf, size_t size, const stun
 
 	switch (msg->msg_method) {
 	case STUN_METHOD_BINDING:
+		// Message was verified earlier, no need to re-verify
 		if (entry->type == AGENT_STUN_ENTRY_TYPE_CHECK && !msg->has_integrity &&
 		    (msg->msg_class == STUN_CLASS_REQUEST || msg->msg_class == STUN_CLASS_RESP_SUCCESS)) {
-			JLOG_WARN("STUN message from remote peer missing integrity");
+			JLOG_WARN("Missing integrity in STUN Binding message from remote peer, ignoring");
 			return -1;
 		}
 		return agent_process_stun_binding(agent, msg, entry, source, relayed);
 
 	case STUN_METHOD_ALLOCATE:
-		// TODO: verify integrity
-
+		if (agent_verify_credentials(agent, entry, buf, size, msg)) {
+			JLOG_WARN("Ignoring invalid TURN Allocate message");
+			return -1;
+		}
 		return agent_process_turn_allocate(agent, msg, entry);
 
 	case STUN_METHOD_CREATE_PERMISSION:
-		// TODO: verify integrity
-
+		if (agent_verify_credentials(agent, entry, buf, size, msg)) {
+			JLOG_WARN("Ignoring invalid TURN CreatePermission message");
+			return -1;
+		}
 		return agent_process_turn_create_permission(agent, msg, entry);
 
 	case STUN_METHOD_DATA:
@@ -1364,8 +1397,8 @@ int agent_process_turn_allocate(juice_agent_t *agent, const stun_message_t *msg,
 		JLOG_WARN("Received TURN Allocate message for a non-relay entry, ignoring");
 		return -1;
 	}
-	if (!entry->credentials) {
-		JLOG_ERROR("Missing credentials on relay entry");
+	if (!entry->turn) {
+		JLOG_ERROR("Missing TURN state on relay entry");
 		return -1;
 	}
 
@@ -1404,8 +1437,8 @@ int agent_process_turn_allocate(juice_agent_t *agent, const stun_message_t *msg,
 				return -1;
 			}
 			// Store realm and nonce
-			strcpy(entry->credentials->realm, msg->credentials.realm);
-			strcpy(entry->credentials->nonce, msg->credentials.nonce);
+			strcpy(entry->turn->credentials.realm, msg->credentials.realm);
+			strcpy(entry->turn->credentials.nonce, msg->credentials.nonce);
 
 			// Resend request
 			entry->state = AGENT_STUN_ENTRY_STATE_PENDING;
@@ -1420,7 +1453,7 @@ int agent_process_turn_allocate(juice_agent_t *agent, const stun_message_t *msg,
 		return -1;
 	}
 	default: {
-		JLOG_WARN("Got STUN unexpected allocate message, class=%u", (unsigned int)msg->msg_class);
+		JLOG_WARN("Got unexpected TURN Allocate message, class=%u", (unsigned int)msg->msg_class);
 		return -1;
 	}
 	}
@@ -1434,8 +1467,8 @@ int agent_send_turn_allocate_request(juice_agent_t *agent, const agent_stun_entr
 		JLOG_ERROR("Attempted to send a TURN Allocate request for a non-relay entry");
 		return -1;
 	}
-	if (!entry->credentials) {
-		JLOG_ERROR("Missing credentials on relay entry");
+	if (!entry->turn) {
+		JLOG_ERROR("Missing TURN state on relay entry");
 		return -1;
 	}
 
@@ -1443,17 +1476,19 @@ int agent_send_turn_allocate_request(juice_agent_t *agent, const agent_stun_entr
 	memset(&msg, 0, sizeof(msg));
 	msg.msg_class = STUN_CLASS_REQUEST;
 	msg.msg_method = STUN_METHOD_ALLOCATE;
+
 	memcpy(msg.transaction_id, entry->transaction_id, STUN_TRANSACTION_ID_SIZE);
 
 	msg.lifetime = 600; // 10 min
 	msg.requested_transport = true;
 	msg.dont_fragment = true;
+	const stun_credentials_t *credentials = &entry->turn->credentials;
 	const char *password = NULL;
-	if (*entry->credentials->realm != '\0' && *entry->credentials->nonce != '\0') {
-		strcpy(msg.credentials.username, entry->credentials->username);
-		strcpy(msg.credentials.realm, entry->credentials->realm);
-		strcpy(msg.credentials.nonce, entry->credentials->nonce);
-		password = entry->password;
+	if (*credentials->realm != '\0' && *credentials->nonce != '\0') {
+		strcpy(msg.credentials.username, credentials->username);
+		strcpy(msg.credentials.realm, credentials->realm);
+		strcpy(msg.credentials.nonce, credentials->nonce);
+		password = entry->turn->password;
 	}
 
 	char buffer[BUFFER_SIZE];
@@ -1471,15 +1506,20 @@ int agent_send_turn_allocate_request(juice_agent_t *agent, const agent_stun_entr
 
 int agent_process_turn_create_permission(juice_agent_t *agent, const stun_message_t *msg,
                                          agent_stun_entry_t *entry) {
+	(void)(agent);
 	if (entry->type != AGENT_STUN_ENTRY_TYPE_RELAY) {
 		JLOG_WARN("Received TURN CreatePermission message for a non-relay entry, ignoring");
+		return -1;
+	}
+	if (!entry->turn) {
+		JLOG_ERROR("Missing TURN state on relay entry");
 		return -1;
 	}
 
 	switch (msg->msg_class) {
 	case STUN_CLASS_RESP_SUCCESS: {
 		JLOG_DEBUG("Received TURN CreatePermission success response");
-		// TODO
+		turn_set_permission(entry->turn, entry->transaction_id);
 		break;
 	}
 	case STUN_CLASS_RESP_ERROR: {
@@ -1488,11 +1528,11 @@ int agent_process_turn_create_permission(juice_agent_t *agent, const stun_messag
 		break;
 	}
 	case STUN_CLASS_REQUEST: {
-		JLOG_WARN("Received unexpected TURN Allocate request, ignoring");
+		JLOG_WARN("Received unexpected TURN CreatePermission request, ignoring");
 		return -1;
 	}
 	default: {
-		JLOG_WARN("Got STUN unexpected allocate message, class=%u", (unsigned int)msg->msg_class);
+		JLOG_WARN("Got unexpected TURN CreatePermission message, class=%u", (unsigned int)msg->msg_class);
 		return -1;
 	}
 	}
@@ -1507,11 +1547,14 @@ int agent_send_turn_create_permission_request(juice_agent_t *agent, agent_stun_e
 		JLOG_ERROR("Attempted to send a TURN CreatePermission request for a non-relay entry");
 		return -1;
 	}
-	if (!entry->credentials) {
-		JLOG_ERROR("Missing credentials on relay entry");
+	if (!entry->turn) {
+		JLOG_ERROR("Missing TURN state on relay entry");
 		return -1;
 	}
-	if (*entry->credentials->realm == '\0' || *entry->credentials->nonce == '\0') {
+	const stun_credentials_t *credentials = &entry->turn->credentials;
+	const char *password = entry->turn->password;
+
+	if (*credentials->realm == '\0' || *credentials->nonce == '\0') {
 		JLOG_ERROR("Missing realm and nonce to send TURN CreatePermission request");
 		return -1;
 	}
@@ -1521,13 +1564,104 @@ int agent_send_turn_create_permission_request(juice_agent_t *agent, agent_stun_e
 	msg.msg_class = STUN_CLASS_REQUEST;
 	msg.msg_method = STUN_METHOD_CREATE_PERMISSION;
 	msg.peer = *record;
+
+	strcpy(msg.credentials.username, credentials->username);
+	strcpy(msg.credentials.realm, credentials->realm);
+	strcpy(msg.credentials.nonce, credentials->nonce);
+
+	// TODO
 	memcpy(msg.transaction_id, entry->transaction_id, STUN_TRANSACTION_ID_SIZE);
-	strcpy(msg.credentials.username, entry->credentials->username);
-	strcpy(msg.credentials.realm, entry->credentials->realm);
-	strcpy(msg.credentials.nonce, entry->credentials->nonce);
+	turn_set_transaction_id(entry->turn, record, msg.transaction_id);
 
 	char buffer[BUFFER_SIZE];
-	int size = stun_write(buffer, BUFFER_SIZE, &msg, entry->password);
+	int size = stun_write(buffer, BUFFER_SIZE, &msg, password);
+	if (size <= 0) {
+		JLOG_ERROR("STUN message write failed");
+		return -1;
+	}
+	if (agent_direct_send(agent, &entry->record, buffer, size, 0) < 0) {
+		JLOG_WARN("STUN message send failed, errno=%d", sockerrno);
+		return -1;
+	}
+	return 0;
+}
+
+int agent_process_turn_channel_bind(juice_agent_t *agent, const stun_message_t *msg,
+                                         agent_stun_entry_t *entry) {
+	(void) agent;
+	if (entry->type != AGENT_STUN_ENTRY_TYPE_RELAY) {
+		JLOG_WARN("Received TURN ChannelBind message for a non-relay entry, ignoring");
+		return -1;
+	}
+	if (!entry->turn) {
+		JLOG_ERROR("Missing TURN state on relay entry");
+		return -1;
+	}
+
+	switch (msg->msg_class) {
+	case STUN_CLASS_RESP_SUCCESS: {
+		JLOG_DEBUG("Received TURN ChannelBind success response");
+		turn_set_bind(entry->turn, entry->transaction_id);
+		break;
+	}
+	case STUN_CLASS_RESP_ERROR: {
+		JLOG_WARN("Got TURN ChannelBind error response, code=%u",
+		          (unsigned int)msg->error_code);
+		break;
+	}
+	case STUN_CLASS_REQUEST: {
+		JLOG_WARN("Received unexpected TURN ChannelBind request, ignoring");
+		return -1;
+	}
+	default: {
+		JLOG_WARN("Got STUN unexpected ChannelBind message, class=%u", (unsigned int)msg->msg_class);
+		return -1;
+	}
+	}
+	return 0;
+}
+
+int agent_send_turn_channel_bind_request(juice_agent_t *agent, agent_stun_entry_t *entry,
+                                              const addr_record_t *record) {
+	JLOG_VERBOSE("Sending TURN ChannelBind request");
+
+	if (entry->type != AGENT_STUN_ENTRY_TYPE_RELAY) {
+		JLOG_ERROR("Attempted to send a TURN ChannelBind request for a non-relay entry");
+		return -1;
+	}
+	if (!entry->turn) {
+		JLOG_ERROR("Missing TURN state on relay entry");
+		return -1;
+	}
+	const stun_credentials_t *credentials = &entry->turn->credentials;
+	const char *password = entry->turn->password;
+
+	if (*credentials->realm == '\0' || *credentials->nonce == '\0') {
+		JLOG_ERROR("Missing realm and nonce to send TURN ChannelBind request");
+		return -1;
+	}
+
+	// TODO
+	uint16_t channel;
+	turn_get_channel(entry->turn, record, &channel);
+
+	stun_message_t msg;
+	memset(&msg, 0, sizeof(msg));
+	msg.msg_class = STUN_CLASS_REQUEST;
+	msg.msg_method = STUN_METHOD_CHANNEL_BIND;
+	msg.channel_number = channel;
+	msg.peer = *record;
+
+	strcpy(msg.credentials.username, credentials->username);
+	strcpy(msg.credentials.realm, credentials->realm);
+	strcpy(msg.credentials.nonce, credentials->nonce);
+
+	// TODO
+	memcpy(msg.transaction_id, entry->transaction_id, STUN_TRANSACTION_ID_SIZE);
+	turn_set_transaction_id(entry->turn, record, msg.transaction_id);
+
+	char buffer[BUFFER_SIZE];
+	int size = stun_write(buffer, BUFFER_SIZE, &msg, password);
 	if (size <= 0) {
 		JLOG_ERROR("STUN message write failed");
 		return -1;

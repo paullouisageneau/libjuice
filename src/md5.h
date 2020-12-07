@@ -16,6 +16,9 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#ifndef JUICE_MD5_H
+#define JUICE_MD5_H
+
 #include <stdint.h>
 #include <stdlib.h>
 
@@ -23,3 +26,4 @@
 
 void hash_md5(const void *message, size_t size, void *digest);
 
+#endif

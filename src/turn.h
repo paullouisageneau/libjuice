@@ -19,7 +19,12 @@
 #ifndef JUICE_TURN_H
 #define JUICE_TURN_H
 
+#include "addr.h"
+#include "ice.h"
 #include "juice.h"
+#include "log.h"
+#include "stun.h"
+#include "timestamp.h"
 
 #include <stdint.h>
 
@@ -42,12 +47,39 @@
  * +-------------------------------+
  */
 
-struct channeldata_header {
+struct channel_data_header {
 	uint16_t channel_number;
 	uint16_t length;
 };
 
 #pragma pack(pop)
 
-#endif
+int turn_wrap_channel_data(char *buffer, size_t size, const char *data, size_t data_size,
+                           uint16_t channel);
 
+#define TURN_MAP_COUNT ICE_MAX_CANDIDATES_COUNT
+
+typedef struct turn_entry {
+	uint8_t transaction_id[STUN_TRANSACTION_ID_SIZE];
+	addr_record_t record;
+	timestamp_t permission_timestamp;
+	timestamp_t bind_timestamp;
+	uint16_t channel;
+} turn_entry_t;
+
+typedef struct turn_state {
+	turn_entry_t map[TURN_MAP_COUNT];
+	stun_credentials_t credentials;
+	const char *password;
+} turn_state_t;
+
+void turn_set_transaction_id(turn_state_t *state, const addr_record_t *record, const uint8_t *transaction_id);
+void turn_set_channel(turn_state_t *state, const addr_record_t *record, uint16_t channel);
+bool turn_get_channel(turn_state_t *state, const addr_record_t *record, uint16_t *channel);
+
+void turn_set_permission(turn_state_t *state, const uint8_t *transaction_id);
+bool turn_has_permission(turn_state_t *state, const addr_record_t *record);
+void turn_set_bind(turn_state_t *state, const uint8_t *transaction_id);
+bool turn_has_bind(turn_state_t *state, const addr_record_t *record);
+
+#endif

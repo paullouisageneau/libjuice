@@ -29,6 +29,8 @@
 #include "socket.h"
 #include "stun.h"
 #include "thread.h"
+#include "timestamp.h"
+#include "turn.h"
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -67,9 +69,6 @@
 #define MAX_CANDIDATE_PAIRS_COUNT (ICE_MAX_CANDIDATES_COUNT * (1 + MAX_RELAY_ENTRIES_COUNT))
 #define MAX_STUN_ENTRIES_COUNT (MAX_CANDIDATE_PAIRS_COUNT + MAX_STUN_SERVER_RECORDS_COUNT)
 
-typedef int64_t timestamp_t;
-typedef timestamp_t timediff_t;
-
 typedef enum agent_mode {
 	AGENT_MODE_UNKNOWN,
 	AGENT_MODE_CONTROLLED,
@@ -101,8 +100,10 @@ typedef struct agent_stun_entry {
 	timestamp_t next_transmission;
 	timediff_t retransmission_timeout;
 	int retransmissions;
-	stun_credentials_t *credentials; // for TURN
-	const char *password;            // for TURN
+
+	// TURN
+	turn_state_t *turn;
+
 #ifdef NO_ATOMICS
 	volatile bool armed;
 #else
@@ -170,7 +171,9 @@ void agent_change_state(juice_agent_t *agent, juice_state_t state);
 int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp);
 int agent_verify_stun_binding(juice_agent_t *agent, void *buf, size_t size,
                               const stun_message_t *msg);
-int agent_dispatch_stun(juice_agent_t *agent, void *buf, size_t size, const stun_message_t *msg,
+int agent_verify_credentials(juice_agent_t *agent, const agent_stun_entry_t *entry, void *buf,
+                             size_t size, stun_message_t *msg);
+int agent_dispatch_stun(juice_agent_t *agent, void *buf, size_t size, stun_message_t *msg,
                         const addr_record_t *source,
                         const addr_record_t *relayed); // relayed may be NULL
 int agent_process_stun_binding(juice_agent_t *agent, const stun_message_t *msg,
@@ -186,6 +189,10 @@ int agent_process_turn_create_permission(juice_agent_t *agent, const stun_messag
                                          agent_stun_entry_t *entry);
 int agent_send_turn_create_permission_request(juice_agent_t *agent, agent_stun_entry_t *entry,
                                               const addr_record_t *record);
+int agent_process_turn_channel_bind(juice_agent_t *agent, const stun_message_t *msg,
+                                    agent_stun_entry_t *entry);
+int agent_send_turn_channel_bind_request(juice_agent_t *agent, agent_stun_entry_t *entry,
+                                         const addr_record_t *record);
 int agent_process_turn_data(juice_agent_t *agent, const stun_message_t *msg,
                             agent_stun_entry_t *entry);
 
