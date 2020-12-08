@@ -74,7 +74,7 @@ int stun_write(void *buf, size_t size, const stun_message_t *msg, const char *pa
 	uint8_t *pos = begin;
 	uint8_t *end = begin + size;
 
-	JLOG_VERBOSE("Writing STUN message, class=%X, method=%X", (unsigned int)msg->msg_class,
+	JLOG_VERBOSE("Writing STUN message, class=0x%X, method=0x%X", (unsigned int)msg->msg_class,
 	             (unsigned int)msg->msg_method);
 
 	size_t len =
@@ -309,7 +309,7 @@ size_t stun_update_header_length(void *buf, size_t length) {
 }
 
 int stun_write_attr(void *buf, size_t size, uint16_t type, const void *value, size_t length) {
-	JLOG_VERBOSE("Writing STUN attribute type %X, length=%zu", (unsigned int)type, length);
+	JLOG_VERBOSE("Writing STUN attribute type 0x%X, length=%zu", (unsigned int)type, length);
 
 	if (size < sizeof(struct stun_attr) + length)
 		return -1;
@@ -419,7 +419,7 @@ int stun_read(void *data, size_t size, stun_message_t *msg) {
 	msg->msg_method = (stun_method_t)(type & ~STUN_CLASS_MASK);
 	memcpy(msg->transaction_id, header->transaction_id, STUN_TRANSACTION_ID_SIZE);
 
-	JLOG_VERBOSE("Reading STUN message, class=%X, method=%X", (unsigned int)msg->msg_class,
+	JLOG_VERBOSE("Reading STUN message, class=0x%X, method=0x%X", (unsigned int)msg->msg_class,
 	             (unsigned int)msg->msg_method);
 
 	uint8_t *begin = data;
@@ -455,7 +455,7 @@ int stun_read_attr(const void *data, size_t size, stun_message_t *msg, uint8_t *
 	const struct stun_attr *attr = data;
 	stun_attr_type_t type = (stun_attr_type_t)ntohs(attr->type);
 	size_t length = ntohs(attr->length);
-	JLOG_VERBOSE("Reading attribute %X, length=%zu", (unsigned int)type, length);
+	JLOG_VERBOSE("Reading attribute 0x%X, length=%zu", (unsigned int)type, length);
 	if (size < sizeof(struct stun_attr) + length) {
 		JLOG_DEBUG("STUN attribute length invalid, length=%zu, available=%zu", length,
 		           size - sizeof(struct stun_attr));
@@ -465,7 +465,7 @@ int stun_read_attr(const void *data, size_t size, stun_message_t *msg, uint8_t *
 	// RFC5359: With the exception of the FINGERPRINT attribute, which appears after
 	// MESSAGE-INTEGRITY, agents MUST ignore all other attributes that follow MESSAGE-INTEGRITY.
 	if (msg->has_integrity && type != STUN_ATTR_FINGERPRINT) {
-		JLOG_DEBUG("Ignoring STUN attribute %X after message integrity", (unsigned int)type);
+		JLOG_DEBUG("Ignoring STUN attribute 0x%X after message integrity", (unsigned int)type);
 		while (length & 0x03)
 			++length; // attributes are aligned on 4 bytes
 		return (int)(sizeof(struct stun_attr) + length);
@@ -694,7 +694,7 @@ int stun_read_attr(const void *data, size_t size, stun_message_t *msg, uint8_t *
 	}
 	default: {
 		// Ignore
-		JLOG_DEBUG("Ignoring unknown STUN attribute type %X", (unsigned int)type);
+		JLOG_DEBUG("Ignoring unknown STUN attribute type 0x%X", (unsigned int)type);
 		break;
 	}
 	}
@@ -744,7 +744,7 @@ int stun_read_value_mapped_address(const void *data, size_t size, addr_record_t 
 		break;
 	}
 	default: {
-		JLOG_DEBUG("Unknown STUN address family %X", (unsigned int)family);
+		JLOG_DEBUG("Unknown STUN address family 0x%X", (unsigned int)family);
 		len = size;
 		break;
 	}

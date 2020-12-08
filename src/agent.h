@@ -51,11 +51,12 @@
 // use a value smaller than 15 seconds.
 #define STUN_KEEPALIVE_PERIOD 15000 // msecs
 
+// TURN refresh period
+#define TURN_LIFETIME 600000                        // msecs, 10 min
+#define TURN_REFRESH_PERIOD (TURN_LIFETIME - 60000) // msecs, lifetime - 1 min
+
 // ICE trickling timeout
 #define ICE_FAIL_TIMEOUT 30000 // msecs
-
-// TURN refresh period
-#define TURN_REFRESH_PERIOD 300000 // msecs, 5 min
 
 // Max STUN and TURN server entries
 #define MAX_SERVER_ENTRIES_COUNT 2 // max STUN server entries
@@ -103,6 +104,7 @@ typedef struct agent_stun_entry {
 
 	// TURN
 	turn_state_t *turn;
+	struct agent_stun_entry *relay_entry;
 
 #ifdef NO_ATOMICS
 	volatile bool armed;
@@ -158,6 +160,8 @@ int agent_direct_send(juice_agent_t *agent, const addr_record_t *record, const c
                       size_t size, int ds);
 int agent_relay_send(juice_agent_t *agent, agent_stun_entry_t *entry, const addr_record_t *record,
                      const char *data, size_t size, int ds);
+int agent_channel_send(juice_agent_t *agent, agent_stun_entry_t *entry, const addr_record_t *record,
+                       const char *data, size_t size, int ds);
 juice_state_t agent_get_state(juice_agent_t *agent);
 int agent_get_selected_candidate_pair(juice_agent_t *agent, ice_candidate_t *local,
                                       ice_candidate_t *remote);
@@ -184,17 +188,20 @@ int agent_send_stun_binding(juice_agent_t *agent, const agent_stun_entry_t *entr
                             const uint8_t *transaction_id, const addr_record_t *mapped);
 int agent_process_turn_allocate(juice_agent_t *agent, const stun_message_t *msg,
                                 agent_stun_entry_t *entry);
-int agent_send_turn_allocate_request(juice_agent_t *agent, const agent_stun_entry_t *entry);
+int agent_send_turn_allocate_request(juice_agent_t *agent, const agent_stun_entry_t *entry,
+                                     stun_method_t method);
 int agent_process_turn_create_permission(juice_agent_t *agent, const stun_message_t *msg,
                                          agent_stun_entry_t *entry);
 int agent_send_turn_create_permission_request(juice_agent_t *agent, agent_stun_entry_t *entry,
-                                              const addr_record_t *record);
+                                              const addr_record_t *record, int ds);
 int agent_process_turn_channel_bind(juice_agent_t *agent, const stun_message_t *msg,
                                     agent_stun_entry_t *entry);
 int agent_send_turn_channel_bind_request(juice_agent_t *agent, agent_stun_entry_t *entry,
-                                         const addr_record_t *record);
+                                         const addr_record_t *record, int ds);
 int agent_process_turn_data(juice_agent_t *agent, const stun_message_t *msg,
                             agent_stun_entry_t *entry);
+int agent_process_channel_data(juice_agent_t *agent, agent_stun_entry_t *entry, char *buffer,
+                               size_t len);
 
 int agent_add_local_relayed_candidate(juice_agent_t *agent, const addr_record_t *record);
 int agent_add_local_reflexive_candidate(juice_agent_t *agent, ice_candidate_type_t type,
