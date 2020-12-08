@@ -48,15 +48,15 @@ int main(int argc, char **argv) {
 		return -1;
 	}
 
-	printf("\nRunning TURN connectivity test...\n");
-	if (test_turn()) {
-		fprintf(stderr, "TURN connectivity test failed\n");
-		return -1;
-	}
-
 	printf("\nRunning connectivity test...\n");
 	if (test_connectivity()) {
 		fprintf(stderr, "Connectivity test failed\n");
+		return -1;
+	}
+
+	printf("\nRunning TURN connectivity test...\n");
+	if (test_turn()) {
+		fprintf(stderr, "TURN connectivity test failed\n");
 		return -1;
 	}
 
