@@ -50,22 +50,22 @@ static size_t align32(size_t len) {
 #define MAX_HMAC_KEY_LEN                                                                           \
 	(STUN_MAX_PASSWORD_LEN >= HASH_MD5_SIZE ? STUN_MAX_PASSWORD_LEN : HASH_MD5_SIZE)
 
+#define MAX_HMAC_INPUT_LEN (STUN_MAX_USERNAME_LEN + STUN_MAX_REALM_LEN + STUN_MAX_PASSWORD_LEN + 3)
+
 static size_t generate_hmac_key(const stun_message_t *msg, const char *password, void *key) {
 	if (*msg->credentials.realm != '\0') {
 		// long-term credentials
-		const size_t max_input_len =
-		    STUN_MAX_USERNAME_LEN + STUN_MAX_REALM_LEN + STUN_MAX_PASSWORD_LEN + 3;
-		char input[max_input_len];
-		size_t input_len = snprintf(input, max_input_len, "%s:%s:%s", msg->credentials.username,
-		                            msg->credentials.realm, password ? password : "");
-		// TODO: check input_len
+		char input[MAX_HMAC_INPUT_LEN];
+		int input_len = snprintf(input, MAX_HMAC_INPUT_LEN, "%s:%s:%s", msg->credentials.username,
+		                         msg->credentials.realm, password ? password : "");
+		if (input_len < 0)
+			return 0;
 		hash_md5(input, input_len, key);
 		return HASH_MD5_SIZE;
 	} else {
 		// short-term credentials
-		size_t key_len = snprintf((char *)key, MAX_HMAC_KEY_LEN, "%s", password ? password : "");
-		// TODO: check key_len
-		return key_len;
+		int key_len = snprintf((char *)key, MAX_HMAC_KEY_LEN, "%s", password ? password : "");
+		return key_len < 0 ? 0 : key_len;
 	}
 }
 

@@ -40,6 +40,7 @@
 #endif
 
 #define BUFFER_SIZE 4096
+#define DEFAULT_MAX_RECORDS_COUNT 8
 
 static char *alloc_string_copy(const char *orig) {
 	if (!orig)
@@ -545,13 +546,12 @@ void agent_run(juice_agent_t *agent) {
 			char service[8];
 			snprintf(service, 8, "%hu", turn_server->port);
 
-			const int max_records_count = 8;
-			addr_record_t records[max_records_count];
+			addr_record_t records[DEFAULT_MAX_RECORDS_COUNT];
 			int records_count =
-			    addr_resolve(turn_server->host, service, records, max_records_count);
+			    addr_resolve(turn_server->host, service, records, DEFAULT_MAX_RECORDS_COUNT);
 			if (records_count > 0) {
-				if (records_count > max_records_count)
-					records_count = max_records_count;
+				if (records_count > DEFAULT_MAX_RECORDS_COUNT)
+					records_count = DEFAULT_MAX_RECORDS_COUNT;
 
 				addr_record_t *record = NULL;
 				for (int j = 0; j < records_count; ++j) {
