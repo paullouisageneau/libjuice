@@ -1469,11 +1469,29 @@ int agent_process_turn_allocate(juice_agent_t *agent, const stun_message_t *msg,
 		break;
 	}
 	case STUN_CLASS_RESP_ERROR: {
-		if (msg->error_code == 401       // Unauthorized
-		    || msg->error_code == 438) { // Stale Nonce
-			JLOG_DEBUG("Got TURN %s %s response",
-			           msg->msg_method == STUN_METHOD_ALLOCATE ? "Allocate" : "Refresh",
-			           msg->error_code == 401 ? "Unauthorized" : "Stale Nonce");
+		if (msg->error_code == 401) { // Unauthorized
+			JLOG_DEBUG("Got TURN %s Unauthorized response",
+			           msg->msg_method == STUN_METHOD_ALLOCATE ? "Allocate" : "Refresh");
+			if(*entry->turn->credentials.realm != '\0') {
+				JLOG_ERROR("TURN authentication failed");
+				entry->state = AGENT_STUN_ENTRY_STATE_FAILED;
+				return -1;
+			}
+			if (*msg->credentials.realm == '\0' || *msg->credentials.nonce == '\0') {
+				JLOG_ERROR("Expected realm and nonce in TURN error response");
+				entry->state = AGENT_STUN_ENTRY_STATE_FAILED;
+				return -1;
+			}
+			// Store realm and nonce
+			strcpy(entry->turn->credentials.realm, msg->credentials.realm);
+			strcpy(entry->turn->credentials.nonce, msg->credentials.nonce);
+
+			// Resend request when possible
+			agent_arm_transmission(agent, entry, 0);
+		}
+		else if (msg->error_code == 438) { // Stale Nonce
+			JLOG_DEBUG("Got TURN %s Stale Nonce response",
+			           msg->msg_method == STUN_METHOD_ALLOCATE ? "Allocate" : "Refresh");
 			if (*msg->credentials.realm == '\0' || *msg->credentials.nonce == '\0') {
 				JLOG_ERROR("Expected realm and nonce in TURN error response");
 				entry->state = AGENT_STUN_ENTRY_STATE_FAILED;
