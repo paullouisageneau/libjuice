@@ -50,18 +50,21 @@ static void on_recv2(juice_agent_t *agent, const char *data, size_t size, void *
 int test_turn() {
 	juice_set_log_level(JUICE_LOG_LEVEL_DEBUG);
 
+	// Agent 1: Create agent
+	juice_config_t config1;
+	memset(&config1, 0, sizeof(config1));
+
+	// Example TURN server
+	// Please do not use outside of libjuice tests
 	juice_turn_server_t turn_server;
 	memset(&turn_server, 0, sizeof(turn_server));
 	turn_server.host = "stun.ageneau.net";
 	turn_server.port = 3478;
 	turn_server.username = "juice_test";
 	turn_server.password = "28245150316902";
-
-	// Agent 1: Create agent
-	juice_config_t config1;
-	memset(&config1, 0, sizeof(config1));
-	config1.turn_servers = &turn_server; // Set a TURN server
+	config1.turn_servers = &turn_server;
 	config1.turn_servers_count = 1;
+
 	config1.cb_state_changed = on_state_changed1;
 	config1.cb_candidate = on_candidate1;
 	config1.cb_gathering_done = on_gathering_done1;
@@ -73,13 +76,17 @@ int test_turn() {
 	// Agent 2: Create agent
 	juice_config_t config2;
 	memset(&config2, 0, sizeof(config2));
-	config2.turn_servers = &turn_server; // Set the same TURN server
+
+	// Use the same TURN server
+	config2.turn_servers = &turn_server;
 	config2.turn_servers_count = 1;
+
 	config2.cb_state_changed = on_state_changed2;
 	config2.cb_candidate = on_candidate2;
 	config2.cb_gathering_done = on_gathering_done2;
 	config2.cb_recv = on_recv2;
 	config2.user_ptr = NULL;
+
 	agent2 = juice_create(&config2);
 
 	// Agent 1: Generate local description

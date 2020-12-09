@@ -44,20 +44,25 @@ static void on_gathering_done(juice_agent_t *agent, void *user_ptr);
 int test_server() {
 	juice_set_log_level(JUICE_LOG_LEVEL_DEBUG);
 
+	// Create agent
+	juice_config_t config;
+	memset(&config, 0, sizeof(config));
+
+	// Example STUN server
+	config.stun_server_host = "stun.stunprotocol.org";
+	config.stun_server_port = 3478;
+
+	// Example TURN server
+	// Please do not use outside of libjuice tests
 	juice_turn_server_t turn_server;
 	memset(&turn_server, 0, sizeof(turn_server));
 	turn_server.host = "stun.ageneau.net";
 	turn_server.port = 3478;
 	turn_server.username = "juice_test";
 	turn_server.password = "28245150316902";
-
-	// Create agent
-	juice_config_t config;
-	memset(&config, 0, sizeof(config));
-	config.stun_server_host = "stun.l.google.com"; // Set a STUN server
-	config.stun_server_port = 19302;
-	config.turn_servers = &turn_server; // Set a TURN server
+	config.turn_servers = &turn_server;
 	config.turn_servers_count = 1;
+
 	config.cb_state_changed = on_state_changed;
 	config.cb_candidate = on_candidate;
 	config.cb_gathering_done = on_gathering_done;
