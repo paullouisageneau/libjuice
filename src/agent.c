@@ -498,40 +498,6 @@ void agent_run(juice_agent_t *agent) {
 	mutex_lock(&agent->mutex);
 	agent_change_state(agent, JUICE_STATE_CONNECTING);
 
-	// STUN server resolution
-	if (agent->config.stun_server_host) {
-		if (!agent->config.stun_server_port)
-			agent->config.stun_server_port = 3478; // default STUN port
-
-		char service[8];
-		snprintf(service, 8, "%hu", agent->config.stun_server_port);
-		addr_record_t records[MAX_STUN_SERVER_RECORDS_COUNT];
-		int records_count = addr_resolve(agent->config.stun_server_host, service, records,
-		                                 MAX_STUN_SERVER_RECORDS_COUNT);
-		if (records_count > 0) {
-			if (records_count > MAX_STUN_SERVER_RECORDS_COUNT)
-				records_count = MAX_STUN_SERVER_RECORDS_COUNT;
-
-			JLOG_DEBUG("Sending STUN Binding request to %d server addresses", records_count);
-			for (int i = 0; i < records_count; ++i) {
-				if (i >= MAX_SERVER_ENTRIES_COUNT)
-					break;
-				JLOG_VERBOSE("Registering STUN entry %d for server request", agent->entries_count);
-				agent_stun_entry_t *entry = agent->entries + agent->entries_count;
-				entry->type = AGENT_STUN_ENTRY_TYPE_SERVER;
-				entry->state = AGENT_STUN_ENTRY_STATE_PENDING;
-				entry->pair = NULL;
-				entry->record = records[i];
-				juice_random(entry->transaction_id, STUN_TRANSACTION_ID_SIZE);
-				++agent->entries_count;
-
-				agent_arm_transmission(agent, entry, STUN_PACING_TIME * i);
-			}
-		} else {
-			JLOG_ERROR("STUN server address resolution failed");
-		}
-	}
-
 	// TURN server resolution
 	if (agent->config.turn_servers_count > 0) {
 		unsigned int count = 0;
@@ -552,6 +518,8 @@ void agent_run(juice_agent_t *agent) {
 			if (records_count > 0) {
 				if (records_count > DEFAULT_MAX_RECORDS_COUNT)
 					records_count = DEFAULT_MAX_RECORDS_COUNT;
+
+				JLOG_INFO("Using TURN server %s:%s", turn_server->host, service);
 
 				addr_record_t *record = NULL;
 				for (int j = 0; j < records_count; ++j) {
@@ -590,6 +558,42 @@ void agent_run(juice_agent_t *agent) {
 			} else {
 				JLOG_ERROR("TURN address resolution failed");
 			}
+		}
+	}
+
+	// STUN server resolution
+	// The entry is added after so the TURN server address will be matched in priority
+	if (agent->config.stun_server_host) {
+		if (!agent->config.stun_server_port)
+			agent->config.stun_server_port = 3478; // default STUN port
+
+		char service[8];
+		snprintf(service, 8, "%hu", agent->config.stun_server_port);
+		addr_record_t records[MAX_STUN_SERVER_RECORDS_COUNT];
+		int records_count = addr_resolve(agent->config.stun_server_host, service, records,
+		                                 MAX_STUN_SERVER_RECORDS_COUNT);
+		if (records_count > 0) {
+			if (records_count > MAX_STUN_SERVER_RECORDS_COUNT)
+				records_count = MAX_STUN_SERVER_RECORDS_COUNT;
+
+			JLOG_INFO("Using STUN server %s:%s", agent->config.stun_server_host, service);
+
+			for (int i = 0; i < records_count; ++i) {
+				if (i >= MAX_SERVER_ENTRIES_COUNT)
+					break;
+				JLOG_VERBOSE("Registering STUN entry %d for server request", agent->entries_count);
+				agent_stun_entry_t *entry = agent->entries + agent->entries_count;
+				entry->type = AGENT_STUN_ENTRY_TYPE_SERVER;
+				entry->state = AGENT_STUN_ENTRY_STATE_PENDING;
+				entry->pair = NULL;
+				entry->record = records[i];
+				juice_random(entry->transaction_id, STUN_TRANSACTION_ID_SIZE);
+				++agent->entries_count;
+
+				agent_arm_transmission(agent, entry, STUN_PACING_TIME * i);
+			}
+		} else {
+			JLOG_ERROR("STUN server address resolution failed");
 		}
 	}
 
@@ -794,7 +798,7 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 			if (entry->pair)
 				entry->pair->state = ICE_CANDIDATE_PAIR_STATE_FAILED;
 
-			if (entry->type == AGENT_STUN_ENTRY_TYPE_SERVER)
+			if (entry->type != AGENT_STUN_ENTRY_TYPE_CHECK)
 				agent_update_gathering_done(agent);
 		}
 		// STUN keepalives
@@ -1445,6 +1449,21 @@ int agent_process_turn_allocate(juice_agent_t *agent, const stun_message_t *msg,
 		JLOG_DEBUG("Received TURN %s success response",
 		           msg->msg_method == STUN_METHOD_ALLOCATE ? "Allocate" : "Refresh");
 
+		// There is nothing to do if this was a refresh
+		if(msg->msg_method == STUN_METHOD_REFRESH)
+			break;
+
+		if (entry->state != AGENT_STUN_ENTRY_STATE_SUCCEEDED_KEEPALIVE) {
+			entry->state = AGENT_STUN_ENTRY_STATE_SUCCEEDED;
+			entry->next_transmission = 0;
+		}
+
+		if (!agent->selected_pair || !agent->selected_pair->nominated) {
+			// We want to send keepalives now
+			entry->state = AGENT_STUN_ENTRY_STATE_SUCCEEDED_KEEPALIVE;
+			agent_arm_transmission(agent, entry, STUN_KEEPALIVE_PERIOD);
+		}
+
 		if (msg->mapped.len) {
 			JLOG_VERBOSE("Response has mapped address");
 			if (agent_add_local_reflexive_candidate(agent, ICE_CANDIDATE_TYPE_SERVER_REFLEXIVE,
@@ -1452,6 +1471,7 @@ int agent_process_turn_allocate(juice_agent_t *agent, const stun_message_t *msg,
 				JLOG_WARN("Failed to add local peer reflexive candidate from TURN mapped address");
 			}
 		}
+
 		if (!msg->relayed.len) {
 			JLOG_ERROR("Expected relayed address in TURN %s response",
 			           msg->msg_method == STUN_METHOD_ALLOCATE ? "Allocate" : "Refresh");
@@ -1465,7 +1485,7 @@ int agent_process_turn_allocate(juice_agent_t *agent, const stun_message_t *msg,
 			return -1;
 		}
 
-		entry->state = AGENT_STUN_ENTRY_STATE_SUCCEEDED;
+		agent_update_gathering_done(agent);
 		break;
 	}
 	case STUN_CLASS_RESP_ERROR: {
@@ -2049,9 +2069,9 @@ void agent_update_gathering_done(juice_agent_t *agent) {
 	JLOG_VERBOSE("Updating gathering status");
 	for (int i = 0; i < agent->entries_count; ++i) {
 		agent_stun_entry_t *entry = agent->entries + i;
-		if (entry->type == AGENT_STUN_ENTRY_TYPE_SERVER &&
+		if (entry->type != AGENT_STUN_ENTRY_TYPE_CHECK &&
 		    entry->state == AGENT_STUN_ENTRY_STATE_PENDING) {
-			JLOG_VERBOSE("STUN server entry %d is still pending", i);
+			JLOG_VERBOSE("STUN server or relay entry %d is still pending", i);
 			return;
 		}
 	}
