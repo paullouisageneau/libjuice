@@ -37,3 +37,17 @@ void hmac_sha1(const void *message, size_t size, const void *key, size_t key_siz
 	picohash_final(&ctx, digest);
 #endif
 }
+
+void hmac_sha256(const void *message, size_t size, const void *key, size_t key_size, void *digest) {
+#if USE_NETTLE
+	struct hmac_sha256_ctx ctx;
+	hmac_sha256_set_key(&ctx, key_size, key);
+	hmac_sha256_update(&ctx, size, message);
+	hmac_sha256_digest(&ctx, HMAC_SHA256_SIZE, digest);
+#else
+	picohash_ctx_t ctx;
+	picohash_init_hmac(&ctx, picohash_init_sha256, key, key_size);
+	picohash_update(&ctx, message, size);
+	picohash_final(&ctx, digest);
+#endif
+}

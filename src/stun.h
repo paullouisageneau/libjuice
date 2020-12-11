@@ -31,7 +31,7 @@
 #pragma pack(push, 1)
 /*
  * STUN message header (20 bytes)
- * See https://tools.ietf.org/html/rfc5389#section-6
+ * See https://tools.ietf.org/html/rfc8489#section-5
  *
  *  0                   1                   2                   3
  *  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
@@ -117,6 +117,9 @@ typedef enum stun_attr_type {
 	STUN_ATTR_UNKNOWN_ATTRIBUTES = 0x000A,
 	STUN_ATTR_REALM = 0x0014,
 	STUN_ATTR_NONCE = 0x0015,
+	STUN_ATTR_MESSAGE_INTEGRITY_SHA256 = 0x001C,
+	STUN_ATTR_PASSWORD_ALGORITHM = 0x001D,
+	STUN_ATTR_USERHASH = 0x001E,
 	STUN_ATTR_XOR_MAPPED_ADDRESS = 0x0020,
 	STUN_ATTR_PRIORITY = 0x0024,
 	STUN_ATTR_USE_CANDIDATE = 0x0025,
@@ -241,6 +244,10 @@ struct stun_value_requested_transport {
 // The value of SOFTWARE is variable length. It MUST be a UTF-8 [RFC3629] encoded sequence of less
 // than 128 characters (which can be as long as 763 bytes)
 #define STUN_MAX_SOFTWARE_LEN 763 + 1
+
+// The reason phrase MUST be a UTF-8-encoded [RFC3629] sequence of fewer than 128 characters (which
+// can be as long as 509 bytes when encoding them or 763 bytes when decoding them).
+#define STUN_MAX_ERROR_REASON_LEN 763 + 1
 
 #define STUN_MAX_PASSWORD_LEN STUN_MAX_USERNAME_LEN
 

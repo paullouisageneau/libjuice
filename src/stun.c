@@ -253,11 +253,15 @@ int stun_write(void *buf, size_t size, const stun_message_t *msg, const char *pa
 		pos += len;
 	}
 	if (password) {
+		// According to RFC 8489, the agent must include both MESSAGE-INTEGRITY and
+		// MESSAGE-INTEGRITY-SHA256. However, this make older servers fail with error 420 Unknown
+		// Attribute. Therefore, only MESSAGE-INTEGRITY is included in the message for
+		// compatibility.
 		size_t tmp_length = pos - attr_begin + STUN_ATTR_SIZE + HMAC_SHA1_SIZE;
 		stun_update_header_length(begin, tmp_length);
 		uint8_t key[MAX_HMAC_KEY_LEN];
-		uint8_t hmac[HMAC_SHA1_SIZE];
 		size_t key_len = generate_hmac_key(msg, password, key);
+		uint8_t hmac[HMAC_SHA1_SIZE];
 		hmac_sha1(begin, pos - begin, key, key_len, hmac);
 		len = stun_write_attr(pos, end - pos, STUN_ATTR_MESSAGE_INTEGRITY, hmac, HMAC_SHA1_SIZE);
 		if (len <= 0)
@@ -369,7 +373,9 @@ int stun_write_value_mapped_address(void *buf, size_t size, const struct sockadd
 }
 
 bool is_stun_datagram(const void *data, size_t size) {
-	// RFC 5389: The most significant 2 bits of every STUN message MUST be zeroes.
+	// RFC 8489: The most significant 2 bits of every STUN message MUST be zeroes. This can be used
+	// to differentiate STUN packets from other protocols when STUN is multiplexed with other
+	// protocols on the same port.
 	if (!size || *((uint8_t *)data) & 0xC0) {
 		JLOG_VERBOSE("Not a STUN message: first 2 bits are not zeroes");
 		return false;
@@ -386,9 +392,10 @@ bool is_stun_datagram(const void *data, size_t size) {
 		return false;
 	}
 
-	// RFC 5389: The message length MUST contain the size, in bytes, of the message not including
-	// the 20-byte STUN header. Since all STUN attributes are padded to a multiple of 4 bytes, the
-	// last 2 bits of this field are always zero.
+	// RFC 8489: The message length MUST contain the size of the message in bytes, not including the
+	// 20-byte STUN header.  Since all STUN attributes are padded to a multiple of 4 bytes, the last
+	// 2 bits of this field are always zero.  This provides another way to distinguish STUN packets
+	// from packets of other protocols.
 	const size_t length = ntohs(header->length);
 	if (length & 0x03) {
 		JLOG_VERBOSE("Not a STUN message: invalid length %zu not multiple of 4", length);
@@ -441,7 +448,8 @@ int stun_read(void *data, size_t size, stun_message_t *msg) {
 
 int stun_read_attr(const void *data, size_t size, stun_message_t *msg, uint8_t *begin,
                    uint8_t *attr_begin) {
-	// RFC 5389: When present, the FINGERPRINT attribute MUST be the last attribute in the message.
+	// RFC 8489: When present, the FINGERPRINT attribute MUST be the last attribute in the message
+	// and thus will appear after MESSAGE-INTEGRITY and MESSAGE-INTEGRITY-SHA256.
 	if (msg->has_fingerprint) {
 		JLOG_DEBUG("Invalid STUN attribute after fingerprint");
 		return -1;
@@ -453,8 +461,8 @@ int stun_read_attr(const void *data, size_t size, stun_message_t *msg, uint8_t *
 	}
 
 	const struct stun_attr *attr = data;
-	stun_attr_type_t type = (stun_attr_type_t)ntohs(attr->type);
 	size_t length = ntohs(attr->length);
+	stun_attr_type_t type = (stun_attr_type_t)ntohs(attr->type);
 	JLOG_VERBOSE("Reading attribute 0x%X, length=%zu", (unsigned int)type, length);
 	if (size < sizeof(struct stun_attr) + length) {
 		JLOG_DEBUG("STUN attribute length invalid, length=%zu, available=%zu", length,
@@ -462,8 +470,8 @@ int stun_read_attr(const void *data, size_t size, stun_message_t *msg, uint8_t *
 		return -1;
 	}
 
-	// RFC5359: With the exception of the FINGERPRINT attribute, which appears after
-	// MESSAGE-INTEGRITY, agents MUST ignore all other attributes that follow MESSAGE-INTEGRITY.
+	// RFC 8489: Note that agents MUST ignore all attributes that follow MESSAGE-INTEGRITY, with the
+	// exception of the MESSAGE-INTEGRITY-SHA256 and FINGERPRINT attributes.
 	if (msg->has_integrity && type != STUN_ATTR_FINGERPRINT) {
 		JLOG_DEBUG("Ignoring STUN attribute 0x%X after message integrity", (unsigned int)type);
 		while (length & 0x03)
@@ -497,7 +505,21 @@ int stun_read_attr(const void *data, size_t size, stun_message_t *msg, uint8_t *
 		const struct stun_value_error_code *error =
 		    (const struct stun_value_error_code *)attr->value;
 		msg->error_code = (error->code_class & 0x07) * 100 + error->code_number;
-		JLOG_VERBOSE("Got STUN error code %u", msg->error_code);
+
+		char buffer[STUN_MAX_ERROR_REASON_LEN];
+		memcpy(buffer, (const char *)error->reason, length);
+		buffer[length] = '\0';
+
+		JLOG_INFO("Got STUN error code %u, reason \"%s\"", msg->error_code, buffer);
+		break;
+	}
+	case STUN_ATTR_UNKNOWN_ATTRIBUTES: {
+		JLOG_VERBOSE("Reading STUN unknown attributes");
+		const uint16_t *attributes = (const uint16_t *)attr->value;
+		for (int i = 0; i < (int)ntohs(attr->length) / 2; ++i) {
+			stun_attr_type_t type = (stun_attr_type_t)ntohs(attributes[i]);
+			JLOG_INFO("Got unknown attribute response for attribute 0x%X", (unsigned int)type);
+		}
 		break;
 	}
 	case STUN_ATTR_USERNAME: {
@@ -515,6 +537,15 @@ int stun_read_attr(const void *data, size_t size, stun_message_t *msg, uint8_t *
 		JLOG_VERBOSE("Reading message integrity");
 		if (length != HMAC_SHA1_SIZE) {
 			JLOG_DEBUG("STUN message integrity length invalid, length=%zu", length);
+			return -1;
+		}
+		msg->has_integrity = true;
+		break;
+	}
+	case STUN_ATTR_MESSAGE_INTEGRITY_SHA256: {
+		JLOG_VERBOSE("Reading message integrity SHA256");
+		if (length != HMAC_SHA256_SIZE) {
+			JLOG_DEBUG("STUN message integrity SHA256 length invalid, length=%zu", length);
 			return -1;
 		}
 		msg->has_integrity = true;
@@ -756,27 +787,72 @@ bool stun_check_integrity(void *buf, size_t size, const stun_message_t *msg, con
 	if (!msg->has_integrity)
 		return false;
 
-	uint8_t *begin = buf;
-	uint8_t *attr_begin = begin + sizeof(struct stun_header);
-	uint8_t *end = begin + size - (STUN_ATTR_SIZE + HMAC_SHA1_SIZE) -
-	               (msg->has_fingerprint ? STUN_ATTR_SIZE + 4 : 0);
-
-	if (size < sizeof(struct stun_header))
+	const struct stun_header *header = buf;
+	const size_t length = ntohs(header->length);
+	if (size < sizeof(struct stun_header) + length)
 		return false;
 
-	size_t tmp_length = end - attr_begin + STUN_ATTR_SIZE + HMAC_SHA1_SIZE;
-	size_t prev_length = stun_update_header_length(begin, tmp_length);
 	uint8_t key[MAX_HMAC_KEY_LEN];
-	uint8_t hmac[HMAC_SHA1_SIZE];
 	size_t key_len = generate_hmac_key(msg, password, key);
-	hmac_sha1(begin, end - begin, key, key_len, hmac);
-	stun_update_header_length(begin, prev_length);
 
-	const uint8_t *expected_hmac = end + STUN_ATTR_SIZE;
-	if (memcmp(hmac, expected_hmac, HMAC_SHA1_SIZE) != 0) {
-		JLOG_VERBOSE("STUN message integrity check failed");
-		return false;
+	bool success = false;
+	uint8_t *begin = buf;
+	const uint8_t *attr_begin = begin + sizeof(struct stun_header);
+	const uint8_t *end = attr_begin + length;
+	const uint8_t *pos = attr_begin;
+	while (pos != end) {
+		const struct stun_attr *attr = (const struct stun_attr *)pos;
+		size_t attr_length = ntohs(attr->length);
+		if (size < sizeof(struct stun_attr) + attr_length)
+			return false;
+
+		stun_attr_type_t type = (stun_attr_type_t)ntohs(attr->type);
+		switch (type) {
+		case STUN_ATTR_MESSAGE_INTEGRITY: {
+			if (attr_length != HMAC_SHA1_SIZE)
+				return false;
+
+			size_t tmp_length = pos - attr_begin + STUN_ATTR_SIZE + HMAC_SHA1_SIZE;
+			size_t prev_length = stun_update_header_length(begin, tmp_length);
+			uint8_t hmac[HMAC_SHA1_SIZE];
+			hmac_sha1(begin, pos - begin, key, key_len, hmac);
+			stun_update_header_length(begin, prev_length);
+
+			const uint8_t *expected_hmac = attr->value;
+			if (memcmp(hmac, expected_hmac, HMAC_SHA1_SIZE) != 0)
+				return false;
+
+			success = true;
+			break;
+		}
+		case STUN_ATTR_MESSAGE_INTEGRITY_SHA256: {
+			if (attr_length != HMAC_SHA256_SIZE)
+				return false;
+
+			size_t tmp_length = pos - attr_begin + STUN_ATTR_SIZE + HMAC_SHA256_SIZE;
+			size_t prev_length = stun_update_header_length(begin, tmp_length);
+			uint8_t hmac[HMAC_SHA256_SIZE];
+			hmac_sha256(begin, pos - begin, key, key_len, hmac);
+			stun_update_header_length(begin, prev_length);
+
+			const uint8_t *expected_hmac = attr->value;
+			if (memcmp(hmac, expected_hmac, HMAC_SHA256_SIZE) != 0)
+				return false;
+
+			success = true;
+			break;
+		}
+		default:
+			// Ignore
+			break;
+		}
+
+		pos += sizeof(struct stun_attr) + align32(attr_length);
 	}
+
+	if (!success)
+		return false;
+
 	JLOG_VERBOSE("STUN message integrity check succeeded");
 	return true;
 }

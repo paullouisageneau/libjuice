@@ -791,15 +791,23 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 				}
 			}
 
-			// Send failure or end of retransmissions
+			// Failure sending or end of retransmissions
 			JLOG_DEBUG("STUN entry %d: Failed", i);
 			entry->state = AGENT_STUN_ENTRY_STATE_FAILED;
 			entry->next_transmission = 0;
 			if (entry->pair)
 				entry->pair->state = ICE_CANDIDATE_PAIR_STATE_FAILED;
 
-			if (entry->type != AGENT_STUN_ENTRY_TYPE_CHECK)
+			if (entry->type == AGENT_STUN_ENTRY_TYPE_RELAY) {
+				// TURN server
+				JLOG_INFO("TURN allocation failed");
 				agent_update_gathering_done(agent);
+
+			} else if (entry->type == AGENT_STUN_ENTRY_TYPE_SERVER) {
+				// STUN server
+				JLOG_INFO("STUN binding failed");
+				agent_update_gathering_done(agent);
+			}
 		}
 		// STUN keepalives
 		// RFC 8445 11. Keepalives: All endpoints MUST send keepalives for each data session.
@@ -1294,6 +1302,7 @@ int agent_process_stun_binding(juice_agent_t *agent, const stun_message_t *msg,
 				pair->nominated = true;
 			}
 		} else { // entry->type == AGENT_STUN_ENTRY_TYPE_SERVER
+			JLOG_INFO("STUN server binding successful");
 			agent_update_gathering_done(agent);
 		}
 		break;
@@ -1321,6 +1330,11 @@ int agent_process_stun_binding(juice_agent_t *agent, const stun_message_t *msg,
 
 			entry->state = AGENT_STUN_ENTRY_STATE_PENDING;
 			agent_arm_transmission(agent, entry, 0);
+
+		} else {
+			JLOG_INFO("STUN server binding failed");
+			entry->state = AGENT_STUN_ENTRY_STATE_FAILED;
+			agent_update_gathering_done(agent);
 		}
 		break;
 	}
@@ -1485,6 +1499,7 @@ int agent_process_turn_allocate(juice_agent_t *agent, const stun_message_t *msg,
 			return -1;
 		}
 
+		JLOG_INFO("TURN allocation successful");
 		agent_update_gathering_done(agent);
 		break;
 	}
@@ -1527,6 +1542,10 @@ int agent_process_turn_allocate(juice_agent_t *agent, const stun_message_t *msg,
 			JLOG_WARN("Got TURN %s error response, code=%u",
 			          msg->msg_method == STUN_METHOD_ALLOCATE ? "Allocate" : "Refresh",
 			          (unsigned int)msg->error_code);
+
+			JLOG_INFO("TURN allocation failed");
+			entry->state = AGENT_STUN_ENTRY_STATE_FAILED;
+			agent_update_gathering_done(agent);
 		}
 		break;
 	}
