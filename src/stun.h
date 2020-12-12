@@ -180,7 +180,7 @@ typedef enum stun_address_family {
  */
 struct stun_value_error_code {
 	uint16_t reserved;
-	uint8_t code_class; // lower 3 bits only
+	uint8_t code_class; // lower 3 bits only, higher bits are reserved
 	uint8_t code_number;
 	uint8_t reason[];
 };

@@ -85,11 +85,15 @@ int stun_write(void *buf, size_t size, const stun_message_t *msg, const char *pa
 	uint8_t *attr_begin = pos;
 
 	if (msg->error_code) {
-		struct stun_value_error_code error;
-		memset(&error, 0, sizeof(error));
-		error.code_class = (msg->error_code / 100) & 0x07;
-		error.code_number = msg->error_code % 100;
-		len = stun_write_attr(pos, end - pos, STUN_ATTR_ERROR_CODE, &error, sizeof(error));
+		const char *reason = "Error";
+		char buffer[sizeof(struct stun_value_error_code) + STUN_MAX_ERROR_REASON_LEN];
+		struct stun_value_error_code *error = (struct stun_value_error_code *)buffer;
+		memset(error, 0, sizeof(*error));
+		error->code_class = (msg->error_code / 100) & 0x07;
+		error->code_number = msg->error_code % 100;
+		strcpy((char *)error->reason, reason);
+		len = stun_write_attr(pos, end - pos, STUN_ATTR_ERROR_CODE, error,
+		                      sizeof(struct stun_value_error_code) + strlen(reason));
 		if (len <= 0)
 			goto overflow;
 		pos += len;

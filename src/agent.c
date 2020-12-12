@@ -1261,6 +1261,9 @@ int agent_process_stun_binding(juice_agent_t *agent, const stun_message_t *msg,
 		JLOG_DEBUG("Received STUN Binding success response from %s",
 		           entry->type == AGENT_STUN_ENTRY_TYPE_CHECK ? "client" : "server");
 
+		if (entry->type == AGENT_STUN_ENTRY_TYPE_SERVER)
+			JLOG_INFO("STUN server binding successful");
+
 		if (entry->state != AGENT_STUN_ENTRY_STATE_SUCCEEDED_KEEPALIVE) {
 			entry->state = AGENT_STUN_ENTRY_STATE_SUCCEEDED;
 			entry->next_transmission = 0;
@@ -1302,7 +1305,6 @@ int agent_process_stun_binding(juice_agent_t *agent, const stun_message_t *msg,
 				pair->nominated = true;
 			}
 		} else { // entry->type == AGENT_STUN_ENTRY_TYPE_SERVER
-			JLOG_INFO("STUN server binding successful");
 			agent_update_gathering_done(agent);
 		}
 		break;
@@ -1467,6 +1469,7 @@ int agent_process_turn_allocate(juice_agent_t *agent, const stun_message_t *msg,
 		if(msg->msg_method == STUN_METHOD_REFRESH)
 			break;
 
+		JLOG_INFO("TURN allocation successful");
 		if (entry->state != AGENT_STUN_ENTRY_STATE_SUCCEEDED_KEEPALIVE) {
 			entry->state = AGENT_STUN_ENTRY_STATE_SUCCEEDED;
 			entry->next_transmission = 0;
@@ -1499,7 +1502,6 @@ int agent_process_turn_allocate(juice_agent_t *agent, const stun_message_t *msg,
 			return -1;
 		}
 
-		JLOG_INFO("TURN allocation successful");
 		agent_update_gathering_done(agent);
 		break;
 	}
