@@ -33,7 +33,8 @@ static void sleep(unsigned int secs) { Sleep(secs * 1000); }
 #define BUFFER_SIZE 4096
 
 static juice_agent_t *agent;
-static bool success = false;
+static bool srflx_success = false;
+static bool relay_success = false;
 static bool done = false;
 
 static void on_state_changed(juice_agent_t *agent, juice_state_t state, void *user_ptr);
@@ -46,8 +47,22 @@ int test_server() {
 	// Create agent
 	juice_config_t config;
 	memset(&config, 0, sizeof(config));
-	config.stun_server_host = "stun.l.google.com"; // Set a STUN server
-	config.stun_server_port = 19302;
+
+	// Example STUN server
+	config.stun_server_host = "stun.stunprotocol.org";
+	config.stun_server_port = 3478;
+
+	// Example TURN server
+	// Please do not use outside of libjuice tests
+	juice_turn_server_t turn_server;
+	memset(&turn_server, 0, sizeof(turn_server));
+	turn_server.host = "stun.ageneau.net";
+	turn_server.port = 3478;
+	turn_server.username = "juice_test";
+	turn_server.password = "28245150316902";
+	config.turn_servers = &turn_server;
+	config.turn_servers_count = 1;
+
 	config.cb_state_changed = on_state_changed;
 	config.cb_candidate = on_candidate;
 	config.cb_gathering_done = on_gathering_done;
@@ -65,7 +80,7 @@ int test_server() {
 
 	// Wait until gathering done
 	int secs = 10;
-	while (!done && !success && secs--)
+	while (secs-- && !done && !(srflx_success && relay_success))
 		sleep(1);
 
 	// Destroy
@@ -74,7 +89,7 @@ int test_server() {
 	// Sleep so we can check destruction went well
 	sleep(2);
 
-	if (success) {
+	if (srflx_success && relay_success) {
 		printf("Success\n");
 		return 0;
 	} else {
@@ -92,9 +107,13 @@ static void on_state_changed(juice_agent_t *agent, juice_state_t state, void *us
 static void on_candidate(juice_agent_t *agent, const char *sdp, void *user_ptr) {
 	printf("Candidate: %s\n", sdp);
 
-	// Success if a valid server reflexive candidate is emitted
+	// Success if a valid srflx candidate is emitted
 	if (strstr(sdp, " typ srflx raddr 0.0.0.0 rport 0"))
-		success = true;
+		srflx_success = true;
+
+	// Success if a valid relay candidate is emitted
+	if (strstr(sdp, " typ relay raddr 0.0.0.0 rport 0"))
+		relay_success = true;
 }
 
 // On local candidates gathering done

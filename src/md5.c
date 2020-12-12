@@ -16,37 +16,23 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include "hmac.h"
+#include "md5.h"
 
 #if USE_NETTLE
-#include <nettle/hmac.h>
+#include <nettle/md5.h>
 #else
 #include "picohash.h"
 #endif
 
-void hmac_sha1(const void *message, size_t size, const void *key, size_t key_size, void *digest) {
+void hash_md5(const void *message, size_t size, void *digest) {
 #if USE_NETTLE
-	struct hmac_sha1_ctx ctx;
-	hmac_sha1_set_key(&ctx, key_size, key);
-	hmac_sha1_update(&ctx, size, message);
-	hmac_sha1_digest(&ctx, HMAC_SHA1_SIZE, digest);
+	struct md5_ctx ctx;
+	md5_init(&ctx);
+	md5_update(&ctx, size, message);
+	md5_digest(&ctx, HASH_MD5_SIZE, digest);
 #else
 	picohash_ctx_t ctx;
-	picohash_init_hmac(&ctx, picohash_init_sha1, key, key_size);
-	picohash_update(&ctx, message, size);
-	picohash_final(&ctx, digest);
-#endif
-}
-
-void hmac_sha256(const void *message, size_t size, const void *key, size_t key_size, void *digest) {
-#if USE_NETTLE
-	struct hmac_sha256_ctx ctx;
-	hmac_sha256_set_key(&ctx, key_size, key);
-	hmac_sha256_update(&ctx, size, message);
-	hmac_sha256_digest(&ctx, HMAC_SHA256_SIZE, digest);
-#else
-	picohash_ctx_t ctx;
-	picohash_init_hmac(&ctx, picohash_init_sha256, key, key_size);
+	picohash_init_md5(&ctx);
 	picohash_update(&ctx, message, size);
 	picohash_final(&ctx, digest);
 #endif

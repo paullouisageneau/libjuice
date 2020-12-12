@@ -38,8 +38,11 @@ set(LIBJUICE_SOURCES
 	${CMAKE_CURRENT_SOURCE_DIR}/src/ice.c
 	${CMAKE_CURRENT_SOURCE_DIR}/src/juice.c
 	${CMAKE_CURRENT_SOURCE_DIR}/src/log.c
+	${CMAKE_CURRENT_SOURCE_DIR}/src/md5.c
 	${CMAKE_CURRENT_SOURCE_DIR}/src/random.c
 	${CMAKE_CURRENT_SOURCE_DIR}/src/stun.c
+	${CMAKE_CURRENT_SOURCE_DIR}/src/timestamp.c
+	${CMAKE_CURRENT_SOURCE_DIR}/src/turn.c
 	${CMAKE_CURRENT_SOURCE_DIR}/src/udp.c
 )
 
@@ -54,6 +57,7 @@ set(TESTS_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/test/connectivity.c
     ${CMAKE_CURRENT_SOURCE_DIR}/test/notrickle.c
     ${CMAKE_CURRENT_SOURCE_DIR}/test/server.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/test/turn.c
 )
 
 set(THREADS_PREFER_PTHREAD_FLAG ON)

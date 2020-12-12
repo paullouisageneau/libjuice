@@ -104,9 +104,9 @@ static int parse_sdp_candidate(const char *line, ice_candidate_t *candidate) {
 	return 0;
 }
 
-static void compute_candidate_priority(ice_candidate_t *candidate) {
+static uint32_t compute_priority(ice_candidate_type_t type, int family, int component) {
 	uint32_t p = 0;
-	switch (candidate->type) {
+	switch (type) {
 	case ICE_CANDIDATE_TYPE_HOST:
 		p += ICE_CANDIDATE_PREF_HOST;
 		break;
@@ -125,8 +125,7 @@ static void compute_candidate_priority(ice_candidate_t *candidate) {
 
 	p <<= 16;
 	// TODO: intermingling between IP families
-	const struct sockaddr_storage *ss = &candidate->resolved.addr;
-	switch (ss->ss_family) {
+	switch (family) {
 	case AF_INET:
 		p += 32767;
 		break;
@@ -138,8 +137,13 @@ static void compute_candidate_priority(ice_candidate_t *candidate) {
 	}
 
 	p <<= 8;
-	p += 256 - CLAMP(candidate->component, 1, 256);
-	candidate->priority = p;
+	p += 256 - CLAMP(component, 1, 256);
+	return p;
+}
+
+static void compute_candidate_priority(ice_candidate_t *candidate) {
+	candidate->priority =
+	    compute_priority(candidate->type, candidate->resolved.addr.ss_family, candidate->component);
 }
 
 int ice_parse_sdp(const char *sdp, ice_description_t *description) {
@@ -245,8 +249,9 @@ int ice_add_candidate(ice_candidate_t *candidate, ice_description_t *description
 		return -1;
 	}
 
-	if(strcmp(candidate->foundation, "-") == 0)
-		snprintf(candidate->foundation, 32, "%u", (unsigned int)(description->candidates_count + 1));
+	if (strcmp(candidate->foundation, "-") == 0)
+		snprintf(candidate->foundation, 32, "%u",
+		         (unsigned int)(description->candidates_count + 1));
 
 	ice_candidate_t *pos = description->candidates + description->candidates_count;
 	*pos = *candidate;
@@ -354,7 +359,12 @@ int ice_generate_candidate_sdp(const ice_candidate_t *candidate, char *buffer, s
 }
 
 int ice_create_candidate_pair(ice_candidate_t *local, ice_candidate_t *remote, bool is_controlling,
-                              ice_candidate_pair_t *pair) {
+                              ice_candidate_pair_t *pair) { // local or remote might be NULL
+	if(local && remote && local->resolved.addr.ss_family != remote->resolved.addr.ss_family) {
+		JLOG_ERROR("Mismatching candidates address families");
+		return -1;
+	}
+
 	memset(pair, 0, sizeof(*pair));
 	pair->local = local;
 	pair->remote = remote;
@@ -363,10 +373,18 @@ int ice_create_candidate_pair(ice_candidate_t *local, ice_candidate_t *remote, b
 }
 
 int ice_update_candidate_pair(ice_candidate_pair_t *pair, bool is_controlling) {
-	// Compute pair priority according to RFC 8445
-	// See https://tools.ietf.org/html/rfc8445#section-6.1.2.3
-	uint64_t local_priority = pair->local ? pair->local->priority : 0;
-	uint64_t remote_priority = pair->remote ? pair->remote->priority : 0;
+	// Compute pair priority according to RFC 8445, extended to support generic pairs missing local
+	// or remote See https://tools.ietf.org/html/rfc8445#section-6.1.2.3
+	if (!pair->local && !pair->remote)
+		return 0;
+	uint64_t local_priority = pair->local ? pair->local->priority
+	                                      : compute_priority(ICE_CANDIDATE_TYPE_HOST,
+	                                                         pair->remote->resolved.addr.ss_family,
+	                                                         pair->remote->component);
+	uint64_t remote_priority = pair->remote ? pair->remote->priority
+	                                        : compute_priority(ICE_CANDIDATE_TYPE_HOST,
+	                                                           pair->local->resolved.addr.ss_family,
+	                                                           pair->local->component);
 	uint64_t g = is_controlling ? local_priority : remote_priority;
 	uint64_t d = is_controlling ? remote_priority : local_priority;
 	uint64_t min = g < d ? g : d;

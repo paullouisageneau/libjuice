@@ -203,3 +203,8 @@ int addr_resolve(const char *hostname, const char *service, addr_record_t *recor
 	freeaddrinfo(ai_list);
 	return ret;
 }
+
+bool addr_record_is_equal(const addr_record_t *a, const addr_record_t *b, bool compare_ports) {
+	return addr_is_equal((const struct sockaddr *)&a->addr, (const struct sockaddr *)&b->addr,
+	                    compare_ports);
+}

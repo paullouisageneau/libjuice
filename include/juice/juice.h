@@ -61,16 +61,30 @@ typedef void (*juice_cb_gathering_done_t)(juice_agent_t *agent, void *user_ptr);
 typedef void (*juice_cb_recv_t)(juice_agent_t *agent, const char *data, size_t size,
                                 void *user_ptr);
 
+typedef struct juice_turn_server {
+	const char *host;
+	const char *username;
+	const char *password;
+	uint16_t port;
+} juice_turn_server_t;
+
 typedef struct juice_config {
 	const char *stun_server_host;
 	uint16_t stun_server_port;
+
+	juice_turn_server_t *turn_servers;
+	unsigned int turn_servers_count;
+
 	uint16_t local_port_range_begin;
 	uint16_t local_port_range_end;
+
 	juice_cb_state_changed_t cb_state_changed;
 	juice_cb_candidate_t cb_candidate;
 	juice_cb_gathering_done_t cb_gathering_done;
 	juice_cb_recv_t cb_recv;
+
 	void *user_ptr;
+
 } juice_config_t;
 
 JUICE_EXPORT juice_agent_t *juice_create(const juice_config_t *config);

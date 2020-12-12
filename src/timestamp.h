@@ -16,16 +16,15 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#ifndef JUICE_HMAC_H
-#define JUICE_HMAC_H
+#ifndef JUICE_TIMESTAMP_H
+#define JUICE_TIMESTAMP_H
 
 #include <stdint.h>
 #include <stdlib.h>
 
-#define HMAC_SHA1_SIZE 20
-#define HMAC_SHA256_SIZE 32
+typedef int64_t timestamp_t;
+typedef timestamp_t timediff_t;
 
-void hmac_sha1(const void *message, size_t size, const void *key, size_t key_size, void *digest);
-void hmac_sha256(const void *message, size_t size, const void *key, size_t key_size, void *digest);
+timestamp_t current_timestamp();
 
 #endif

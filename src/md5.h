@@ -16,16 +16,14 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#ifndef JUICE_HMAC_H
-#define JUICE_HMAC_H
+#ifndef JUICE_MD5_H
+#define JUICE_MD5_H
 
 #include <stdint.h>
 #include <stdlib.h>
 
-#define HMAC_SHA1_SIZE 20
-#define HMAC_SHA256_SIZE 32
+#define HASH_MD5_SIZE 16
 
-void hmac_sha1(const void *message, size_t size, const void *key, size_t key_size, void *digest);
-void hmac_sha256(const void *message, size_t size, const void *key, size_t key_size, void *digest);
+void hash_md5(const void *message, size_t size, void *digest);
 
 #endif
