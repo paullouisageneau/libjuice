@@ -69,9 +69,9 @@ int test_stun(void) {
 
 	if (!msg.has_integrity)
 		return -1;
-/*
-	if(stun_check_integrity(message, sizeof(message), msg, "VOkJxbRl1RmTxUk/WvJxBt") < 0)
+
+	if(!_juice_stun_check_integrity(message, sizeof(message), &msg, "VOkJxbRl1RmTxUk/WvJxBt"))
 		return -1;
-*/
+
 	return 0;
 }
