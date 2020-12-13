@@ -1805,7 +1805,7 @@ int agent_process_channel_data(juice_agent_t *agent, agent_stun_entry_t *entry, 
 	uint16_t channel = ntohs(header->channel_number);
 	uint16_t length = ntohs(header->length);
 	JLOG_VERBOSE("Received ChannelData, channel=0x%hX, length=%hu", channel, length);
-	if (length < len) {
+	if (length > len) {
 		JLOG_WARN("ChannelData has invalid length");
 		return -1;
 	}
@@ -1816,7 +1816,7 @@ int agent_process_channel_data(juice_agent_t *agent, agent_stun_entry_t *entry, 
 		return -1;
 	}
 
-	return agent_input(agent, buffer, len, &source, &entry->relayed);
+	return agent_input(agent, buffer, length, &source, &entry->relayed);
 }
 
 int agent_add_local_relayed_candidate(juice_agent_t *agent, const addr_record_t *record) {
