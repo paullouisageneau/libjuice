@@ -89,6 +89,9 @@ bool turn_get_channel(turn_state_t *state, const addr_record_t *record, uint16_t
 			break;
 
 		if (addr_record_is_equal(&entry->record, record, true)) {
+			if (entry->channel == 0)
+				break;
+
 			*channel = entry->channel;
 			return true;
 		}
@@ -100,14 +103,23 @@ bool turn_get_channel(turn_state_t *state, const addr_record_t *record, uint16_t
 		*channel = random_channel_number();
 		for (int i = 0; i < TURN_MAP_COUNT; ++i) {
 			turn_entry_t *entry = state->map + i;
-			if (!entry->record.len) {
-				entry->record = *record;
-				entry->channel = *channel;
-				return true;
-			}
+			if (!entry->record.len)
+				break;
+
 			if (entry->channel == *channel) {
 				*channel = 0;
 				break;
+			}
+		}
+	}
+
+	if(*channel != 0) {
+		for (int i = 0; i < TURN_MAP_COUNT; ++i) {
+			turn_entry_t *entry = state->map + i;
+			if (!entry->record.len || addr_record_is_equal(&entry->record, record, true)) {
+				entry->record = *record;
+				entry->channel = *channel;
+				return true;
 			}
 		}
 	}
