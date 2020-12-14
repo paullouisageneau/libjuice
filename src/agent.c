@@ -1625,7 +1625,7 @@ int agent_process_turn_create_permission(juice_agent_t *agent, const stun_messag
 	switch (msg->msg_class) {
 	case STUN_CLASS_RESP_SUCCESS: {
 		JLOG_DEBUG("Received TURN CreatePermission success response");
-		turn_set_permission(entry->turn, entry->transaction_id);
+		turn_set_permission(entry->turn, msg->transaction_id);
 		break;
 	}
 	case STUN_CLASS_RESP_ERROR: {
@@ -1702,7 +1702,7 @@ int agent_process_turn_channel_bind(juice_agent_t *agent, const stun_message_t *
 	switch (msg->msg_class) {
 	case STUN_CLASS_RESP_SUCCESS: {
 		JLOG_DEBUG("Received TURN ChannelBind success response");
-		turn_set_bind(entry->turn, entry->transaction_id);
+		turn_set_bind(entry->turn, msg->transaction_id);
 		break;
 	}
 	case STUN_CLASS_RESP_ERROR: {
