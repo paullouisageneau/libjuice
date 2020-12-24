@@ -253,6 +253,7 @@ int agent_get_local_description(juice_agent_t *agent, char *buffer, size_t size)
 	mutex_lock(&agent->mutex);
 	if (ice_generate_sdp(&agent->local, buffer, size) < 0) {
 		JLOG_ERROR("Failed to generate local SDP description");
+		mutex_unlock(&agent->mutex);
 		return -1;
 	}
 	JLOG_VERBOSE("Generated local SDP description: %s", buffer);
