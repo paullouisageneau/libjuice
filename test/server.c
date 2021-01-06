@@ -66,6 +66,7 @@ int test_server() {
 	config.cb_state_changed = on_state_changed;
 	config.cb_candidate = on_candidate;
 	config.cb_gathering_done = on_gathering_done;
+	config.cb_filter_candidate = NULL;
 	config.user_ptr = NULL;
 
 	agent = juice_create(&config);

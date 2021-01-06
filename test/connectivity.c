@@ -59,6 +59,7 @@ int test_connectivity() {
 	config1.cb_candidate = on_candidate1;
 	config1.cb_gathering_done = on_gathering_done1;
 	config1.cb_recv = on_recv1;
+	config1.cb_filter_candidate = NULL;
 	config1.user_ptr = NULL;
 
 	agent1 = juice_create(&config1);
@@ -72,6 +73,7 @@ int test_connectivity() {
 	config2.cb_candidate = on_candidate2;
 	config2.cb_gathering_done = on_gathering_done2;
 	config2.cb_recv = on_recv2;
+    config2.cb_filter_candidate = NULL;
 	config2.user_ptr = NULL;
 	// Port range example
 	config2.local_port_range_begin = 60000;

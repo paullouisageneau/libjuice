@@ -210,7 +210,18 @@ int agent_gather_candidates(juice_agent_t *agent) {
 			JLOG_WARN("Local description already has the maximum number of host candidates");
 			break;
 		}
-		if (ice_add_candidate(&candidate, &agent->local)) {
+
+		if (agent->config.cb_filter_candidate) {
+			char buffer[1500];
+			if (ice_generate_candidate_sdp(&candidate, buffer, sizeof(buffer)) < 0) {
+				JLOG_ERROR("Failed to generate SDP for local candidate");
+				return -1;
+			}
+			if (!agent->config.cb_filter_candidate(agent, buffer, agent->config.user_ptr))
+				continue;
+		}
+
+        if (ice_add_candidate(&candidate, &agent->local)) {
 			JLOG_ERROR("Failed to add candidate to local description");
 			continue;
 		}
@@ -1830,7 +1841,18 @@ int agent_add_local_relayed_candidate(juice_agent_t *agent, const addr_record_t 
 		JLOG_ERROR("Failed to create relayed candidate");
 		return -1;
 	}
-	if (ice_add_candidate(&candidate, &agent->local)) {
+
+	if (agent->config.cb_filter_candidate) {
+		char buffer[1500];
+		if (ice_generate_candidate_sdp(&candidate, buffer, sizeof(buffer)) < 0) {
+			JLOG_ERROR("Failed to generate SDP for local candidate");
+			return -1;
+		}
+		if (!agent->config.cb_filter_candidate(agent, buffer, agent->config.user_ptr))
+			return 0;
+	}
+
+    if (ice_add_candidate(&candidate, &agent->local)) {
 		JLOG_ERROR("Failed to add candidate to local description");
 		return -1;
 	}
@@ -1880,6 +1902,17 @@ int agent_add_local_reflexive_candidate(juice_agent_t *agent, ice_candidate_type
 		    "Local description has the maximum number of peer reflexive candidates, ignoring");
 		return 0;
 	}
+
+    if (agent->config.cb_filter_candidate) {
+        char buffer[1500];
+        if (ice_generate_candidate_sdp(&candidate, buffer, sizeof(buffer)) < 0) {
+            JLOG_ERROR("Failed to generate SDP for local candidate");
+            return -1;
+        }
+        if (!agent->config.cb_filter_candidate(agent, buffer, agent->config.user_ptr))
+            return 0;
+    }
+
 	if (ice_add_candidate(&candidate, &agent->local)) {
 		JLOG_ERROR("Failed to add candidate to local description");
 		return -1;
@@ -1921,6 +1954,7 @@ int agent_add_remote_reflexive_candidate(juice_agent_t *agent, ice_candidate_typ
 		    "Remote description has the maximum number of peer reflexive candidates, ignoring");
 		return 0;
 	}
+
 	if (ice_add_candidate(&candidate, &agent->remote)) {
 		JLOG_ERROR("Failed to add candidate to remote description");
 		return -1;

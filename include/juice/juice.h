@@ -57,6 +57,7 @@ typedef enum juice_state {
 
 typedef void (*juice_cb_state_changed_t)(juice_agent_t *agent, juice_state_t state, void *user_ptr);
 typedef void (*juice_cb_candidate_t)(juice_agent_t *agent, const char *sdp, void *user_ptr);
+typedef bool (*juice_cb_filter_candidate_t)(juice_agent_t *agent, const char *sdp, void *user_ptr);
 typedef void (*juice_cb_gathering_done_t)(juice_agent_t *agent, void *user_ptr);
 typedef void (*juice_cb_recv_t)(juice_agent_t *agent, const char *data, size_t size,
                                 void *user_ptr);
@@ -82,6 +83,7 @@ typedef struct juice_config {
 	juice_cb_candidate_t cb_candidate;
 	juice_cb_gathering_done_t cb_gathering_done;
 	juice_cb_recv_t cb_recv;
+	juice_cb_filter_candidate_t cb_filter_candidate;
 
 	void *user_ptr;
 
