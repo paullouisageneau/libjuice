@@ -309,6 +309,7 @@ int agent_set_remote_description(juice_agent_t *agent, const char *sdp) {
 
 int agent_add_remote_candidate(juice_agent_t *agent, const char *sdp) {
 	mutex_lock(&agent->mutex);
+	JLOG_VERBOSE("Adding remote candidate: %s", sdp);
 	ice_candidate_t candidate;
 	int ret = ice_parse_candidate_sdp(sdp, &candidate);
 	if (ret < 0) {
