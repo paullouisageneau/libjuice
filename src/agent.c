@@ -877,10 +877,11 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 		}
 	}
 
-	// Freeze entries of frozen pairs
+	// Cancel entries of frozen pairs
 	for (int i = 0; i < agent->entries_count; ++i) {
 		agent_stun_entry_t *entry = agent->entries + i;
 		if (entry->pair && entry->pair->state == ICE_CANDIDATE_PAIR_STATE_FROZEN &&
+		    entry->state != AGENT_STUN_ENTRY_STATE_IDLE &&
 		    entry->state != AGENT_STUN_ENTRY_STATE_CANCELLED) {
 			JLOG_DEBUG("STUN entry %d: Cancelled", i);
 			entry->state = AGENT_STUN_ENTRY_STATE_CANCELLED;
@@ -1468,7 +1469,7 @@ int agent_process_turn_allocate(juice_agent_t *agent, const stun_message_t *msg,
 		           msg->msg_method == STUN_METHOD_ALLOCATE ? "Allocate" : "Refresh");
 
 		// There is nothing to do if this was a refresh
-		if(msg->msg_method == STUN_METHOD_REFRESH)
+		if (msg->msg_method == STUN_METHOD_REFRESH)
 			break;
 
 		JLOG_INFO("TURN allocation successful");
@@ -1511,7 +1512,7 @@ int agent_process_turn_allocate(juice_agent_t *agent, const stun_message_t *msg,
 		if (msg->error_code == 401) { // Unauthorized
 			JLOG_DEBUG("Got TURN %s Unauthorized response",
 			           msg->msg_method == STUN_METHOD_ALLOCATE ? "Allocate" : "Refresh");
-			if(*entry->turn->credentials.realm != '\0') {
+			if (*entry->turn->credentials.realm != '\0') {
 				JLOG_ERROR("TURN authentication failed");
 				entry->state = AGENT_STUN_ENTRY_STATE_FAILED;
 				return -1;
@@ -1527,8 +1528,7 @@ int agent_process_turn_allocate(juice_agent_t *agent, const stun_message_t *msg,
 
 			// Resend request when possible
 			agent_arm_transmission(agent, entry, 0);
-		}
-		else if (msg->error_code == 438) { // Stale Nonce
+		} else if (msg->error_code == 438) { // Stale Nonce
 			JLOG_DEBUG("Got TURN %s Stale Nonce response",
 			           msg->msg_method == STUN_METHOD_ALLOCATE ? "Allocate" : "Refresh");
 			if (*msg->credentials.realm == '\0' || *msg->credentials.nonce == '\0') {
