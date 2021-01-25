@@ -90,7 +90,8 @@ socket_t udp_create_socket(const udp_socket_config_t *config) {
 	const sockopt_t val = IP_PMTUDISC_DO;
 	setsockopt(sock, IPPROTO_IP, IP_MTU_DISCOVER, (const char *)&val, sizeof(val));
 #ifdef IPV6_MTU_DISCOVER
-	setsockopt(sock, IPPROTO_IPV6, IPV6_MTU_DISCOVER, (const char *)&val, sizeof(val));
+	if (ai->ai_family == AF_INET6)
+		setsockopt(sock, IPPROTO_IPV6, IPV6_MTU_DISCOVER, (const char *)&val, sizeof(val));
 #endif
 #else
 	// It seems Mac OS lacks a way to set the DF flag...
@@ -99,7 +100,8 @@ socket_t udp_create_socket(const udp_socket_config_t *config) {
 	setsockopt(sock, IPPROTO_IP, IP_DONTFRAG, (const char *)&enabled, sizeof(enabled));
 #endif
 #ifdef IPV6_DONTFRAG
-	setsockopt(sock, IPPROTO_IPV6, IPV6_DONTFRAG, (const char *)&enabled, sizeof(enabled));
+	if (ai->ai_family == AF_INET6)
+		setsockopt(sock, IPPROTO_IPV6, IPV6_DONTFRAG, (const char *)&enabled, sizeof(enabled));
 #endif
 #endif
 
