@@ -81,9 +81,7 @@ socket_t udp_create_socket(const udp_socket_config_t *config) {
 	}
 
 	// Set options
-	int enabled = 1;
 	int disabled = 0;
-	setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, (char *)&enabled, sizeof(enabled));
 	if (ai->ai_family == AF_INET6)
 		setsockopt(sock, IPPROTO_IPV6, IPV6_V6ONLY, (char *)&disabled, sizeof(disabled));
 
