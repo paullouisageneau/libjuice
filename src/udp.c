@@ -80,30 +80,36 @@ socket_t udp_create_socket(const udp_socket_config_t *config) {
 		goto error;
 	}
 
-	// Set options
-	int enabled = 1;
-	int disabled = 0;
-	setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, (char *)&enabled, sizeof(enabled));
+	// Listen on both IPv6 and IPv4
+	const sockopt_t disabled = 0;
 	if (ai->ai_family == AF_INET6)
-		setsockopt(sock, IPPROTO_IPV6, IPV6_V6ONLY, (char *)&disabled, sizeof(disabled));
+		setsockopt(sock, IPPROTO_IPV6, IPV6_V6ONLY, (const char *)&disabled, sizeof(disabled));
 
+	// Set DF flag
 #ifndef NO_PMTUDISC
-	int val = IP_PMTUDISC_DO;
-	setsockopt(sock, IPPROTO_IP, IP_MTU_DISCOVER, (char *)&val, sizeof(val));
+	const sockopt_t val = IP_PMTUDISC_DO;
+	setsockopt(sock, IPPROTO_IP, IP_MTU_DISCOVER, (const char *)&val, sizeof(val));
+#ifdef IPV6_MTU_DISCOVER
+	setsockopt(sock, IPPROTO_IPV6, IPV6_MTU_DISCOVER, (const char *)&val, sizeof(val));
+#endif
 #else
-// It seems Mac OS lacks a way to set the DF flag...
+	// It seems Mac OS lacks a way to set the DF flag...
+	const sockopt_t enabled = 1;
 #ifdef IP_DONTFRAG
-	setsockopt(sock, IPPROTO_IP, IP_DONTFRAG, (char *)&enabled, sizeof(enabled));
+	setsockopt(sock, IPPROTO_IP, IP_DONTFRAG, (const char *)&enabled, sizeof(enabled));
+#endif
+#ifdef IPV6_DONTFRAG
+	setsockopt(sock, IPPROTO_IPV6, IPV6_DONTFRAG, (const char *)&enabled, sizeof(enabled));
 #endif
 #endif
 
 	// Set buffer size to 2 MiB for performance
-	const int bufferSize = 2 * 1024 * 1024;
-	setsockopt(sock, SOL_SOCKET, SO_RCVBUF, (char *)&bufferSize, sizeof(bufferSize));
-	setsockopt(sock, SOL_SOCKET, SO_SNDBUF, (char *)&bufferSize, sizeof(bufferSize));
+	const sockopt_t bufferSize = 2 * 1024 * 1024;
+	setsockopt(sock, SOL_SOCKET, SO_RCVBUF, (const char *)&bufferSize, sizeof(bufferSize));
+	setsockopt(sock, SOL_SOCKET, SO_SNDBUF, (const char *)&bufferSize, sizeof(bufferSize));
 
-	ctl_t b = 1;
-	if (ioctlsocket(sock, FIONBIO, &b)) {
+	ctl_t blocking = 1;
+	if (ioctlsocket(sock, FIONBIO, &blocking)) {
 		JLOG_ERROR("Setting non-blocking mode on UDP socket failed, errno=%d", sockerrno);
 		goto error;
 	}

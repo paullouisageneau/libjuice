@@ -48,6 +48,7 @@
 typedef SOCKET socket_t;
 typedef SOCKADDR sockaddr;
 typedef u_long ctl_t;
+typedef DWORD sockopt_t;
 #define sockerrno ((int)WSAGetLastError())
 #define IP_DONTFRAG IP_DONTFRAGMENT
 #define SOCKET_TO_INT(x) 0
@@ -93,6 +94,7 @@ typedef u_long ctl_t;
 
 typedef int socket_t;
 typedef int ctl_t;
+typedef int sockopt_t;
 #define sockerrno errno
 #define INVALID_SOCKET -1
 #define SOCKET_TO_INT(x) (x)
