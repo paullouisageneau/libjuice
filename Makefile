@@ -24,8 +24,10 @@ ifneq ($(NO_ATOMICS), 0)
         CFLAGS+=-DNO_ATOMICS
 endif
 
-INCLUDES+=$(shell pkg-config --cflags $(LIBS))
-LDLIBS+=$(shell pkg-config --libs $(LIBS))
+ifneq ($(LIBS), "")
+INCLUDES+=$(if $(LIBS),$(shell pkg-config --cflags $(LIBS)),)
+LDLIBS+=$(if $(LIBS), $(shell pkg-config --libs $(LIBS)),)
+endif
 
 SRCS=$(shell printf "%s " src/*.c)
 OBJS=$(subst .c,.o,$(SRCS))
