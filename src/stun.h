@@ -22,8 +22,8 @@
 #include "juice.h"
 
 #include "addr.h"
-#include "hmac.h"
 #include "hash.h"
+#include "hmac.h"
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -110,6 +110,7 @@ struct stun_attr {
 };
 
 typedef enum stun_attr_type {
+	// Comprehension-required
 	STUN_ATTR_MAPPED_ADDRESS = 0x0001,
 	STUN_ATTR_USERNAME = 0x0006,
 	STUN_ATTR_MESSAGE_INTEGRITY = 0x0008,
@@ -123,6 +124,10 @@ typedef enum stun_attr_type {
 	STUN_ATTR_XOR_MAPPED_ADDRESS = 0x0020,
 	STUN_ATTR_PRIORITY = 0x0024,
 	STUN_ATTR_USE_CANDIDATE = 0x0025,
+
+	// Comprehension-optional
+	STUN_ATTR_PASSWORD_ALGORITHMS = 0x8002,
+	STUN_ATTR_ALTERNATE_DOMAIN = 0x8003,
 	STUN_ATTR_SOFTWARE = 0x8022,
 	STUN_ATTR_ALTERNATE_SERVER = 0x8023,
 	STUN_ATTR_FINGERPRINT = 0x8028,
@@ -227,6 +232,34 @@ struct stun_value_requested_transport {
 	uint16_t reserved2;
 };
 
+/*
+ * STUN attribute value for PASSWORD-ALGORITHM and PASSWORD-ALGORITHMS
+ *
+ *  0                   1                   2                   3
+ *  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+ * +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+ * |         Algorithm 1           | Algorithm 1 Parameters Length |
+ * +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+ * |                    Algorithm 1 Parameters (variable)
+ * +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+ * |         Algorithm 2           | Algorithm 2 Parameters Length |
+ * +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+ * |                    Algorithm 2 Parameters (variable)
+ * +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+ * |                                                             ...
+ */
+struct stun_value_password_algorithm {
+	uint16_t algorithm;
+	uint16_t parameters_length;
+	uint8_t parameters[];
+};
+
+typedef enum stun_password_algorithm {
+	STUN_PASSWORD_ALGORITHM_RESERVED = 0x0000,
+	STUN_PASSWORD_ALGORITHM_MD5 = 0x0001,
+	STUN_PASSWORD_ALGORITHM_SHA256 = 0x0002,
+} stun_password_algorithm_t;
+
 #pragma pack(pop)
 
 // The value of USERNAME is a variable-length value. It MUST contain a UTF-8 [RFC3629] encoded
@@ -254,6 +287,9 @@ struct stun_value_requested_transport {
 // Nonce cookie prefix as specified in https://tools.ietf.org/html/rfc8489#section-9.2
 #define STUN_NONCE_COOKIE "obMatJos2"
 #define STUN_NONCE_COOKIE_LEN 9
+
+#define STUN_SECURITY_PASSWORD_ALGORITHMS_BIT 0x00
+#define STUN_SECURITY_USERNAME_ANONYMITY_BIT 0x01
 
 typedef struct stun_credentials {
 	char username[STUN_MAX_USERNAME_LEN];
@@ -315,6 +351,6 @@ bool stun_check_integrity(void *buf, size_t size, const stun_message_t *msg, con
 // Export for tests
 JUICE_EXPORT int _juice_stun_read(void *data, size_t size, stun_message_t *msg);
 JUICE_EXPORT bool _juice_stun_check_integrity(void *buf, size_t size, const stun_message_t *msg,
-                                             const char *password);
+                                              const char *password);
 
 #endif
