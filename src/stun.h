@@ -23,7 +23,7 @@
 
 #include "addr.h"
 #include "hmac.h"
-#include "md5.h"
+#include "hash.h"
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -250,6 +250,10 @@ struct stun_value_requested_transport {
 #define STUN_MAX_ERROR_REASON_LEN 763 + 1
 
 #define STUN_MAX_PASSWORD_LEN STUN_MAX_USERNAME_LEN
+
+// Nonce cookie prefix as specified in https://tools.ietf.org/html/rfc8489#section-9.2
+#define STUN_NONCE_COOKIE "obMatJos2"
+#define STUN_NONCE_COOKIE_LEN 9
 
 typedef struct stun_credentials {
 	char username[STUN_MAX_USERNAME_LEN];
