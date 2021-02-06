@@ -16,16 +16,18 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#ifndef JUICE_CRC32_H
-#define JUICE_CRC32_H
+#ifndef JUICE_BASE64_H
+#define JUICE_BASE64_H
 
 #include "juice.h"
 
 #include <stdint.h>
 #include <stdlib.h>
 
-JUICE_EXPORT uint32_t juice_crc32(const void *data, size_t size);
+JUICE_EXPORT int juice_base64_encode(const void *data, size_t size, char *out, size_t out_size);
+JUICE_EXPORT int juice_base64_decode(const char *str, void *out, size_t out_size);
 
-#define CRC32(data, size) juice_crc32(data, size)
+#define BASE64_ENCODE(data, size, out, out_size) juice_base64_encode(data, size, out, out_size)
+#define BASE64_DECODE(str, out, out_size) juice_base64_decode(str, out, out_size)
 
-#endif // JUICE_CRC32_H
+#endif // JUICE_BASE64_H
