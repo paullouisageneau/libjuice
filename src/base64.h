@@ -24,6 +24,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 
+// RFC4648-compliant base64 encoder and decoder
 JUICE_EXPORT int juice_base64_encode(const void *data, size_t size, char *out, size_t out_size);
 JUICE_EXPORT int juice_base64_decode(const char *str, void *out, size_t out_size);
 

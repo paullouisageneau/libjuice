@@ -190,6 +190,8 @@ struct stun_value_error_code {
 	uint8_t reason[];
 };
 
+#define STUN_ERROR_INTERNAL_VALIDATION_FAILED 599
+
 /*
  * STUN attribute for CHANNEL-NUMBER
  *
@@ -288,13 +290,20 @@ typedef enum stun_password_algorithm {
 #define STUN_NONCE_COOKIE "obMatJos2"
 #define STUN_NONCE_COOKIE_LEN 9
 
-#define STUN_SECURITY_PASSWORD_ALGORITHMS_BIT 0x00
-#define STUN_SECURITY_USERNAME_ANONYMITY_BIT 0x01
+// STUN Security Feature bits as defined in https://tools.ietf.org/html/rfc8489#section-18.1
+// Bit 0: Password algorithms
+// Bit 1: Username anonymity
+// Bit 2-23: Unassigned
+#define STUN_SECURITY_PASSWORD_ALGORITHMS_BIT (1 << 23)
+#define STUN_SECURITY_USERNAME_ANONYMITY_BIT (1 << 22)
 
 typedef struct stun_credentials {
 	char username[STUN_MAX_USERNAME_LEN];
 	char realm[STUN_MAX_REALM_LEN];
 	char nonce[STUN_MAX_NONCE_LEN];
+	uint8_t userhash[HASH_SHA256_SIZE];
+	bool enable_password_algorithm_sha256;
+	bool enable_userhash;
 } stun_credentials_t;
 
 typedef struct stun_message {
@@ -313,6 +322,7 @@ typedef struct stun_message {
 	// Only for reading
 	bool has_integrity;
 	bool has_fingerprint;
+	bool has_password_algorithms;
 
 	// TURN
 	uint16_t channel_number;
@@ -342,11 +352,14 @@ bool is_stun_datagram(const void *data, size_t size);
 
 int stun_read(void *data, size_t size, stun_message_t *msg);
 int stun_read_attr(const void *data, size_t size, stun_message_t *msg, uint8_t *begin,
-                   uint8_t *attr_begin);
+                   uint8_t *attr_begin, uint32_t *security_bits);
 int stun_read_value_mapped_address(const void *data, size_t size, addr_record_t *mapped,
                                    const uint8_t *mask);
 
 bool stun_check_integrity(void *buf, size_t size, const stun_message_t *msg, const char *password);
+
+void stun_prepend_nonce_cookie(stun_credentials_t *credentials);
+void stun_generate_userhash(stun_credentials_t *credentials);
 
 // Export for tests
 JUICE_EXPORT int _juice_stun_read(void *data, size_t size, stun_message_t *msg);
