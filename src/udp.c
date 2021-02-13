@@ -34,15 +34,18 @@ static struct addrinfo *find_family(struct addrinfo *ai_list, int family) {
 }
 
 static uint16_t get_next_port_in_range(uint16_t begin, uint16_t end) {
-	static mutex_t mutex = MUTEX_INITIALIZER;
-	static volatile uint32_t count = 0;
 	if (begin == 0)
 		begin = 1024;
 	if (end == 0)
 		end = 0xFFFF;
+	if (begin == end)
+		return begin;
+
+	static volatile uint32_t count = 0;
 	if (count == 0)
 		count = juice_rand32();
 
+	static mutex_t mutex = MUTEX_INITIALIZER;
 	mutex_lock(&mutex);
 	uint32_t diff = end > begin ? end - begin : 0;
 	uint16_t next = begin + count++ % (diff + 1);
@@ -124,6 +127,21 @@ socket_t udp_create_socket(const udp_socket_config_t *config) {
 		}
 
 		JLOG_ERROR("UDP socket binding failed, errno=%d", sockerrno);
+
+	} else if (config->port_begin == config->port_end) {
+		uint16_t port = config->port_begin;
+		struct sockaddr_storage addr;
+		socklen_t addrlen = (socklen_t)ai->ai_addrlen;
+		memcpy(&addr, ai->ai_addr, addrlen);
+		addr_set_port((struct sockaddr *)&addr, port);
+
+		if (bind(sock, (struct sockaddr *)&addr, addrlen) == 0) {
+			JLOG_DEBUG("UDP socket bound to port %hu", port);
+			freeaddrinfo(ai_list);
+			return sock;
+		}
+
+		JLOG_ERROR("UDP socket binding failed on port %hu, errno=%d", port);
 
 	} else {
 		struct sockaddr_storage addr;

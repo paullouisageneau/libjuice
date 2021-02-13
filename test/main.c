@@ -25,8 +25,12 @@ int test_base64(void);
 int test_stun(void);
 int test_connectivity(void);
 int test_notrickle(void);
-int test_server(void);
+int test_gathering(void);
 int test_turn(void);
+
+#ifndef NO_SERVER
+int test_server(void);
+#endif
 
 int main(int argc, char **argv) {
 	juice_set_log_level(JUICE_LOG_LEVEL_WARN);
@@ -49,9 +53,9 @@ int main(int argc, char **argv) {
 		return -3;
 	}
 
-	printf("\nRunning STUN/TURN server test...\n");
-	if (test_server()) {
-		fprintf(stderr, "STUN/TURN server test failed\n");
+	printf("\nRunning STUN/TURN gathering test...\n");
+	if (test_gathering()) {
+		fprintf(stderr, "STUN/TURN gathering test failed\n");
 		return -1;
 	}
 
@@ -72,6 +76,14 @@ int main(int argc, char **argv) {
 		fprintf(stderr, "Non-trickled connectivity test failed\n");
 		return -1;
 	}
+
+#ifndef NO_SERVER
+	printf("\nRunning server test...\n");
+	if (test_server()) {
+		fprintf(stderr, "Server test failed\n");
+		return -1;
+	}
+#endif
 
 	return 0;
 }

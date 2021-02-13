@@ -111,7 +111,7 @@ int stun_write(void *buf, size_t size, const stun_message_t *msg, const char *pa
 	uint8_t *attr_begin = pos;
 
 	if (msg->error_code) {
-		const char *reason = "Error"; // TODO
+		const char *reason = stun_get_error_reason(msg->error_code);
 		char buffer[sizeof(struct stun_value_error_code) + STUN_MAX_ERROR_REASON_LEN];
 		struct stun_value_error_code *error = (struct stun_value_error_code *)buffer;
 		memset(error, 0, sizeof(*error));
@@ -176,7 +176,7 @@ int stun_write(void *buf, size_t size, const stun_message_t *msg, const char *pa
 			goto overflow;
 		pos += len;
 	}
-	if (msg->lifetime) {
+	if (msg->lifetime_set || msg->lifetime) {
 		uint32_t lifetime = htonl(msg->lifetime);
 		len = stun_write_attr(pos, end - pos, STUN_ATTR_LIFETIME, &lifetime, 4);
 		if (len <= 0)
@@ -261,63 +261,72 @@ int stun_write(void *buf, size_t size, const stun_message_t *msg, const char *pa
 		goto overflow;
 	pos += len;
 
-	if (msg->credentials.enable_userhash) {
-		len = stun_write_attr(pos, end - pos, STUN_ATTR_USERHASH, msg->credentials.userhash,
-		                      HASH_SHA256_SIZE);
-		if (len <= 0)
-			goto overflow;
-		pos += len;
-
-	} else if (*msg->credentials.username != '\0') {
-		len = stun_write_attr(pos, end - pos, STUN_ATTR_USERNAME, msg->credentials.username,
-		                      strlen(msg->credentials.username));
-		if (len <= 0)
-			goto overflow;
-		pos += len;
-	}
-	if (*msg->credentials.realm != '\0') {
-		len = stun_write_attr(pos, end - pos, STUN_ATTR_REALM, msg->credentials.realm,
-		                      strlen(msg->credentials.realm));
-		if (len <= 0)
-			goto overflow;
-		pos += len;
-	}
-	if (*msg->credentials.nonce != '\0') {
-		len = stun_write_attr(pos, end - pos, STUN_ATTR_NONCE, msg->credentials.nonce,
-		                      strlen(msg->credentials.nonce));
-		if (len <= 0)
-			goto overflow;
-		pos += len;
-
-		if (msg->credentials.password_algorithm > 0) {
-			len = stun_write_attr(pos, end - pos, STUN_ATTR_PASSWORD_ALGORITHMS,
-			                      msg->credentials.password_algorithms_value,
-			                      msg->credentials.password_algorithms_value_size);
+	if (msg->msg_class == STUN_CLASS_REQUEST) {
+		if (msg->credentials.enable_userhash) {
+			len = stun_write_attr(pos, end - pos, STUN_ATTR_USERHASH, msg->credentials.userhash,
+			                      HASH_SHA256_SIZE);
 			if (len <= 0)
 				goto overflow;
 			pos += len;
 
-		} else if (msg->msg_class != STUN_CLASS_REQUEST) {
-			uint8_t pwa_value[STUN_MAX_PASSWORD_ALGORITHMS_VALUE_SIZE];
-			size_t pwa_size = generate_password_algorithms_attr(pwa_value);
-			len =
-			    stun_write_attr(pos, end - pos, STUN_ATTR_PASSWORD_ALGORITHMS, pwa_value, pwa_size);
-			if (len <= 0)
-				goto overflow;
-			pos += len;
-		}
-
-		if (msg->msg_class == STUN_CLASS_REQUEST &&
-		    msg->credentials.password_algorithm != STUN_PASSWORD_ALGORITHM_UNSET) {
-			struct stun_value_password_algorithm pwa;
-			pwa.algorithm = htons(msg->credentials.password_algorithm);
-			len = stun_write_attr(pos, end - pos, STUN_ATTR_PASSWORD_ALGORITHM, &pwa, sizeof(pwa));
+		} else if (*msg->credentials.username != '\0') {
+			len = stun_write_attr(pos, end - pos, STUN_ATTR_USERNAME, msg->credentials.username,
+			                      strlen(msg->credentials.username));
 			if (len <= 0)
 				goto overflow;
 			pos += len;
 		}
 	}
-	if (password) {
+	if (msg->msg_class == STUN_CLASS_REQUEST || msg->msg_method == STUN_METHOD_ALLOCATE) {
+		if (*msg->credentials.realm != '\0') {
+			len = stun_write_attr(pos, end - pos, STUN_ATTR_REALM, msg->credentials.realm,
+			                      strlen(msg->credentials.realm));
+			if (len <= 0)
+				goto overflow;
+			pos += len;
+		}
+		if (*msg->credentials.nonce != '\0') {
+			len = stun_write_attr(pos, end - pos, STUN_ATTR_NONCE, msg->credentials.nonce,
+			                      strlen(msg->credentials.nonce));
+			if (len <= 0)
+				goto overflow;
+			pos += len;
+
+			if (msg->credentials.password_algorithm > 0) {
+				len = stun_write_attr(pos, end - pos, STUN_ATTR_PASSWORD_ALGORITHMS,
+				                      msg->credentials.password_algorithms_value,
+				                      msg->credentials.password_algorithms_value_size);
+				if (len <= 0)
+					goto overflow;
+				pos += len;
+
+			} else if (msg->msg_class != STUN_CLASS_REQUEST) {
+				uint8_t pwa_value[STUN_MAX_PASSWORD_ALGORITHMS_VALUE_SIZE];
+				size_t pwa_size = generate_password_algorithms_attr(pwa_value);
+				len = stun_write_attr(pos, end - pos, STUN_ATTR_PASSWORD_ALGORITHMS, pwa_value,
+				                      pwa_size);
+				if (len <= 0)
+					goto overflow;
+				pos += len;
+			}
+
+			if (msg->msg_class == STUN_CLASS_REQUEST &&
+			    msg->credentials.password_algorithm != STUN_PASSWORD_ALGORITHM_UNSET) {
+				struct stun_value_password_algorithm pwa;
+				pwa.algorithm = htons(msg->credentials.password_algorithm);
+				len = stun_write_attr(pos, end - pos, STUN_ATTR_PASSWORD_ALGORITHM, &pwa,
+				                      sizeof(pwa));
+				if (len <= 0)
+					goto overflow;
+				pos += len;
+			}
+		}
+	}
+	if (msg->msg_class != STUN_CLASS_INDICATION && password) {
+		// According to RFC 8489, the agent must include both MESSAGE-INTEGRITY and
+		// MESSAGE-INTEGRITY-SHA256. However, this make legacy agents and servers fail with error
+		// 420 Unknown Attribute. Therefore, only MESSAGE-INTEGRITY is included in the message for
+		// compatibility.
 		size_t tmp_length = pos - attr_begin + STUN_ATTR_SIZE + HMAC_SHA1_SIZE;
 		stun_update_header_length(begin, tmp_length);
 		uint8_t key[MAX_HMAC_KEY_LEN];
@@ -846,7 +855,7 @@ int stun_read_attr(const void *data, size_t size, stun_message_t *msg, uint8_t *
 		char buffer[STUN_MAX_SOFTWARE_LEN];
 		memcpy(buffer, (const char *)attr->value, length);
 		buffer[length] = '\0';
-		JLOG_DEBUG("Remote agent is \"%s\"", buffer);
+		JLOG_VERBOSE("Remote agent is \"%s\"", buffer);
 		break;
 	}
 	case STUN_ATTR_PRIORITY: {
@@ -900,6 +909,7 @@ int stun_read_attr(const void *data, size_t size, stun_message_t *msg, uint8_t *
 			return -1;
 		}
 		msg->lifetime = ntohl(*((uint32_t *)attr->value));
+		msg->lifetime_set = true;
 		break;
 	}
 	case STUN_ATTR_XOR_PEER_ADDRESS: {
@@ -1141,6 +1151,43 @@ void stun_process_credentials(const stun_credentials_t *credentials, stun_creden
 
 	if (credentials->enable_userhash)
 		stun_compute_userhash(username, credentials->realm, dst->userhash);
+}
+
+const char *stun_get_error_reason(unsigned int code) {
+	switch(code) {
+		case 0:
+			return "";
+		case 300:
+			return "Try Alternate";
+		case 400:
+			return "Bad Request";
+	   	case 401:
+			return "Unauthenticated";
+		case 403:
+			return "Forbidden";
+		case 420:
+			return "Unknown Attribute";
+		case 437:
+			return "Allocation Mismatch";
+		case 438:
+			return "Stale Nonce";
+		case 440:
+			return "Address Family not Supported";
+		case 441:
+			return "Wrong credentials";
+		case 442:
+			return "Unsupported Transport Protocol";
+		case 443:
+			return "Peer Address Family Mismatch";
+		case 486:
+			return "Allocation Quota Reached";
+		case 500:
+			return "Server Error";
+		case 508:
+			return "Insufficient Capacity";
+		default:
+			return "Error";
+	}
 }
 
 JUICE_EXPORT int _juice_stun_read(void *data, size_t size, stun_message_t *msg) {

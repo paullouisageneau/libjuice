@@ -173,6 +173,46 @@ bool addr_is_equal(const struct sockaddr *a, const struct sockaddr *b, bool comp
 	return true;
 }
 
+// djb2 hash function
+#define DJB2_INIT 5381
+static void djb2(unsigned long *hash, int i) {
+	*hash = ((*hash << 5) + *hash) + i; // hash * 33 + i
+}
+
+unsigned long addr_hash(const struct sockaddr *sa, bool with_port) {
+	unsigned long hash = DJB2_INIT;
+
+	djb2(&hash, sa->sa_family);
+	switch (sa->sa_family) {
+	case AF_INET: {
+		const struct sockaddr_in *sin = (const struct sockaddr_in *)sa;
+		const uint8_t *b = (const uint8_t *)&sin->sin_addr;
+		for (int i = 0; i < 4; ++i)
+			djb2(&hash, b[i]);
+		if (with_port) {
+			djb2(&hash, sin->sin_port >> 8);
+			djb2(&hash, sin->sin_port & 0xFF);
+		}
+		break;
+	}
+	case AF_INET6: {
+		const struct sockaddr_in6 *sin6 = (const struct sockaddr_in6 *)sa;
+		const uint8_t *b = (const uint8_t *)&sin6->sin6_addr;
+		for (int i = 0; i < 16; ++i)
+			djb2(&hash, b[i]);
+		if (with_port) {
+			djb2(&hash, sin6->sin6_port >> 8);
+			djb2(&hash, sin6->sin6_port & 0xFF);
+		}
+		break;
+	}
+	default:
+		break;
+	}
+
+	return hash;
+}
+
 int addr_resolve(const char *hostname, const char *service, addr_record_t *records, size_t count) {
 	addr_record_t *end = records + count;
 
@@ -206,5 +246,9 @@ int addr_resolve(const char *hostname, const char *service, addr_record_t *recor
 
 bool addr_record_is_equal(const addr_record_t *a, const addr_record_t *b, bool compare_ports) {
 	return addr_is_equal((const struct sockaddr *)&a->addr, (const struct sockaddr *)&b->addr,
-	                    compare_ports);
+	                     compare_ports);
+}
+
+unsigned long addr_record_hash(const addr_record_t *record, bool with_port) {
+	return addr_hash((const struct sockaddr *)&record->addr, with_port);
 }

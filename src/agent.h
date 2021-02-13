@@ -70,6 +70,8 @@
 #define MAX_CANDIDATE_PAIRS_COUNT (ICE_MAX_CANDIDATES_COUNT * (1 + MAX_RELAY_ENTRIES_COUNT))
 #define MAX_STUN_ENTRIES_COUNT (MAX_CANDIDATE_PAIRS_COUNT + MAX_STUN_SERVER_RECORDS_COUNT)
 
+#define AGENT_TURN_MAP_SIZE ICE_MAX_CANDIDATES_COUNT
+
 typedef enum agent_mode {
 	AGENT_MODE_UNKNOWN,
 	AGENT_MODE_CONTROLLED,
@@ -77,6 +79,7 @@ typedef enum agent_mode {
 } agent_mode_t;
 
 typedef enum agent_stun_entry_type {
+	AGENT_STUN_ENTRY_TYPE_EMPTY,
 	AGENT_STUN_ENTRY_TYPE_SERVER,
 	AGENT_STUN_ENTRY_TYPE_RELAY,
 	AGENT_STUN_ENTRY_TYPE_CHECK
@@ -91,6 +94,12 @@ typedef enum agent_stun_entry_state {
 	AGENT_STUN_ENTRY_STATE_IDLE
 } agent_stun_entry_state_t;
 
+typedef struct agent_turn_state {
+	turn_map_t map;
+	stun_credentials_t credentials;
+	const char *password;
+} agent_turn_state_t;
+
 typedef struct agent_stun_entry {
 	agent_stun_entry_type_t type;
 	agent_stun_entry_state_t state;
@@ -103,7 +112,7 @@ typedef struct agent_stun_entry {
 	int retransmissions;
 
 	// TURN
-	turn_state_t *turn;
+	agent_turn_state_t *turn;
 	struct agent_stun_entry *relay_entry;
 
 #ifdef NO_ATOMICS
@@ -148,6 +157,7 @@ struct juice_agent {
 };
 
 juice_agent_t *agent_create(const juice_config_t *config);
+void agent_do_destroy(juice_agent_t *agent);
 void agent_destroy(juice_agent_t *agent);
 
 int agent_gather_candidates(juice_agent_t *agent);
@@ -156,11 +166,11 @@ int agent_set_remote_description(juice_agent_t *agent, const char *sdp);
 int agent_add_remote_candidate(juice_agent_t *agent, const char *sdp);
 int agent_set_remote_gathering_done(juice_agent_t *agent);
 int agent_send(juice_agent_t *agent, const char *data, size_t size, int ds);
-int agent_direct_send(juice_agent_t *agent, const addr_record_t *record, const char *data,
-                      size_t size, int ds);
-int agent_relay_send(juice_agent_t *agent, agent_stun_entry_t *entry, const addr_record_t *record,
+int agent_direct_send(juice_agent_t *agent, const addr_record_t *dst, const char *data, size_t size,
+                      int ds);
+int agent_relay_send(juice_agent_t *agent, agent_stun_entry_t *entry, const addr_record_t *dst,
                      const char *data, size_t size, int ds);
-int agent_channel_send(juice_agent_t *agent, agent_stun_entry_t *entry, const addr_record_t *record,
+int agent_channel_send(juice_agent_t *agent, agent_stun_entry_t *entry, const addr_record_t *dst,
                        const char *data, size_t size, int ds);
 juice_state_t agent_get_state(juice_agent_t *agent);
 int agent_get_selected_candidate_pair(juice_agent_t *agent, ice_candidate_t *local,
@@ -168,7 +178,7 @@ int agent_get_selected_candidate_pair(juice_agent_t *agent, ice_candidate_t *loc
 
 void agent_run(juice_agent_t *agent);
 int agent_recv(juice_agent_t *agent);
-int agent_input(juice_agent_t *agent, char *buffer, size_t len, const addr_record_t *source,
+int agent_input(juice_agent_t *agent, char *buf, size_t len, const addr_record_t *src,
                 const addr_record_t *relayed); // relayed may be NULL
 int agent_interrupt(juice_agent_t *agent);
 void agent_change_state(juice_agent_t *agent, juice_state_t state);
@@ -178,10 +188,10 @@ int agent_verify_stun_binding(juice_agent_t *agent, void *buf, size_t size,
 int agent_verify_credentials(juice_agent_t *agent, const agent_stun_entry_t *entry, void *buf,
                              size_t size, stun_message_t *msg);
 int agent_dispatch_stun(juice_agent_t *agent, void *buf, size_t size, stun_message_t *msg,
-                        const addr_record_t *source,
+                        const addr_record_t *src,
                         const addr_record_t *relayed); // relayed may be NULL
 int agent_process_stun_binding(juice_agent_t *agent, const stun_message_t *msg,
-                               agent_stun_entry_t *entry, const addr_record_t *source,
+                               agent_stun_entry_t *entry, const addr_record_t *src,
                                const addr_record_t *relayed); // relayed may be NULL
 int agent_send_stun_binding(juice_agent_t *agent, const agent_stun_entry_t *entry,
                             stun_class_t msg_class, unsigned int error_code,
@@ -197,10 +207,11 @@ int agent_send_turn_create_permission_request(juice_agent_t *agent, agent_stun_e
 int agent_process_turn_channel_bind(juice_agent_t *agent, const stun_message_t *msg,
                                     agent_stun_entry_t *entry);
 int agent_send_turn_channel_bind_request(juice_agent_t *agent, agent_stun_entry_t *entry,
-                                         const addr_record_t *record, int ds);
+                                         const addr_record_t *record, int ds,
+                                         uint16_t *out_channel); // out_channel may be NULL
 int agent_process_turn_data(juice_agent_t *agent, const stun_message_t *msg,
                             agent_stun_entry_t *entry);
-int agent_process_channel_data(juice_agent_t *agent, agent_stun_entry_t *entry, char *buffer,
+int agent_process_channel_data(juice_agent_t *agent, agent_stun_entry_t *entry, char *buf,
                                size_t len);
 
 int agent_add_local_relayed_candidate(juice_agent_t *agent, const addr_record_t *record);

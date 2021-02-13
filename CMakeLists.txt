@@ -4,7 +4,8 @@ project (libjuice
 	LANGUAGES C)
 set(PROJECT_DESCRIPTION "JUICE is a UDP ICE library")
 
-option(USE_NETTLE "Use Nettle instead of OpenSSL for HMAC computation" OFF)
+option(USE_NETTLE "Use Nettle for hash functions" OFF)
+option(NO_SERVER "Disable server support" OFF)
 option(NO_TESTS "Disable tests build" OFF)
 option(WARNINGS_AS_ERRORS "Treat warnings as errors" OFF)
 
@@ -42,6 +43,7 @@ set(LIBJUICE_SOURCES
 	${CMAKE_CURRENT_SOURCE_DIR}/src/juice.c
 	${CMAKE_CURRENT_SOURCE_DIR}/src/log.c
 	${CMAKE_CURRENT_SOURCE_DIR}/src/random.c
+	${CMAKE_CURRENT_SOURCE_DIR}/src/server.c
 	${CMAKE_CURRENT_SOURCE_DIR}/src/stun.c
 	${CMAKE_CURRENT_SOURCE_DIR}/src/timestamp.c
 	${CMAKE_CURRENT_SOURCE_DIR}/src/turn.c
@@ -57,10 +59,11 @@ set(TESTS_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/test/crc32.c
     ${CMAKE_CURRENT_SOURCE_DIR}/test/base64.c
     ${CMAKE_CURRENT_SOURCE_DIR}/test/stun.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/test/gathering.c
     ${CMAKE_CURRENT_SOURCE_DIR}/test/connectivity.c
     ${CMAKE_CURRENT_SOURCE_DIR}/test/notrickle.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/test/server.c
     ${CMAKE_CURRENT_SOURCE_DIR}/test/turn.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/test/server.c
 )
 
 set(THREADS_PREFER_PTHREAD_FLAG ON)
@@ -100,6 +103,11 @@ if (USE_NETTLE)
 else()
     target_compile_definitions(juice PRIVATE USE_NETTLE=0)
     target_compile_definitions(juice-static PRIVATE USE_NETTLE=0)
+endif()
+
+if (NO_SERVER)
+	target_compile_definitions(juice PRIVATE NO_SERVER)
+	target_compile_definitions(juice-static PRIVATE NO_SERVER)
 endif()
 
 if (NO_ATOMICS)

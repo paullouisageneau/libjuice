@@ -334,11 +334,12 @@ typedef struct stun_message {
 
 	// TURN
 	uint16_t channel_number;
-	uint32_t lifetime;
 	addr_record_t peer;
 	addr_record_t relayed;
 	const char *data;
 	size_t data_size;
+	uint32_t lifetime;
+	bool lifetime_set;
 	bool even_port;
 	bool next_port;
 	bool dont_fragment;
@@ -369,6 +370,8 @@ bool stun_check_integrity(void *buf, size_t size, const stun_message_t *msg, con
 void stun_compute_userhash(const char *username, const char *realm, uint8_t *out);
 void stun_prepend_nonce_cookie(char *nonce);
 void stun_process_credentials(const stun_credentials_t *credentials, stun_credentials_t *dst);
+
+const char *stun_get_error_reason(unsigned int code);
 
 // Export for tests
 JUICE_EXPORT int _juice_stun_read(void *data, size_t size, stun_message_t *msg);
