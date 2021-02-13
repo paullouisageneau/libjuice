@@ -21,6 +21,7 @@
 #include <stdio.h>
 
 int test_crc32(void);
+int test_base64(void);
 int test_stun(void);
 int test_connectivity(void);
 int test_notrickle(void);
@@ -33,6 +34,12 @@ int main(int argc, char **argv) {
 	printf("\nRunning CRC32 implementation test...\n");
 	if (test_crc32()) {
 		fprintf(stderr, "CRC32 implementation test failed\n");
+		return -2;
+	}
+
+	printf("\nRunning base64 implementation test...\n");
+	if (test_base64()) {
+		fprintf(stderr, "base64 implementation test failed\n");
 		return -2;
 	}
 

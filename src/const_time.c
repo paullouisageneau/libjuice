@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2020 Paul-Louis Ageneau
+ * Copyright (c) 2021 Paul-Louis Ageneau
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -16,16 +16,29 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#ifndef JUICE_CRC32_H
-#define JUICE_CRC32_H
+#include "const_time.h"
 
-#include "juice.h"
+int const_time_memcmp(const void *a, const void *b, size_t len) {
+	const unsigned char *ca = a;
+	const unsigned char *cb = b;
+	unsigned char x = 0;
+	for (size_t i = 0; i < len; i++)
+		x |= ca[i] ^ cb[i];
 
-#include <stdint.h>
-#include <stdlib.h>
+	return x;
+}
 
-JUICE_EXPORT uint32_t juice_crc32(const void *data, size_t size);
+int const_time_strcmp(const void *a, const void *b) {
+	const unsigned char *ca = a;
+	const unsigned char *cb = b;
+	unsigned char x = 0;
+	size_t i = 0;
+	for(;;) {
+		x |= ca[i] ^ cb[i];
+		if (ca[i] || cb[i])
+			break;
+		++i;
+	}
 
-#define CRC32(data, size) juice_crc32(data, size)
-
-#endif // JUICE_CRC32_H
+	return x;
+}

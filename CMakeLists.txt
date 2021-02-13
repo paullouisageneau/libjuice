@@ -34,11 +34,13 @@ set(LIBJUICE_SOURCES
 	${CMAKE_CURRENT_SOURCE_DIR}/src/addr.c
 	${CMAKE_CURRENT_SOURCE_DIR}/src/agent.c
 	${CMAKE_CURRENT_SOURCE_DIR}/src/crc32.c
+	${CMAKE_CURRENT_SOURCE_DIR}/src/const_time.c
+	${CMAKE_CURRENT_SOURCE_DIR}/src/base64.c
+	${CMAKE_CURRENT_SOURCE_DIR}/src/hash.c
 	${CMAKE_CURRENT_SOURCE_DIR}/src/hmac.c
 	${CMAKE_CURRENT_SOURCE_DIR}/src/ice.c
 	${CMAKE_CURRENT_SOURCE_DIR}/src/juice.c
 	${CMAKE_CURRENT_SOURCE_DIR}/src/log.c
-	${CMAKE_CURRENT_SOURCE_DIR}/src/md5.c
 	${CMAKE_CURRENT_SOURCE_DIR}/src/random.c
 	${CMAKE_CURRENT_SOURCE_DIR}/src/stun.c
 	${CMAKE_CURRENT_SOURCE_DIR}/src/timestamp.c
@@ -53,6 +55,7 @@ set(LIBJUICE_HEADERS
 set(TESTS_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/test/main.c
     ${CMAKE_CURRENT_SOURCE_DIR}/test/crc32.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/test/base64.c
     ${CMAKE_CURRENT_SOURCE_DIR}/test/stun.c
     ${CMAKE_CURRENT_SOURCE_DIR}/test/connectivity.c
     ${CMAKE_CURRENT_SOURCE_DIR}/test/notrickle.c

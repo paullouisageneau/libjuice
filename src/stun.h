@@ -22,8 +22,8 @@
 #include "juice.h"
 
 #include "addr.h"
+#include "hash.h"
 #include "hmac.h"
-#include "md5.h"
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -110,6 +110,7 @@ struct stun_attr {
 };
 
 typedef enum stun_attr_type {
+	// Comprehension-required
 	STUN_ATTR_MAPPED_ADDRESS = 0x0001,
 	STUN_ATTR_USERNAME = 0x0006,
 	STUN_ATTR_MESSAGE_INTEGRITY = 0x0008,
@@ -123,6 +124,10 @@ typedef enum stun_attr_type {
 	STUN_ATTR_XOR_MAPPED_ADDRESS = 0x0020,
 	STUN_ATTR_PRIORITY = 0x0024,
 	STUN_ATTR_USE_CANDIDATE = 0x0025,
+
+	// Comprehension-optional
+	STUN_ATTR_PASSWORD_ALGORITHMS = 0x8002,
+	STUN_ATTR_ALTERNATE_DOMAIN = 0x8003,
 	STUN_ATTR_SOFTWARE = 0x8022,
 	STUN_ATTR_ALTERNATE_SERVER = 0x8023,
 	STUN_ATTR_FINGERPRINT = 0x8028,
@@ -141,6 +146,8 @@ typedef enum stun_attr_type {
 	STUN_ATTR_DONT_FRAGMENT = 0x001A,
 	STUN_ATTR_RESERVATION_TOKEN = 0x0022
 } stun_attr_type_t;
+
+#define STUN_IS_OPTIONAL_ATTR(attr_type) (attr_type & 0x8000)
 
 /*
  * STUN attribute value for MAPPED-ADDRESS or XOR-MAPPED-ADDRESS
@@ -185,6 +192,8 @@ struct stun_value_error_code {
 	uint8_t reason[];
 };
 
+#define STUN_ERROR_INTERNAL_VALIDATION_FAILED 599
+
 /*
  * STUN attribute for CHANNEL-NUMBER
  *
@@ -227,6 +236,34 @@ struct stun_value_requested_transport {
 	uint16_t reserved2;
 };
 
+/*
+ * STUN attribute value for PASSWORD-ALGORITHM and PASSWORD-ALGORITHMS
+ *
+ *  0                   1                   2                   3
+ *  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+ * +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+ * |         Algorithm 1           | Algorithm 1 Parameters Length |
+ * +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+ * |                    Algorithm 1 Parameters (variable)
+ * +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+ * |         Algorithm 2           | Algorithm 2 Parameters Length |
+ * +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+ * |                    Algorithm 2 Parameters (variable)
+ * +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+ * |                                                             ...
+ */
+struct stun_value_password_algorithm {
+	uint16_t algorithm;
+	uint16_t parameters_length;
+	uint8_t parameters[];
+};
+
+typedef enum stun_password_algorithm {
+	STUN_PASSWORD_ALGORITHM_UNSET = 0x0000,
+	STUN_PASSWORD_ALGORITHM_MD5 = 0x0001,
+	STUN_PASSWORD_ALGORITHM_SHA256 = 0x0002,
+} stun_password_algorithm_t;
+
 #pragma pack(pop)
 
 // The value of USERNAME is a variable-length value. It MUST contain a UTF-8 [RFC3629] encoded
@@ -251,10 +288,31 @@ struct stun_value_requested_transport {
 
 #define STUN_MAX_PASSWORD_LEN STUN_MAX_USERNAME_LEN
 
+// Nonce cookie prefix as specified in https://tools.ietf.org/html/rfc8489#section-9.2
+#define STUN_NONCE_COOKIE "obMatJos2"
+#define STUN_NONCE_COOKIE_LEN 9
+
+// STUN Security Feature bits as defined in https://tools.ietf.org/html/rfc8489#section-18.1
+// See errata about bit order: https://www.rfc-editor.org/errata_search.php?rfc=8489
+// Bits are assigned starting from the least significant side of the bit set, so Bit 0 is the rightmost bit, and Bit 23 is the leftmost bit.
+// Bit 0: Password algorithms
+// Bit 1: Username anonymity
+// Bit 2-23: Unassigned
+
+#define STUN_SECURITY_PASSWORD_ALGORITHMS_BIT 0x01
+#define STUN_SECURITY_USERNAME_ANONYMITY_BIT 0x02
+
+#define STUN_MAX_PASSWORD_ALGORITHMS_VALUE_SIZE 256
+
 typedef struct stun_credentials {
 	char username[STUN_MAX_USERNAME_LEN];
 	char realm[STUN_MAX_REALM_LEN];
 	char nonce[STUN_MAX_NONCE_LEN];
+	uint8_t userhash[HASH_SHA256_SIZE];
+	bool enable_userhash;
+	stun_password_algorithm_t password_algorithm;
+	uint8_t password_algorithms_value[STUN_MAX_PASSWORD_ALGORITHMS_VALUE_SIZE];
+	size_t password_algorithms_value_size;
 } stun_credentials_t;
 
 typedef struct stun_message {
@@ -302,15 +360,19 @@ bool is_stun_datagram(const void *data, size_t size);
 
 int stun_read(void *data, size_t size, stun_message_t *msg);
 int stun_read_attr(const void *data, size_t size, stun_message_t *msg, uint8_t *begin,
-                   uint8_t *attr_begin);
+                   uint8_t *attr_begin, uint32_t *security_bits);
 int stun_read_value_mapped_address(const void *data, size_t size, addr_record_t *mapped,
                                    const uint8_t *mask);
 
 bool stun_check_integrity(void *buf, size_t size, const stun_message_t *msg, const char *password);
 
+void stun_compute_userhash(const char *username, const char *realm, uint8_t *out);
+void stun_prepend_nonce_cookie(char *nonce);
+void stun_process_credentials(const stun_credentials_t *credentials, stun_credentials_t *dst);
+
 // Export for tests
 JUICE_EXPORT int _juice_stun_read(void *data, size_t size, stun_message_t *msg);
 JUICE_EXPORT bool _juice_stun_check_integrity(void *buf, size_t size, const stun_message_t *msg,
-                                             const char *password);
+                                              const char *password);
 
 #endif
