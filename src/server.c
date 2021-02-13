@@ -16,6 +16,8 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#ifndef NO_SERVER
+
 #include "server.h"
 #include "const_time.h"
 #include "hmac.h"
@@ -1036,3 +1038,5 @@ int server_process_channel_data(juice_server_t *server, char *buf, size_t len,
 
 	return 0;
 }
+
+#endif // ifndef NO_SERVER

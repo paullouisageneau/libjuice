@@ -16,6 +16,8 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#ifndef NO_SERVER
+
 #include "juice/juice.h"
 
 #include <stdbool.h>
@@ -255,3 +257,5 @@ static void on_recv2(juice_agent_t *agent, const char *data, size_t size, void *
 	printf("Received 2: %s\n", buffer);
 	success = true;
 }
+
+#endif // ifndef NO_SERVER

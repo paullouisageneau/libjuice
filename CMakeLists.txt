@@ -4,7 +4,8 @@ project (libjuice
 	LANGUAGES C)
 set(PROJECT_DESCRIPTION "JUICE is a UDP ICE library")
 
-option(USE_NETTLE "Use Nettle instead of OpenSSL for HMAC computation" OFF)
+option(USE_NETTLE "Use Nettle for hash functions" OFF)
+option(NO_SERVER "Disable server support" OFF)
 option(NO_TESTS "Disable tests build" OFF)
 option(WARNINGS_AS_ERRORS "Treat warnings as errors" OFF)
 
@@ -102,6 +103,11 @@ if (USE_NETTLE)
 else()
     target_compile_definitions(juice PRIVATE USE_NETTLE=0)
     target_compile_definitions(juice-static PRIVATE USE_NETTLE=0)
+endif()
+
+if (NO_SERVER)
+	target_compile_definitions(juice PRIVATE NO_SERVER)
+	target_compile_definitions(juice-static PRIVATE NO_SERVER)
 endif()
 
 if (NO_ATOMICS)

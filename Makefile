@@ -19,6 +19,19 @@ else
         CFLAGS+=-DUSE_NETTLE=0
 endif
 
+USE_NETTLE ?= 0
+ifneq ($(USE_NETTLE), 0)
+        CFLAGS+=-DUSE_NETTLE=1
+        LIBS+=nettle
+else
+        CFLAGS+=-DUSE_NETTLE=0
+endif
+
+NO_SERVER ?= 0
+ifneq ($(NO_SERVER), 0)
+        CFLAGS+=-DNO_SERVER
+endif
+
 NO_ATOMICS ?= 0
 ifneq ($(NO_ATOMICS), 0)
         CFLAGS+=-DNO_ATOMICS

@@ -18,8 +18,11 @@
 
 #include "juice.h"
 #include "agent.h"
-#include "server.h"
 #include "ice.h"
+
+#ifndef NO_SERVER
+#include "server.h"
+#endif
 
 #include <stdio.h>
 
@@ -108,7 +111,7 @@ JUICE_EXPORT int juice_send_diffserv(juice_agent_t *agent, const char *data, siz
 JUICE_EXPORT juice_state_t juice_get_state(juice_agent_t *agent) { return agent_get_state(agent); }
 
 JUICE_EXPORT int juice_get_selected_candidates(juice_agent_t *agent, char *local, size_t local_size,
-                                              char *remote, size_t remote_size) {
+                                               char *remote, size_t remote_size) {
 	if (!agent || (!local && local_size) || (!remote && remote_size))
 		return JUICE_ERR_INVALID;
 
@@ -164,16 +167,21 @@ JUICE_EXPORT const char *juice_state_to_string(juice_state_t state) {
 	}
 }
 
-JUICE_EXPORT juice_server_t *juice_server_create(uint16_t port, const juice_server_config_t *config) {
+JUICE_EXPORT juice_server_t *juice_server_create(uint16_t port,
+                                                 const juice_server_config_t *config) {
+#ifndef NO_SERVER
 	if (port == 0 || !config)
 		return NULL;
 
 	return server_create(port, config);
+#else
+	JLOG_FATAL("The library was compiled without server support");
+#endif
 }
 
 JUICE_EXPORT void juice_server_destroy(juice_server_t *server) {
-	if(server)
+#ifndef NO_SERVER
+	if (server)
 		server_destroy(server);
+#endif
 }
-
-
