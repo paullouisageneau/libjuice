@@ -1313,7 +1313,9 @@ int agent_process_stun_binding(juice_agent_t *agent, const stun_message_t *msg,
 		break;
 	}
 	case STUN_CLASS_RESP_ERROR: {
-		JLOG_WARN("Got STUN Binding error response, code=%u", (unsigned int)msg->error_code);
+		if (msg->error_code != STUN_ERROR_INTERNAL_VALIDATION_FAILED)
+			JLOG_WARN("Got STUN Binding error response, code=%u", (unsigned int)msg->error_code);
+
 		if (entry->type == AGENT_STUN_ENTRY_TYPE_CHECK && msg->error_code == 487) {
 			// RFC 8445 7.2.5.1. Role Conflict:
 			// If the Binding request generates a 487 (Role Conflict) error response, and if the ICE
@@ -1522,12 +1524,12 @@ int agent_process_turn_allocate(juice_agent_t *agent, const stun_message_t *msg,
 				entry->state = AGENT_STUN_ENTRY_STATE_FAILED;
 				return -1;
 			}
-			// Store realm and nonce
-			strcpy(entry->turn->credentials.realm, msg->credentials.realm);
-			strcpy(entry->turn->credentials.nonce, msg->credentials.nonce);
+
+			stun_process_credentials(&msg->credentials, &entry->turn->credentials);
 
 			// Resend request when possible
 			agent_arm_transmission(agent, entry, 0);
+
 		} else if (msg->error_code == 438) { // Stale Nonce
 			JLOG_DEBUG("Got TURN %s Stale Nonce response",
 			           msg->msg_method == STUN_METHOD_ALLOCATE ? "Allocate" : "Refresh");
@@ -1536,16 +1538,17 @@ int agent_process_turn_allocate(juice_agent_t *agent, const stun_message_t *msg,
 				entry->state = AGENT_STUN_ENTRY_STATE_FAILED;
 				return -1;
 			}
-			// Store realm and nonce
-			strcpy(entry->turn->credentials.realm, msg->credentials.realm);
-			strcpy(entry->turn->credentials.nonce, msg->credentials.nonce);
+
+			stun_process_credentials(&msg->credentials, &entry->turn->credentials);
 
 			// Resend request when possible
 			agent_arm_transmission(agent, entry, 0);
+
 		} else {
-			JLOG_WARN("Got TURN %s error response, code=%u",
-			          msg->msg_method == STUN_METHOD_ALLOCATE ? "Allocate" : "Refresh",
-			          (unsigned int)msg->error_code);
+			if (msg->error_code != STUN_ERROR_INTERNAL_VALIDATION_FAILED)
+				JLOG_WARN("Got TURN %s error response, code=%u",
+				          msg->msg_method == STUN_METHOD_ALLOCATE ? "Allocate" : "Refresh",
+				          (unsigned int)msg->error_code);
 
 			JLOG_INFO("TURN allocation failed");
 			entry->state = AGENT_STUN_ENTRY_STATE_FAILED;
@@ -1584,20 +1587,14 @@ int agent_send_turn_allocate_request(juice_agent_t *agent, const agent_stun_entr
 	memset(&msg, 0, sizeof(msg));
 	msg.msg_class = STUN_CLASS_REQUEST;
 	msg.msg_method = method;
-
 	memcpy(msg.transaction_id, entry->transaction_id, STUN_TRANSACTION_ID_SIZE);
 
+	msg.credentials = entry->turn->credentials;
 	msg.lifetime = TURN_LIFETIME / 1000; // seconds
 	msg.requested_transport = true;
 	msg.dont_fragment = true;
-	const stun_credentials_t *credentials = &entry->turn->credentials;
-	const char *password = NULL;
-	if (*credentials->realm != '\0' && *credentials->nonce != '\0') {
-		strcpy(msg.credentials.username, credentials->username);
-		strcpy(msg.credentials.realm, credentials->realm);
-		strcpy(msg.credentials.nonce, credentials->nonce);
-		password = entry->turn->password;
-	}
+
+	const char *password = *msg.credentials.nonce != '\0' ? entry->turn->password : NULL;
 
 	char buffer[BUFFER_SIZE];
 	int size = stun_write(buffer, BUFFER_SIZE, &msg, password);
@@ -1631,8 +1628,9 @@ int agent_process_turn_create_permission(juice_agent_t *agent, const stun_messag
 		break;
 	}
 	case STUN_CLASS_RESP_ERROR: {
-		JLOG_WARN("Got TURN CreatePermission error response, code=%u",
-		          (unsigned int)msg->error_code);
+		if (msg->error_code != STUN_ERROR_INTERNAL_VALIDATION_FAILED)
+			JLOG_WARN("Got TURN CreatePermission error response, code=%u",
+			          (unsigned int)msg->error_code);
 		break;
 	}
 	default: {
@@ -1657,7 +1655,6 @@ int agent_send_turn_create_permission_request(juice_agent_t *agent, agent_stun_e
 		return -1;
 	}
 	const stun_credentials_t *credentials = &entry->turn->credentials;
-	const char *password = entry->turn->password;
 
 	if (*credentials->realm == '\0' || *credentials->nonce == '\0') {
 		JLOG_ERROR("Missing realm and nonce to send TURN CreatePermission request");
@@ -1668,16 +1665,14 @@ int agent_send_turn_create_permission_request(juice_agent_t *agent, agent_stun_e
 	memset(&msg, 0, sizeof(msg));
 	msg.msg_class = STUN_CLASS_REQUEST;
 	msg.msg_method = STUN_METHOD_CREATE_PERMISSION;
+	if (!turn_new_transaction_id(entry->turn, record, msg.transaction_id))
+		return -1;
+
+	msg.credentials = entry->turn->credentials;
 	msg.peer = *record;
 
-	strcpy(msg.credentials.username, credentials->username);
-	strcpy(msg.credentials.realm, credentials->realm);
-	strcpy(msg.credentials.nonce, credentials->nonce);
-
-	turn_new_transaction_id(entry->turn, record, msg.transaction_id);
-
 	char buffer[BUFFER_SIZE];
-	int size = stun_write(buffer, BUFFER_SIZE, &msg, password);
+	int size = stun_write(buffer, BUFFER_SIZE, &msg, entry->turn->password);
 	if (size <= 0) {
 		JLOG_ERROR("STUN message write failed");
 		return -1;
@@ -1708,7 +1703,9 @@ int agent_process_turn_channel_bind(juice_agent_t *agent, const stun_message_t *
 		break;
 	}
 	case STUN_CLASS_RESP_ERROR: {
-		JLOG_WARN("Got TURN ChannelBind error response, code=%u", (unsigned int)msg->error_code);
+		if (msg->error_code != STUN_ERROR_INTERNAL_VALIDATION_FAILED)
+			JLOG_WARN("Got TURN ChannelBind error response, code=%u",
+			          (unsigned int)msg->error_code);
 		break;
 	}
 	default: {
@@ -1748,15 +1745,12 @@ int agent_send_turn_channel_bind_request(juice_agent_t *agent, agent_stun_entry_
 	memset(&msg, 0, sizeof(msg));
 	msg.msg_class = STUN_CLASS_REQUEST;
 	msg.msg_method = STUN_METHOD_CHANNEL_BIND;
-	msg.channel_number = channel;
-	msg.peer = *record;
-
-	strcpy(msg.credentials.username, credentials->username);
-	strcpy(msg.credentials.realm, credentials->realm);
-	strcpy(msg.credentials.nonce, credentials->nonce);
-
 	if (!turn_new_transaction_id(entry->turn, record, msg.transaction_id))
 		return -1;
+
+	msg.credentials = entry->turn->credentials;
+	msg.channel_number = channel;
+	msg.peer = *record;
 
 	char buffer[BUFFER_SIZE];
 	int size = stun_write(buffer, BUFFER_SIZE, &msg, password);

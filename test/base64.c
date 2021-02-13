@@ -21,6 +21,8 @@
 #include <stdint.h>
 #include <string.h>
 
+#define BUFFER_SIZE 1024
+
 int test_base64(void) {
 	const char *str = "Man is distinguished, not only by his reason, but by this singular passion "
 	                  "from other animals, which is a lust of the mind, that by a perseverance of "
@@ -33,16 +35,15 @@ int test_base64(void) {
 	    "4gb2Yga25vd2xlZGdlLCBleGNlZWRzIHRoZSBzaG9ydCB2ZWhlbWVuY2Ugb2YgYW55IGNhcm5hbCBwbGVhc3VyZS4"
 	    "=";
 
-	const size_t buffer_size = 1024;
-	char buffer1[buffer_size];
-	if (BASE64_ENCODE(str, strlen(str), buffer1, buffer_size) <= 0)
+	char buffer1[BUFFER_SIZE];
+	if (BASE64_ENCODE(str, strlen(str), buffer1, BUFFER_SIZE) <= 0)
 		return -1;
 
 	if (strcmp(buffer1, expected) != 0)
 		return -1;
 
-	char buffer2[buffer_size];
-	int len = BASE64_DECODE(buffer1, buffer2, buffer_size);
+	char buffer2[BUFFER_SIZE];
+	int len = BASE64_DECODE(buffer1, buffer2, BUFFER_SIZE);
 	if (len <= 0)
 		return -1;
 

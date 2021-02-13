@@ -18,6 +18,7 @@
 
 #include "stun.h"
 #include "base64.h"
+#include "const_time.h"
 #include "crc32.h"
 #include "juice.h"
 #include "log.h"
@@ -34,6 +35,13 @@
 #define STUN_FINGERPRINT_XOR 0x5354554E // "STUN"
 #define STUN_ATTR_SIZE sizeof(struct stun_attr)
 
+// STUN_MAX_PASSWORD_LEN > HASH_SHA256_SIZE > HASH_MD5_SIZE
+#define MAX_HMAC_KEY_LEN STUN_MAX_PASSWORD_LEN
+
+#define MAX_HMAC_INPUT_LEN (STUN_MAX_USERNAME_LEN + STUN_MAX_REALM_LEN + STUN_MAX_PASSWORD_LEN + 2)
+
+#define MAX_USERHASH_INPUT_LEN (STUN_MAX_USERNAME_LEN + STUN_MAX_REALM_LEN + 1)
+
 #ifndef htonll
 #define htonll(x)                                                                                  \
 	((uint64_t)(((uint64_t)htonl((uint32_t)(x))) << 32) | (uint64_t)htonl((uint32_t)((x) >> 32)))
@@ -48,26 +56,23 @@ static size_t align32(size_t len) {
 	return len;
 }
 
-#define MAX_HMAC_KEY_LEN                                                                           \
-	(STUN_MAX_PASSWORD_LEN >= HASH_SHA256_SIZE ? STUN_MAX_PASSWORD_LEN : HASH_SHA256_SIZE)
-
-#define MAX_HMAC_INPUT_LEN (STUN_MAX_USERNAME_LEN + STUN_MAX_REALM_LEN + STUN_MAX_PASSWORD_LEN + 2)
-
-#define MAX_USERHASH_INPUT_LEN (STUN_MAX_USERNAME_LEN + STUN_MAX_REALM_LEN + 1)
-
 static size_t generate_hmac_key(const stun_message_t *msg, const char *password, void *key) {
 	if (*msg->credentials.realm != '\0') {
 		// long-term credentials
+		if (*msg->credentials.username == '\0')
+			JLOG_WARN("Generating HMAC key for long-term credentials with empty STUN username");
+
 		char input[MAX_HMAC_INPUT_LEN];
 		int input_len = snprintf(input, MAX_HMAC_INPUT_LEN, "%s:%s:%s", msg->credentials.username,
 		                         msg->credentials.realm, password ? password : "");
 		if (input_len < 0)
 			return 0;
 
-		if (msg->credentials.enable_password_algorithm_sha256) {
+		switch (msg->credentials.password_algorithm) {
+		case STUN_PASSWORD_ALGORITHM_SHA256:
 			hash_sha256(input, input_len, key);
 			return HASH_SHA256_SIZE;
-		} else {
+		default:
 			hash_md5(input, input_len, key);
 			return HASH_MD5_SIZE;
 		}
@@ -76,6 +81,18 @@ static size_t generate_hmac_key(const stun_message_t *msg, const char *password,
 		int key_len = snprintf((char *)key, MAX_HMAC_KEY_LEN, "%s", password ? password : "");
 		return key_len < 0 ? 0 : key_len;
 	}
+}
+
+static size_t generate_password_algorithms_attr(uint8_t *attr) {
+	// attr size must be at least STUN_PASSWORD_ALGORITHMS_ATTR_MAX_SIZE
+	struct stun_value_password_algorithm *pwa = (struct stun_value_password_algorithm *)attr;
+	pwa->algorithm = htons(STUN_PASSWORD_ALGORITHM_SHA256);
+	pwa->parameters_length = 0;
+	++pwa;
+	pwa->algorithm = htons(STUN_PASSWORD_ALGORITHM_MD5);
+	pwa->parameters_length = 0;
+	++pwa;
+	return (uint8_t *)pwa - attr;
 }
 
 int stun_write(void *buf, size_t size, const stun_message_t *msg, const char *password) {
@@ -272,35 +289,57 @@ int stun_write(void *buf, size_t size, const stun_message_t *msg, const char *pa
 			goto overflow;
 		pos += len;
 
-		if (msg->msg_class == STUN_CLASS_REQUEST) {
+		if (msg->credentials.password_algorithm > 0) {
+			len = stun_write_attr(pos, end - pos, STUN_ATTR_PASSWORD_ALGORITHMS,
+			                      msg->credentials.password_algorithms_value,
+			                      msg->credentials.password_algorithms_value_size);
+			if (len <= 0)
+				goto overflow;
+			pos += len;
+
+		} else if (msg->msg_class != STUN_CLASS_REQUEST) {
+			uint8_t pwa_value[STUN_MAX_PASSWORD_ALGORITHMS_VALUE_SIZE];
+			size_t pwa_size = generate_password_algorithms_attr(pwa_value);
+			len =
+			    stun_write_attr(pos, end - pos, STUN_ATTR_PASSWORD_ALGORITHMS, pwa_value, pwa_size);
+			if (len <= 0)
+				goto overflow;
+			pos += len;
+		}
+
+		if (msg->msg_class == STUN_CLASS_REQUEST &&
+		    msg->credentials.password_algorithm != STUN_PASSWORD_ALGORITHM_UNSET) {
 			struct stun_value_password_algorithm pwa;
-			pwa.algorithm = msg->credentials.enable_password_algorithm_sha256
-			                    ? STUN_PASSWORD_ALGORITHM_SHA256
-			                    : STUN_PASSWORD_ALGORITHM_MD5;
+			pwa.algorithm = htons(msg->credentials.password_algorithm);
 			len = stun_write_attr(pos, end - pos, STUN_ATTR_PASSWORD_ALGORITHM, &pwa, sizeof(pwa));
 			if (len <= 0)
 				goto overflow;
 			pos += len;
 		}
-		struct stun_value_password_algorithm pwas[2];
-		memset(pwas, 0, sizeof(pwas));
-		pwas[0].algorithm = STUN_PASSWORD_ALGORITHM_MD5;
-		pwas[1].algorithm = STUN_PASSWORD_ALGORITHM_SHA256;
-		len = stun_write_attr(pos, end - pos, STUN_ATTR_PASSWORD_ALGORITHM, pwas, sizeof(pwas));
-		if (len <= 0)
-			goto overflow;
-		pos += len;
 	}
 	if (password) {
-		// According to RFC 8489, the agent must include both MESSAGE-INTEGRITY and
-		// MESSAGE-INTEGRITY-SHA256. However, this make older servers fail with error 420 Unknown
-		// Attribute. Therefore, only MESSAGE-INTEGRITY is included in the message for
-		// compatibility.
-		// TODO: Send MESSAGE-INTEGRITY-SHA256 if password algorithm is SHA256
 		size_t tmp_length = pos - attr_begin + STUN_ATTR_SIZE + HMAC_SHA1_SIZE;
 		stun_update_header_length(begin, tmp_length);
 		uint8_t key[MAX_HMAC_KEY_LEN];
 		size_t key_len = generate_hmac_key(msg, password, key);
+
+		// According to RFC 8489, the agent must include both MESSAGE-INTEGRITY and
+		// MESSAGE-INTEGRITY-SHA256. However, this makes older servers fail with error 420 Unknown
+		// Attribute. Therefore, unless the password algorithm SHA-256 is enabled, only
+		// MESSAGE-INTEGRITY is included in the message for compatibility.
+		if (msg->credentials.password_algorithm != STUN_PASSWORD_ALGORITHM_UNSET) {
+			// If the response contains a PASSWORD-ALGORITHMS attribute, all the
+			// subsequent requests MUST be authenticated using MESSAGE-INTEGRITY-
+			// SHA256 only.
+			uint8_t hmac[HMAC_SHA256_SIZE];
+			hmac_sha256(begin, pos - begin, key, key_len, hmac);
+			len = stun_write_attr(pos, end - pos, STUN_ATTR_MESSAGE_INTEGRITY_SHA256, hmac,
+			                      HMAC_SHA256_SIZE);
+			if (len <= 0)
+				goto overflow;
+			pos += len;
+		}
+
 		uint8_t hmac[HMAC_SHA1_SIZE];
 		hmac_sha1(begin, pos - begin, key, key_len, hmac);
 		len = stun_write_attr(pos, end - pos, STUN_ATTR_MESSAGE_INTEGRITY, hmac, HMAC_SHA1_SIZE);
@@ -466,7 +505,6 @@ int stun_read(void *data, size_t size, stun_message_t *msg) {
 	msg->msg_class = (stun_class_t)(type & STUN_CLASS_MASK);
 	msg->msg_method = (stun_method_t)(type & ~STUN_CLASS_MASK);
 	memcpy(msg->transaction_id, header->transaction_id, STUN_TRANSACTION_ID_SIZE);
-
 	JLOG_VERBOSE("Reading STUN message, class=0x%X, method=0x%X", (unsigned int)msg->msg_class,
 	             (unsigned int)msg->msg_method);
 
@@ -487,6 +525,8 @@ int stun_read(void *data, size_t size, stun_message_t *msg) {
 
 	JLOG_VERBOSE("Finished reading STUN attributes");
 
+	stun_credentials_t *credentials = &msg->credentials;
+
 	// RFC 8489: If the response is an error response with an error code of 401 (Unauthenticated) or
 	// 438 (Stale Nonce), the client MUST test if the NONCE attribute value starts with the "nonce
 	// cookie". If so and the "nonce cookie" has the STUN Security Feature "Password algorithms"
@@ -494,23 +534,58 @@ int stun_read(void *data, size_t size, stun_message_t *msg) {
 	// the request with a new transaction. See https://tools.ietf.org/html/rfc8489#section-9.2.5
 	if (msg->msg_class == STUN_CLASS_RESP_ERROR &&
 	    (msg->error_code == 401 || msg->error_code == 438) &&
-	    security_bits & STUN_SECURITY_PASSWORD_ALGORITHMS_BIT && !msg->has_password_algorithms) {
-		JLOG_WARN("STUN Security Feature \"Password algorithms\" bit is set in %u error response "
-		          "but the corresponding attribute is missing, canceling transaction",
+	    security_bits & STUN_SECURITY_PASSWORD_ALGORITHMS_BIT &&
+	    credentials->password_algorithms_value_size == 0) {
+		JLOG_INFO("STUN Security Feature \"Password algorithms\" bit is set in %u error response "
+		          "but the corresponding attribute is missing",
 		          msg->error_code);
 		msg->error_code = STUN_ERROR_INTERNAL_VALIDATION_FAILED; // so the agent will give up
 	}
 
-	if (security_bits & STUN_SECURITY_USERNAME_ANONYMITY_BIT)
-		msg->credentials.enable_userhash = true;
+	// RFC 8489: If the request contains neither the PASSWORD-ALGORITHMS nor the
+	// PASSWORD-ALGORITHM algorithm, then the request is processed as though
+	// PASSWORD-ALGORITHM were MD5.
+	// Otherwise, unless (1) PASSWORD-ALGORITHM and PASSWORD-ALGORITHMS are both
+	// present, (2) PASSWORD-ALGORITHMS  matches the value sent in the response that sent
+	// this NONCE, and (3) PASSWORD-ALGORITHM matches one of the entries in
+	// PASSWORD-ALGORITHMS, the server MUST generate an error response with an error code of
+	// 400 (Bad Request). See https://tools.ietf.org/html/rfc8489#section-9.2.4
+	if (!STUN_IS_RESPONSE(msg->msg_class)) {
+		if (credentials->password_algorithms_value_size == 0 &&
+		    credentials->password_algorithm == STUN_PASSWORD_ALGORITHM_UNSET) {
+			credentials->password_algorithm = STUN_PASSWORD_ALGORITHM_MD5;
+
+		} else if (credentials->password_algorithm == STUN_PASSWORD_ALGORITHM_UNSET) {
+			JLOG_INFO("No suitable password algorithm in STUN request");
+			msg->error_code = STUN_ERROR_INTERNAL_VALIDATION_FAILED;
+
+		} else if (credentials->password_algorithms_value_size == 0) {
+			JLOG_INFO("Missing password algorithms list in STUN request");
+			msg->error_code = STUN_ERROR_INTERNAL_VALIDATION_FAILED;
+
+		} else {
+			uint8_t pwa_value[STUN_MAX_PASSWORD_ALGORITHMS_VALUE_SIZE];
+			size_t pwa_size = generate_password_algorithms_attr(pwa_value);
+			if (pwa_size != credentials->password_algorithms_value_size ||
+			    memcmp(credentials->password_algorithms_value, pwa_value, pwa_size) != 0) {
+				JLOG_INFO("Password algorithms list is invalid in STUN request");
+				msg->error_code = STUN_ERROR_INTERNAL_VALIDATION_FAILED;
+			}
+		}
+	}
+
+	if (security_bits & STUN_SECURITY_USERNAME_ANONYMITY_BIT) {
+		JLOG_VERBOSE("Remote agent supports user anonymity");
+		credentials->enable_userhash = true;
+	}
 
 	return (int)(sizeof(struct stun_header) + length);
 }
 
 int stun_read_attr(const void *data, size_t size, stun_message_t *msg, uint8_t *begin,
                    uint8_t *attr_begin, uint32_t *security_bits) {
-	// RFC 8489: When present, the FINGERPRINT attribute MUST be the last attribute in the message
-	// and thus will appear after MESSAGE-INTEGRITY and MESSAGE-INTEGRITY-SHA256.
+	// RFC 8489: When present, the FINGERPRINT attribute MUST be the last attribute in the
+	// message and thus will appear after MESSAGE-INTEGRITY and MESSAGE-INTEGRITY-SHA256.
 	if (msg->has_fingerprint) {
 		JLOG_DEBUG("Invalid STUN attribute after fingerprint");
 		return -1;
@@ -531,8 +606,8 @@ int stun_read_attr(const void *data, size_t size, stun_message_t *msg, uint8_t *
 		return -1;
 	}
 
-	// RFC 8489: Note that agents MUST ignore all attributes that follow MESSAGE-INTEGRITY, with the
-	// exception of the MESSAGE-INTEGRITY-SHA256 and FINGERPRINT attributes.
+	// RFC 8489: Note that agents MUST ignore all attributes that follow MESSAGE-INTEGRITY, with
+	// the exception of the MESSAGE-INTEGRITY-SHA256 and FINGERPRINT attributes.
 	if (msg->has_integrity && type != STUN_ATTR_FINGERPRINT) {
 		JLOG_DEBUG("Ignoring STUN attribute 0x%X after message integrity", (unsigned int)type);
 		while (length & 0x03)
@@ -654,9 +729,10 @@ int stun_read_attr(const void *data, size_t size, stun_message_t *msg, uint8_t *
 		msg->credentials.nonce[length] = '\0';
 		JLOG_VERBOSE("Got nonce: %s", msg->credentials.nonce);
 
-		// If the nonce starts with the nonce cookie, decode the Security Feature bits
+		// If the nonce of a response starts with the nonce cookie, decode the Security Feature bits
 		// See https://tools.ietf.org/html/rfc8489#section-9.2
-		if (strlen(msg->credentials.nonce) > STUN_NONCE_COOKIE_LEN + 4 &&
+		if (STUN_IS_RESPONSE(msg->msg_class) &&
+		    strlen(msg->credentials.nonce) > STUN_NONCE_COOKIE_LEN + 4 &&
 		    strncmp(msg->credentials.nonce, STUN_NONCE_COOKIE, STUN_NONCE_COOKIE_LEN) == 0) {
 			char encoded_security_bits[5];
 			memcpy(encoded_security_bits, msg->credentials.nonce + STUN_NONCE_COOKIE_LEN, 4);
@@ -664,57 +740,90 @@ int stun_read_attr(const void *data, size_t size, stun_message_t *msg, uint8_t *
 
 			uint8_t bytes[4];
 			bytes[0] = 0;
-			BASE64_DECODE(encoded_security_bits, bytes + 1, 3);
-			*security_bits = ntohl(*((uint32_t *)bytes));
-
-			JLOG_VERBOSE("Nonce has cookie, Security Feature bits are: %lX",
-			             (unsigned long)*security_bits);
+			int len = BASE64_DECODE(encoded_security_bits, bytes + 1, 3);
+			if (len == 3) {
+				*security_bits = ntohl(*((uint32_t *)bytes));
+				JLOG_VERBOSE("Nonce has cookie, Security Feature bits are 0x%lX",
+				             (unsigned long)*security_bits);
+			} else {
+				JLOG_WARN("Nonce has cookie, but the encoded Security Feature bits field \"%s\" is "
+				          "invalid",
+				          encoded_security_bits);
+				security_bits = 0;
+			}
+		} else if (msg->msg_class == STUN_CLASS_RESP_ERROR) {
+			JLOG_INFO("Remote agent does not support RFC 8489");
 		}
 		break;
 	}
 	case STUN_ATTR_PASSWORD_ALGORITHM: {
-		const struct stun_value_password_algorithm *pwa =
-		    (const struct stun_value_password_algorithm *)attr->value;
-		uint16_t algorithm = ntohs(pwa->algorithm);
-		if (algorithm == STUN_PASSWORD_ALGORITHM_SHA256)
-			msg->credentials.enable_password_algorithm_sha256 = true;
-		else if (algorithm != STUN_PASSWORD_ALGORITHM_MD5)
-			JLOG_WARN("Unknown password algorithm 0x%hX", algorithm);
+		JLOG_VERBOSE("Reading password algorithm");
+		if (length < sizeof(struct stun_value_password_algorithm)) {
+			JLOG_WARN("STUN password algorithm value too short, length=%zu", length);
+			return -1;
+		}
+		if (!STUN_IS_RESPONSE(msg->msg_class)) {
+			const struct stun_value_password_algorithm *pwa =
+			    (const struct stun_value_password_algorithm *)attr->value;
+			stun_password_algorithm_t algorithm = ntohs(pwa->algorithm);
+			if (algorithm == STUN_PASSWORD_ALGORITHM_MD5 ||
+			    algorithm == STUN_PASSWORD_ALGORITHM_SHA256)
+				msg->credentials.password_algorithm = algorithm;
+			else
+				JLOG_WARN("Unknown password algorithm 0x%hX", algorithm);
+		} else {
+			JLOG_WARN("Found password algorithm in response, ignoring");
+		}
 		break;
 	}
 	case STUN_ATTR_PASSWORD_ALGORITHMS: {
-		JLOG_VERBOSE("Reading password algorithms");
-		bool has_md5 = false;
-		bool has_sha256 = false;
-		const uint8_t *value = attr->value;
-		size_t left = length;
-		while (left >= sizeof(struct stun_value_password_algorithm)) {
-			const struct stun_value_password_algorithm *pwa =
-			    (const struct stun_value_password_algorithm *)value;
-			uint16_t algorithm = ntohs(pwa->algorithm);
-			switch (algorithm) {
-			case STUN_PASSWORD_ALGORITHM_MD5:
-				has_md5 = true;
-				break;
-			case STUN_PASSWORD_ALGORITHM_SHA256:
-				has_sha256 = true;
-				break;
-			default:
-				JLOG_DEBUG("Unknown password algorithm 0x%hX", algorithm);
-				break;
-			}
-			size_t parameters_length = ntohs(pwa->parameters_length);
-			size_t total_length =
-			    sizeof(struct stun_value_password_algorithm) + align32(parameters_length);
-			value += total_length;
-			left -= total_length;
+		JLOG_VERBOSE("Reading password algorithms list");
+		if (length < sizeof(struct stun_value_password_algorithm)) {
+			JLOG_WARN("STUN password algorithms list too short, length=%zu", length);
+			return -1;
+		}
+		if (length > STUN_MAX_PASSWORD_ALGORITHMS_VALUE_SIZE) {
+			JLOG_WARN("STUN password algorithms list too long, length=%zu", length);
+			return -1;
 		}
 
-		if (has_sha256) {
-			msg->credentials.enable_password_algorithm_sha256 = true;
-		} else if (!has_md5) {
-			JLOG_WARN("No suitable password algorithm, canceling transaction");
-			msg->error_code = STUN_ERROR_INTERNAL_VALIDATION_FAILED; // so the agent will give up
+		memcpy(msg->credentials.password_algorithms_value, attr->value, length);
+		msg->credentials.password_algorithms_value_size = length;
+
+		if (!STUN_IS_RESPONSE(msg->msg_class)) {
+			const uint8_t *pos = attr->value;
+			const uint8_t *end = pos + length;
+			while (pos < end) {
+				if ((size_t)(end - pos) < sizeof(struct stun_value_password_algorithm)) {
+					JLOG_WARN("STUN password algorithms list truncated, available=%zu", end - pos);
+					return -1;
+				}
+				const struct stun_value_password_algorithm *pwa =
+				    (const struct stun_value_password_algorithm *)pos;
+				stun_password_algorithm_t algorithm = ntohs(pwa->algorithm);
+				size_t parameters_length = ntohs(pwa->parameters_length);
+				size_t padded_length = align32(parameters_length);
+
+				pos += sizeof(struct stun_value_password_algorithm);
+
+				if ((size_t)(end - pos) < padded_length) {
+					JLOG_WARN(
+					    "STUN password algorithm parameters too long, length=%zu, padded=%zu, "
+					    "available=%zu",
+					    parameters_length, padded_length, end - pos);
+					return -1;
+				}
+
+				pos += padded_length;
+
+				if (algorithm == STUN_PASSWORD_ALGORITHM_MD5 ||
+				    algorithm == STUN_PASSWORD_ALGORITHM_SHA256) {
+					msg->credentials.password_algorithm = algorithm;
+					break;
+				}
+
+				JLOG_DEBUG("Unknown password algorithm 0x%hX", algorithm);
+			}
 		}
 		break;
 	}
@@ -737,7 +846,7 @@ int stun_read_attr(const void *data, size_t size, stun_message_t *msg, uint8_t *
 		char buffer[STUN_MAX_SOFTWARE_LEN];
 		memcpy(buffer, (const char *)attr->value, length);
 		buffer[length] = '\0';
-		JLOG_DEBUG("Remote software is \"%s\"", buffer);
+		JLOG_DEBUG("Remote agent is \"%s\"", buffer);
 		break;
 	}
 	case STUN_ATTR_PRIORITY: {
@@ -859,7 +968,10 @@ int stun_read_attr(const void *data, size_t size, stun_message_t *msg, uint8_t *
 	}
 	default: {
 		// Ignore
-		JLOG_DEBUG("Ignoring unknown STUN attribute type 0x%X", (unsigned int)type);
+		if (STUN_IS_OPTIONAL_ATTR(type))
+			JLOG_DEBUG("Ignoring unknown optional STUN attribute type 0x%X", (unsigned int)type);
+		else
+			JLOG_WARN("Unknown STUN attribute type 0x%X, ignoring", (unsigned int)type);
 		break;
 	}
 	}
@@ -953,8 +1065,10 @@ bool stun_check_integrity(void *buf, size_t size, const stun_message_t *msg, con
 			stun_update_header_length(begin, prev_length);
 
 			const uint8_t *expected_hmac = attr->value;
-			if (memcmp(hmac, expected_hmac, HMAC_SHA1_SIZE) != 0)
+			if (const_time_memcmp(hmac, expected_hmac, HMAC_SHA1_SIZE) != 0) {
+				JLOG_DEBUG("STUN message integrity SHA1 check failed");
 				return false;
+			}
 
 			success = true;
 			break;
@@ -970,8 +1084,10 @@ bool stun_check_integrity(void *buf, size_t size, const stun_message_t *msg, con
 			stun_update_header_length(begin, prev_length);
 
 			const uint8_t *expected_hmac = attr->value;
-			if (memcmp(hmac, expected_hmac, HMAC_SHA256_SIZE) != 0)
+			if (const_time_memcmp(hmac, expected_hmac, HMAC_SHA256_SIZE) != 0) {
+				JLOG_DEBUG("STUN message integrity SHA256 check failed");
 				return false;
+			}
 
 			success = true;
 			break;
@@ -991,32 +1107,40 @@ bool stun_check_integrity(void *buf, size_t size, const stun_message_t *msg, con
 	return true;
 }
 
-void stun_prepend_nonce_cookie(stun_credentials_t *credentials) {
-	// RFC 8489: To indicate that it supports this specification, a server MUST prepend the NONCE
-	// attribute value with the character string composed of "obMatJos2" concatenated with the
-	// (4-character) base64 [RFC4648] encoding of the 24-bit STUN Security Features
-	// See https://tools.ietf.org/html/rfc8489#section-9.2
-	char nonce[STUN_MAX_NONCE_LEN];
-	strcpy(nonce, credentials->nonce);
+void stun_prepend_nonce_cookie(char *nonce) {
+	// RFC 8489: To indicate that it supports this specification, a server MUST prepend the
+	// NONCE attribute value with the character string composed of "obMatJos2" concatenated with
+	// the (4-character) base64 [RFC4648] encoding of the 24-bit STUN Security Features See
+	// https://tools.ietf.org/html/rfc8489#section-9.2
+	char copy[STUN_MAX_NONCE_LEN];
+	strcpy(copy, nonce);
 
 	char encoded_security_bits[5];
 	uint32_t security_bits =
 	    htonl(STUN_SECURITY_PASSWORD_ALGORITHMS_BIT | STUN_SECURITY_USERNAME_ANONYMITY_BIT);
-	BASE64_ENCODE(&security_bits, 4, encoded_security_bits, 5);
+	BASE64_ENCODE((uint8_t *)&security_bits + 1, 3, encoded_security_bits, 5);
 
-	snprintf(credentials->nonce, STUN_MAX_NONCE_LEN, "%s%s%.*s", STUN_NONCE_COOKIE,
-	         encoded_security_bits, STUN_MAX_NONCE_LEN - (STUN_NONCE_COOKIE_LEN + 5), nonce);
+	snprintf(nonce, STUN_MAX_NONCE_LEN, "%s%s%.*s", STUN_NONCE_COOKIE, encoded_security_bits,
+	         STUN_MAX_NONCE_LEN - (STUN_NONCE_COOKIE_LEN + 5), copy);
 }
 
-void stun_generate_userhash(stun_credentials_t *credentials) {
+void stun_compute_userhash(const char *username, const char *realm, uint8_t *out) {
 	char input[MAX_USERHASH_INPUT_LEN];
-	int input_len =
-	    snprintf(input, MAX_USERHASH_INPUT_LEN, "%s:%s", credentials->username, credentials->realm);
+	int input_len = snprintf(input, MAX_USERHASH_INPUT_LEN, "%s:%s", username, realm);
 	if (input_len < 0)
 		return;
 
-	hash_sha256(input, input_len, credentials->userhash);
-	credentials->enable_userhash = true;
+	hash_sha256(input, input_len, out);
+}
+
+void stun_process_credentials(const stun_credentials_t *credentials, stun_credentials_t *dst) {
+	char username[STUN_MAX_USERNAME_LEN];
+	strcpy(username, dst->username);
+	*dst = *credentials;
+	strcpy(dst->username, username);
+
+	if (credentials->enable_userhash)
+		stun_compute_userhash(username, credentials->realm, dst->userhash);
 }
 
 JUICE_EXPORT int _juice_stun_read(void *data, size_t size, stun_message_t *msg) {

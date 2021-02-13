@@ -58,9 +58,9 @@ int juice_base64_decode(const char *str, void *out, size_t out_size) {
 	const uint8_t *in = (const uint8_t *)str;
 	uint8_t *w = (uint8_t *)out;
 	while (*in && *in != '=') {
-		uint8_t tab[4];
-		size_t j = 0;
-		while (*in && j < 4) {
+		uint8_t tab[4] = {0, 0, 0, 0};
+		size_t size = 0;
+		while (*in && size < 4) {
 			uint8_t c = *in++;
 			if (isspace(c))
 				continue;
@@ -68,29 +68,29 @@ int juice_base64_decode(const char *str, void *out, size_t out_size) {
 				break;
 
 			if ('A' <= c && c <= 'Z')
-				tab[j++] = c - 'A';
+				tab[size++] = c - 'A';
 			else if ('a' <= c && c <= 'z')
-				tab[j++] = c + 26 - 'a';
+				tab[size++] = c + 26 - 'a';
 			else if ('0' <= c && c <= '9')
-				tab[j++] = c + 52 - '0';
+				tab[size++] = c + 52 - '0';
 			else if (c == '+' || c == '-')
-				tab[j++] = 62;
+				tab[size++] = 62;
 			else if (c == '/' || c == '_')
-				tab[j++] = 63;
+				tab[size++] = 63;
 			else
 				return -1; // Invalid character
 		}
 
-		if (j) {
-			if (out_size < j)
+		if (size > 0) {
+			if (out_size < size - 1)
 				return -1;
 
-			out_size -= j;
+			out_size -= size - 1;
 
 			*w++ = (tab[0] << 2) | (tab[1] >> 4);
-			if (j > 2) {
+			if (size > 1) {
 				*w++ = (tab[1] << 4) | (tab[2] >> 2);
-				if (j > 3)
+				if (size > 2)
 					*w++ = (tab[2] << 6) | tab[3];
 			}
 		}
