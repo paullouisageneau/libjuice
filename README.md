@@ -8,12 +8,14 @@ Licensed under LGPLv2, see [LICENSE](https://github.com/paullouisageneau/libjuic
 
 ## Compatibility
 
-The library aims at implementing a simplified but fully compatible ICE agent ([RFC8445](https://tools.ietf.org/html/rfc8445), [RFC8489](https://tools.ietf.org/html/rfc8489) for STUN, and [RFC8656](https://tools.ietf.org/html/rfc8656) for TURN) with an interface based on SDP ([RFC4566](https://tools.ietf.org/html/rfc4566)). It supports both IPv4 and IPv6.
+The library implements a simplified but fully compatible ICE agent ([RFC8445](https://tools.ietf.org/html/rfc8445), [RFC8489](https://tools.ietf.org/html/rfc8489) for STUN, and [RFC8656](https://tools.ietf.org/html/rfc8656) for TURN) with an interface based on SDP ([RFC4566](https://tools.ietf.org/html/rfc4566)). It supports both IPv4 and IPv6.
 
 The limitations compared to a fully-featured ICE agent are:
 - Only UDP is supported as transport protocol. Other protocols are ignored.
 - Only one component is supported. This is sufficient for WebRTC Data Channels or multiplexed RTP/RTCP ([RFC5731](https://tools.ietf.org/html/rfc5761)).
 - Candidates are gathered without binding to specific network interfaces. This should behave identically to the full implementation on most client systems and allows to greatly reduce complexity.
+
+It also implements a lightweight STUN/TURN server ([RFC8489](https://tools.ietf.org/html/rfc8489) and [RFC8656](https://tools.ietf.org/html/rfc8656)).
 
 ## Dependencies
 
@@ -79,4 +81,6 @@ $ make USE_NETTLE=1
 ## Example
 
 See [test/connectivity.c](https://github.com/paullouisageneau/libjuice/blob/master/test/connectivity.c) for a complete local connection example.
+
+See [test/server.c](https://github.com/paullouisageneau/libjuice/blob/master/test/server.c) for a server example.
 
