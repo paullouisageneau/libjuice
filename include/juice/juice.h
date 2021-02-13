@@ -129,8 +129,8 @@ typedef struct juice_server_config {
 
 } juice_server_config_t;
 
-juice_server_t *juice_server_create(uint16_t port, const juice_server_config_t *config);
-void juice_server_destroy(juice_server_t *server);
+JUICE_EXPORT juice_server_t *juice_server_create(uint16_t port, const juice_server_config_t *config);
+JUICE_EXPORT void juice_server_destroy(juice_server_t *server);
 
 
 // Logging

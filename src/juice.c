@@ -164,14 +164,14 @@ JUICE_EXPORT const char *juice_state_to_string(juice_state_t state) {
 	}
 }
 
-juice_server_t *juice_server_create(uint16_t port, const juice_server_config_t *config) {
+JUICE_EXPORT juice_server_t *juice_server_create(uint16_t port, const juice_server_config_t *config) {
 	if (port == 0 || !config)
 		return NULL;
 
 	return server_create(port, config);
 }
 
-void juice_server_destroy(juice_server_t *server) {
+JUICE_EXPORT void juice_server_destroy(juice_server_t *server) {
 	if(server)
 		server_destroy(server);
 }
