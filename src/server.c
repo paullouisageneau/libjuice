@@ -434,7 +434,7 @@ int server_forward(juice_server_t *server, server_turn_alloc_t *alloc) {
 			JLOG_VERBOSE("Forwarding as ChannelData, size=%d", len);
 
 #if defined(_WIN32) || defined(__APPLE__)
-			addr_record_t tmp = *alloc->record;
+			addr_record_t tmp = alloc->record;
 			addr_map_inet6_v4mapped(&tmp.addr, &tmp.len);
 			int ret =
 			    sendto(server->sock, buffer, len, 0, (const struct sockaddr *)&tmp.addr, tmp.len);
@@ -977,7 +977,7 @@ int server_process_turn_send(juice_server_t *server, const stun_message_t *msg,
 	JLOG_VERBOSE("Forwarding datagram to peer, size=%zu", msg->data_size);
 
 #if defined(_WIN32) || defined(__APPLE__)
-	addr_record_t tmp = msg->peer.addr;
+	addr_record_t tmp = msg->peer;
 	addr_map_inet6_v4mapped(&tmp.addr, &tmp.len);
 	int ret = sendto(alloc->sock, msg->data, (int)msg->data_size, 0,
 	                 (const struct sockaddr *)&tmp.addr, tmp.len);
@@ -1025,9 +1025,9 @@ int server_process_channel_data(juice_server_t *server, char *buf, size_t len,
 	JLOG_VERBOSE("Forwarding datagram to peer, size=%zu", len);
 
 #if defined(_WIN32) || defined(__APPLE__)
-	addr_record_t tmp = *record;
-	addr_map_inet6_v4mapped(&tmp.addr, &tmp.len);
-	int ret = sendto(alloc->sock, buf, (int)len, 0, (const struct sockaddr *)&tmp.addr, tmp.len);
+	addr_map_inet6_v4mapped(&record.addr, &record.len);
+	int ret =
+	    sendto(alloc->sock, buf, (int)len, 0, (const struct sockaddr *)&record.addr, record.len);
 #else
 	int ret = sendto(alloc->sock, buf, len, 0, (const struct sockaddr *)&record.addr, record.len);
 #endif
