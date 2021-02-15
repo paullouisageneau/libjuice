@@ -152,6 +152,9 @@ int test_server() {
 	// Agent 2: destroy
 	juice_destroy(agent2);
 
+	// Destroy server
+	juice_server_destroy(server);
+
 	// Sleep so we can check destruction went well
 	sleep(2);
 
