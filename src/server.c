@@ -51,6 +51,7 @@
 // RFC 8656: Channel bindings last for 10 minutes unless refreshed
 #define BIND_LIFETIME 600000 // ms
 
+#define MAX_RELAYED_RECORDS_COUNT 8
 #define BUFFER_SIZE 4096
 
 static char *alloc_string_copy(const char *orig) {
@@ -111,8 +112,8 @@ thread_return_t THREAD_CALL server_thread_entry(void *arg) {
 	return (thread_return_t)0;
 }
 
-juice_server_t *server_create(uint16_t port, const juice_server_config_t *config) {
-	JLOG_VERBOSE("Creating server on port %hu", port);
+juice_server_t *server_create(const juice_server_config_t *config) {
+	JLOG_VERBOSE("Creating server");
 
 #ifdef _WIN32
 	WSADATA wsaData;
@@ -124,18 +125,19 @@ juice_server_t *server_create(uint16_t port, const juice_server_config_t *config
 
 	juice_server_t *server = calloc(1, sizeof(juice_server_t));
 	if (!server) {
-		JLOG_FATAL("alloc for server failed");
+		JLOG_FATAL("Memory allocation for server data failed");
 		return NULL;
 	}
 
 	udp_socket_config_t socket_config;
 	memset(&socket_config, 0, sizeof(socket_config));
-	socket_config.port_begin = port;
-	socket_config.port_end = port;
+	socket_config.bind_address = config->bind_address;
+	socket_config.port_begin = config->port;
+	socket_config.port_end = config->port;
 
 	server->sock = udp_create_socket(&socket_config);
 	if (server->sock == INVALID_SOCKET) {
-		JLOG_FATAL("server socket creation failed");
+		JLOG_FATAL("Server socket opening failed");
 		free(server);
 		return NULL;
 	}
@@ -144,11 +146,27 @@ juice_server_t *server_create(uint16_t port, const juice_server_config_t *config
 
 	server->config = *config;
 
+	if (server->config.bind_address) {
+		server->config.bind_address = alloc_string_copy(server->config.bind_address);
+		if (!server->config.bind_address) {
+			JLOG_FATAL("Memory allocation for bind address failed");
+			goto error;
+		}
+	}
+
+	if (server->config.external_address) {
+		server->config.external_address = alloc_string_copy(server->config.external_address);
+		if (!server->config.external_address) {
+			JLOG_FATAL("Memory allocation for external address failed");
+			goto error;
+		}
+	}
+
 	const char *realm =
 	    config->realm && *config->realm != '\0' ? config->realm : SERVER_DEFAULT_REALM;
 	server->config.realm = alloc_string_copy(realm);
 	if (!server->config.realm) {
-		JLOG_FATAL("alloc for realm failed");
+		JLOG_FATAL("Memory allocation for realm failed");
 		goto error;
 	}
 
@@ -169,7 +187,7 @@ juice_server_t *server_create(uint16_t port, const juice_server_config_t *config
 		               server->config.credentials_count * sizeof(stun_credentials_t));
 		server->credentials_userhash = calloc(server->config.credentials_count, sizeof(uint8_t *));
 		if (!server->config.credentials || !server->credentials_userhash) {
-			JLOG_FATAL("alloc for credentials array failed");
+			JLOG_FATAL("Memory allocation for TURN credentials array failed");
 			goto error;
 		}
 
@@ -182,7 +200,7 @@ juice_server_t *server_create(uint16_t port, const juice_server_config_t *config
 			server->credentials_userhash[i] = malloc(HASH_SHA256_SIZE);
 			if (!credentials->username || !credentials->password ||
 			    !server->credentials_userhash[i]) {
-				JLOG_FATAL("alloc for credentials failed");
+				JLOG_FATAL("Memory allocation for TURN credentials failed");
 				goto error;
 			}
 
@@ -201,15 +219,20 @@ juice_server_t *server_create(uint16_t port, const juice_server_config_t *config
 		server->allocs_count = (int)server->config.max_allocations;
 		server->allocs = calloc(server->allocs_count, sizeof(server_turn_alloc_t));
 		if (!server->allocs) {
-			JLOG_FATAL("alloc for server allocation table failed");
+			JLOG_FATAL("Memory allocation for TURN allocation table failed");
 			goto error;
 		}
 	}
 
+	server->config.port = udp_get_port(server->sock);
+	server->nonce_key_timestamp = 0;
 	if (server->config.max_peers == 0)
 		server->config.max_peers = SERVER_DEFAULT_MAX_PEERS;
 
-	server->nonce_key_timestamp = 0;
+	if (server->config.bind_address)
+		JLOG_INFO("Created server on %s:%hu", server->config.bind_address, server->config.port);
+	else
+		JLOG_INFO("Created server on port %hu", server->config.port);
 
 	int ret = thread_init(&server->thread, server_thread_entry, server);
 	if (ret) {
@@ -259,6 +282,11 @@ void server_destroy(juice_server_t *server) {
 	server_do_destroy(server);
 }
 
+uint16_t server_get_port(juice_server_t *server) {
+	mutex_lock(&server->mutex);
+	return server->config.port; // updated at creation
+}
+
 void server_run(juice_server_t *server) {
 	mutex_lock(&server->mutex);
 
@@ -290,7 +318,7 @@ void server_run(juice_server_t *server) {
 			}
 		}
 
-		JLOG_VERBOSE("Entering select on %d sockets", count);
+		JLOG_VERBOSE("Entering select on %d socket(s)", count);
 		mutex_unlock(&server->mutex);
 		int ret = select(max + 1, &readfds, NULL, NULL, &timeout);
 		mutex_lock(&server->mutex);
@@ -774,6 +802,7 @@ int server_process_turn_allocate(juice_server_t *server, const stun_message_t *m
 
 		udp_socket_config_t socket_config;
 		memset(&socket_config, 0, sizeof(socket_config));
+		socket_config.bind_address = server->config.bind_address;
 		socket_config.port_begin = server->config.relay_port_range_begin;
 		socket_config.port_end = server->config.relay_port_range_end;
 		alloc->sock = udp_create_socket(&socket_config);
@@ -804,30 +833,44 @@ int server_process_turn_allocate(juice_server_t *server, const stun_message_t *m
 	alloc->timestamp = current_timestamp() + lifetime * 1000;
 	memcpy(alloc->transaction_id, msg->transaction_id, STUN_TRANSACTION_ID_SIZE);
 
-	addr_record_t records[8];
+	addr_record_t records[MAX_RELAYED_RECORDS_COUNT];
 	const addr_record_t *relayed = NULL;
 	if (lifetime == 0) {
 		delete_allocation(alloc);
+
 	} else {
-		int count = udp_get_addrs(alloc->sock, records, 8);
-		if (count < 0) {
-			JLOG_ERROR("No local address found");
-			goto error;
+		int count = 0;
+		if (server->config.external_address) {
+			char service[8];
+			snprintf(service, 8, "%hu", udp_get_port(alloc->sock));
+			count = addr_resolve(server->config.external_address, service, records,
+			                     MAX_RELAYED_RECORDS_COUNT);
+			if (count <= 0) {
+				JLOG_ERROR("Specified external address is invalid");
+				goto error;
+			}
+		} else {
+			count = udp_get_addrs(alloc->sock, records, MAX_RELAYED_RECORDS_COUNT);
+			if (count <= 0) {
+				JLOG_ERROR("No local address found");
+				goto error;
+			}
 		}
 
-		if (count > 8)
-			count = 8;
+		if (count > MAX_RELAYED_RECORDS_COUNT)
+			count = MAX_RELAYED_RECORDS_COUNT;
 
 		for (int i = 0; i < count; ++i) {
 			const addr_record_t *record = records + i;
-			if (record->addr.ss_family == AF_INET) {
+			if (record->addr.ss_family == AF_INET || !relayed) {
 				relayed = record;
-				break;
+				if (record->addr.ss_family == AF_INET)
+					break;
 			}
 		}
 
 		if (!relayed) {
-			JLOG_ERROR("No IPv4 local address found");
+			JLOG_ERROR("No advertisable relayed address found");
 			goto error;
 		}
 	}

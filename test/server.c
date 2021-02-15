@@ -67,11 +67,12 @@ int test_server() {
 
 	juice_server_config_t server_config;
 	memset(&server_config, 0, sizeof(server_config));
+	server_config.port = 3478;
 	server_config.credentials = credentials;
 	server_config.credentials_count = 1;
 	server_config.max_allocations = 100;
 	server_config.realm = "Juice test server";
-	server = juice_server_create(3478, &server_config);
+	server = juice_server_create(&server_config);
 
 	// Agent 1: Create agent
 	juice_config_t config1;

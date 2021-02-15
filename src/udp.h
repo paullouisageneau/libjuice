@@ -25,6 +25,7 @@
 #include <stdint.h>
 
 typedef struct udp_socket_config {
+	const char *bind_address;
 	uint16_t port_begin;
 	uint16_t port_end;
 } udp_socket_config_t;
@@ -32,6 +33,7 @@ typedef struct udp_socket_config {
 socket_t udp_create_socket(const udp_socket_config_t *config);
 int udp_set_diffserv(socket_t sock, int ds);
 uint16_t udp_get_port(socket_t sock);
+int udp_get_bound_addr(socket_t sock, addr_record_t *record);
 int udp_get_local_addr(socket_t sock, addr_record_t *record);
 int udp_get_addrs(socket_t sock, addr_record_t *records, size_t count);
 
