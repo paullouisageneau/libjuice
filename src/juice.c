@@ -167,13 +167,12 @@ JUICE_EXPORT const char *juice_state_to_string(juice_state_t state) {
 	}
 }
 
-JUICE_EXPORT juice_server_t *juice_server_create(uint16_t port,
-                                                 const juice_server_config_t *config) {
+JUICE_EXPORT juice_server_t *juice_server_create(const juice_server_config_t *config) {
 #ifndef NO_SERVER
-	if (port == 0 || !config)
+	if (!config)
 		return NULL;
 
-	return server_create(port, config);
+	return server_create(config);
 #else
 	JLOG_FATAL("The library was compiled without server support");
 #endif
@@ -184,4 +183,11 @@ JUICE_EXPORT void juice_server_destroy(juice_server_t *server) {
 	if (server)
 		server_destroy(server);
 #endif
+}
+
+JUICE_EXPORT uint16_t juice_server_get_port(juice_server_t *server) {
+#ifndef NO_SERVER
+	return server ? server_get_port(server) : 0;
+#endif
+	return 0;
 }

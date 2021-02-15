@@ -62,7 +62,7 @@ socket_t udp_create_socket(const udp_socket_config_t *config) {
 	hints.ai_socktype = SOCK_DGRAM;
 	hints.ai_protocol = IPPROTO_UDP;
 	hints.ai_flags = AI_PASSIVE | AI_NUMERICSERV;
-	if (getaddrinfo(NULL, "0", &hints, &ai_list) != 0) {
+	if (getaddrinfo(config->bind_address, "0", &hints, &ai_list) != 0) {
 		JLOG_ERROR("getaddrinfo for binding address failed, errno=%d", sockerrno);
 		return INVALID_SOCKET;
 	}
@@ -88,7 +88,7 @@ socket_t udp_create_socket(const udp_socket_config_t *config) {
 	if (ai->ai_family == AF_INET6)
 		setsockopt(sock, IPPROTO_IPV6, IPV6_V6ONLY, (const char *)&disabled, sizeof(disabled));
 
-	// Set DF flag
+		// Set DF flag
 #ifndef NO_PMTUDISC
 	const sockopt_t val = IP_PMTUDISC_DO;
 	setsockopt(sock, IPPROTO_IP, IP_MTU_DISCOVER, (const char *)&val, sizeof(val));
@@ -136,7 +136,8 @@ socket_t udp_create_socket(const udp_socket_config_t *config) {
 		addr_set_port((struct sockaddr *)&addr, port);
 
 		if (bind(sock, (struct sockaddr *)&addr, addrlen) == 0) {
-			JLOG_DEBUG("UDP socket bound to port %hu", port);
+			JLOG_DEBUG("UDP socket bound to %s:%hu",
+			           config->bind_address ? config->bind_address : "any", port);
 			freeaddrinfo(ai_list);
 			return sock;
 		}
@@ -153,14 +154,16 @@ socket_t udp_create_socket(const udp_socket_config_t *config) {
 			uint16_t port = get_next_port_in_range(config->port_begin, config->port_end);
 			addr_set_port((struct sockaddr *)&addr, port);
 			if (bind(sock, (struct sockaddr *)&addr, addrlen) == 0) {
-				JLOG_DEBUG("UDP socket bound to port %hu", port);
+				JLOG_DEBUG("UDP socket bound to %s:%hu",
+				           config->bind_address ? config->bind_address : "any", port);
 				freeaddrinfo(ai_list);
 				return sock;
 			}
 		} while ((sockerrno == SEADDRINUSE || sockerrno == SEACCES) && retries-- > 0);
 
-		JLOG_ERROR("UDP socket binding failed on port range [%hu, %hu], errno=%d",
-		           config->port_begin, config->port_end, sockerrno);
+		JLOG_ERROR("UDP socket binding failed on port range %s:[%hu,%hu], errno=%d",
+		           config->bind_address ? config->bind_address : "any", config->port_begin,
+		           config->port_end, sockerrno);
 	}
 
 error:
@@ -216,21 +219,23 @@ int udp_set_diffserv(socket_t sock, int ds) {
 
 uint16_t udp_get_port(socket_t sock) {
 	addr_record_t record;
-	record.len = sizeof(record.addr);
-	if (getsockname(sock, (struct sockaddr *)&record.addr, &record.len)) {
-		JLOG_WARN("getsockname failed, errno=%d", sockerrno);
+	if (udp_get_bound_addr(sock, &record) < 0)
 		return 0;
-	}
-
 	return addr_get_port((struct sockaddr *)&record.addr);
 }
 
-int udp_get_local_addr(socket_t sock, addr_record_t *record) {
+int udp_get_bound_addr(socket_t sock, addr_record_t *record) {
 	record->len = sizeof(record->addr);
 	if (getsockname(sock, (struct sockaddr *)&record->addr, &record->len)) {
 		JLOG_WARN("getsockname failed, errno=%d", sockerrno);
 		return -1;
 	}
+	return 0;
+}
+
+int udp_get_local_addr(socket_t sock, addr_record_t *record) {
+	if (udp_get_bound_addr(sock, record) < 0)
+		return -1;
 
 	switch (record->addr.ss_family) {
 	case AF_INET: {
@@ -280,11 +285,20 @@ static int has_duplicate_addr(struct sockaddr *addr, const addr_record_t *record
 }
 
 int udp_get_addrs(socket_t sock, addr_record_t *records, size_t count) {
-	uint16_t port = udp_get_port(sock);
-	if (port == 0) {
-		JLOG_ERROR("Getting UDP port failed");
+	addr_record_t bound;
+	if (udp_get_bound_addr(sock, &bound) < 0) {
+		JLOG_ERROR("Getting UDP bound address failed");
 		return -1;
 	}
+
+	if (!addr_is_any((struct sockaddr *)&bound.addr)) {
+		if (count > 0)
+			records[0] = bound;
+
+		return 1;
+	}
+
+	uint16_t port = addr_get_port((struct sockaddr *)&bound.addr);
 
 	// RFC 8445 5.1.1.1. Host Candidates:
 	// Addresses from a loopback interface MUST NOT be included in the candidate addresses.

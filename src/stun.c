@@ -112,7 +112,7 @@ int stun_write(void *buf, size_t size, const stun_message_t *msg, const char *pa
 
 	if (msg->error_code) {
 		const char *reason = stun_get_error_reason(msg->error_code);
-		char buffer[sizeof(struct stun_value_error_code) + STUN_MAX_ERROR_REASON_LEN];
+		char buffer[sizeof(struct stun_value_error_code) + STUN_MAX_ERROR_REASON_LEN + 1];
 		struct stun_value_error_code *error = (struct stun_value_error_code *)buffer;
 		memset(error, 0, sizeof(*error));
 		error->code_class = (msg->error_code / 100) & 0x07;
@@ -651,9 +651,10 @@ int stun_read_attr(const void *data, size_t size, stun_message_t *msg, uint8_t *
 		    (const struct stun_value_error_code *)attr->value;
 		msg->error_code = (error->code_class & 0x07) * 100 + error->code_number;
 
+		size_t reason_length = length - sizeof(struct stun_value_error_code);
 		char buffer[STUN_MAX_ERROR_REASON_LEN];
-		memcpy(buffer, (const char *)error->reason, length);
-		buffer[length] = '\0';
+		memcpy(buffer, (const char *)error->reason, reason_length);
+		buffer[reason_length] = '\0';
 
 		JLOG_INFO("Got STUN error code %u, reason \"%s\"", msg->error_code, buffer);
 		break;
@@ -1154,39 +1155,39 @@ void stun_process_credentials(const stun_credentials_t *credentials, stun_creden
 }
 
 const char *stun_get_error_reason(unsigned int code) {
-	switch(code) {
-		case 0:
-			return "";
-		case 300:
-			return "Try Alternate";
-		case 400:
-			return "Bad Request";
-	   	case 401:
-			return "Unauthenticated";
-		case 403:
-			return "Forbidden";
-		case 420:
-			return "Unknown Attribute";
-		case 437:
-			return "Allocation Mismatch";
-		case 438:
-			return "Stale Nonce";
-		case 440:
-			return "Address Family not Supported";
-		case 441:
-			return "Wrong credentials";
-		case 442:
-			return "Unsupported Transport Protocol";
-		case 443:
-			return "Peer Address Family Mismatch";
-		case 486:
-			return "Allocation Quota Reached";
-		case 500:
-			return "Server Error";
-		case 508:
-			return "Insufficient Capacity";
-		default:
-			return "Error";
+	switch (code) {
+	case 0:
+		return "";
+	case 300:
+		return "Try Alternate";
+	case 400:
+		return "Bad Request";
+	case 401:
+		return "Unauthenticated";
+	case 403:
+		return "Forbidden";
+	case 420:
+		return "Unknown Attribute";
+	case 437:
+		return "Allocation Mismatch";
+	case 438:
+		return "Stale Nonce";
+	case 440:
+		return "Address Family not Supported";
+	case 441:
+		return "Wrong credentials";
+	case 442:
+		return "Unsupported Transport Protocol";
+	case 443:
+		return "Peer Address Family Mismatch";
+	case 486:
+		return "Allocation Quota Reached";
+	case 500:
+		return "Server Error";
+	case 508:
+		return "Insufficient Capacity";
+	default:
+		return "Error";
 	}
 }
 

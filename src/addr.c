@@ -59,6 +59,31 @@ int addr_set_port(struct sockaddr *sa, uint16_t port) {
 	}
 }
 
+bool addr_is_any(struct sockaddr *sa) {
+	switch (sa->sa_family) {
+	case AF_INET: {
+		const struct sockaddr_in *sin = (const struct sockaddr_in *)sa;
+		const uint8_t *b = (const uint8_t *)&sin->sin_addr;
+		for (int i = 0; i < 4; ++i)
+			if (b[i] != 0)
+				return false;
+
+		return true;
+	}
+	case AF_INET6: {
+		const struct sockaddr_in6 *sin6 = (const struct sockaddr_in6 *)sa;
+		const uint8_t *b = (const uint8_t *)&sin6->sin6_addr;
+		for (int i = 0; i < 16; ++i)
+			if (b[i] != 0)
+				return false;
+
+		return true;
+	}
+	default:
+		return false;
+	}
+}
+
 bool addr_is_local(struct sockaddr *sa) {
 	switch (sa->sa_family) {
 	case AF_INET: {

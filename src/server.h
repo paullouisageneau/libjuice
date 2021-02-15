@@ -75,9 +75,11 @@ typedef struct juice_server {
 	int allocs_count;
 } juice_server_t;
 
-juice_server_t *server_create(uint16_t port, const juice_server_config_t *config);
+juice_server_t *server_create(const juice_server_config_t *config);
 void server_do_destroy(juice_server_t *server);
 void server_destroy(juice_server_t *server);
+
+uint16_t server_get_port(juice_server_t *server);
 
 void server_run(juice_server_t *server);
 int server_send(juice_server_t *agent, const addr_record_t *dst, const char *data, size_t size);

@@ -122,6 +122,10 @@ typedef struct juice_server_config {
 	int max_allocations;
 	int max_peers;
 
+	const char *bind_address;
+	const char *external_address;
+	uint16_t port;
+
 	uint16_t relay_port_range_begin;
 	uint16_t relay_port_range_end;
 
@@ -129,8 +133,10 @@ typedef struct juice_server_config {
 
 } juice_server_config_t;
 
-JUICE_EXPORT juice_server_t *juice_server_create(uint16_t port, const juice_server_config_t *config);
+JUICE_EXPORT juice_server_t *juice_server_create(const juice_server_config_t *config);
 JUICE_EXPORT void juice_server_destroy(juice_server_t *server);
+
+JUICE_EXPORT uint16_t juice_server_get_port(juice_server_t *server);
 
 
 // Logging
