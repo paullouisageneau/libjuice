@@ -17,6 +17,8 @@ The limitations compared to a fully-featured ICE agent are:
 
 It also implements a lightweight STUN/TURN server ([RFC8489](https://tools.ietf.org/html/rfc8489) and [RFC8656](https://tools.ietf.org/html/rfc8656)). The server can be disabled at compile-time with the `NO_SERVER` flag.
 
+For a STUN/TURN server application based on libjuice, see [Violet](https://github.com/paullouisageneau/violet).
+
 ## Dependencies
 
 None!
