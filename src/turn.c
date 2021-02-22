@@ -94,10 +94,10 @@ static int find_ordered_channel_rec(turn_entry_t *const ordered_channels[], uint
 	if (d <= 0)
 		return begin;
 
-	int pivot = d / 2;
+	int pivot = begin + d / 2;
 	const turn_entry_t *entry = ordered_channels[pivot];
 	if (channel < entry->channel)
-		return find_ordered_channel_rec(ordered_channels, channel, 0, pivot);
+		return find_ordered_channel_rec(ordered_channels, channel, begin, pivot);
 	else if (channel > entry->channel)
 		return find_ordered_channel_rec(ordered_channels, channel, pivot + 1, end);
 	else
@@ -114,11 +114,11 @@ static int find_ordered_transaction_id_rec(turn_entry_t *const ordered_transacti
 	if (d <= 0)
 		return begin;
 
-	int pivot = d / 2;
+	int pivot = begin + d / 2;
 	const turn_entry_t *entry = ordered_transaction_ids[pivot];
 	int ret = memcmp(transaction_id, entry->transaction_id, STUN_TRANSACTION_ID_SIZE);
 	if (ret < 0)
-		return find_ordered_transaction_id_rec(ordered_transaction_ids, transaction_id, 0, pivot);
+		return find_ordered_transaction_id_rec(ordered_transaction_ids, transaction_id, begin, pivot);
 	else if (ret > 0)
 		return find_ordered_transaction_id_rec(ordered_transaction_ids, transaction_id, pivot + 1,
 		                                       end);
@@ -128,7 +128,7 @@ static int find_ordered_transaction_id_rec(turn_entry_t *const ordered_transacti
 
 static int find_ordered_transaction_id(const turn_map_t *map, const uint8_t *transaction_id) {
 	return find_ordered_transaction_id_rec(map->ordered_transaction_ids, transaction_id, 0,
-	                                       map->transaction_ids_count);
+	                                            map->transaction_ids_count);
 }
 
 static void remove_ordered_transaction_id(turn_map_t *map, const uint8_t *transaction_id) {
