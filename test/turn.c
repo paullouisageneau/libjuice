@@ -54,11 +54,7 @@ int test_turn() {
 	juice_config_t config1;
 	memset(&config1, 0, sizeof(config1));
 
-	// Example STUN server
-	config1.stun_server_host = "stun.stunprotocol.org";
-	config1.stun_server_port = 3478;
-
-	// Example TURN server
+	// TURN server
 	// Please do not use outside of libjuice tests
 	juice_turn_server_t turn_server;
 	memset(&turn_server, 0, sizeof(turn_server));
@@ -80,10 +76,6 @@ int test_turn() {
 	// Agent 2: Create agent
 	juice_config_t config2;
 	memset(&config2, 0, sizeof(config2));
-
-	// Example STUN server
-	config2.stun_server_host = "stun.stunprotocol.org";
-	config2.stun_server_port = 3478;
 
 	// Use the same TURN server
 	config2.turn_servers = &turn_server;

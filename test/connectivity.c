@@ -53,8 +53,22 @@ int test_connectivity() {
 	// Agent 1: Create agent
 	juice_config_t config1;
 	memset(&config1, 0, sizeof(config1));
-	config1.stun_server_host = "stun.l.google.com";
-	config1.stun_server_port = 19302;
+
+	// STUN server
+	config1.stun_server_host = "stun.stunprotocol.org";
+	config1.stun_server_port = 3478;
+
+	// TURN server
+	// Please do not use outside of libjuice tests
+	juice_turn_server_t turn_server;
+	memset(&turn_server, 0, sizeof(turn_server));
+	turn_server.host = "stun.ageneau.net";
+	turn_server.port = 3478;
+	turn_server.username = "juice_test";
+	turn_server.password = "28245150316902";
+	config1.turn_servers = &turn_server;
+	config1.turn_servers_count = 1;
+
 	config1.cb_state_changed = on_state_changed1;
 	config1.cb_candidate = on_candidate1;
 	config1.cb_gathering_done = on_gathering_done1;
@@ -66,16 +80,24 @@ int test_connectivity() {
 	// Agent 2: Create agent
 	juice_config_t config2;
 	memset(&config2, 0, sizeof(config2));
-	config2.stun_server_host = "stun.l.google.com";
-	config2.stun_server_port = 19302;
+
+	// STUN server
+	config2.stun_server_host = "stun.stunprotocol.org";
+	config2.stun_server_port = 3478;
+
+	// Use the same TURN server
+	config2.turn_servers = &turn_server;
+	config2.turn_servers_count = 1;
+
+	// Port range example
+	config2.local_port_range_begin = 60000;
+	config2.local_port_range_end = 61000;
+
 	config2.cb_state_changed = on_state_changed2;
 	config2.cb_candidate = on_candidate2;
 	config2.cb_gathering_done = on_gathering_done2;
 	config2.cb_recv = on_recv2;
 	config2.user_ptr = NULL;
-	// Port range example
-	config2.local_port_range_begin = 60000;
-	config2.local_port_range_end = 61000;
 
 	agent2 = juice_create(&config2);
 
@@ -117,11 +139,15 @@ int test_connectivity() {
 	                                             remote, JUICE_MAX_CANDIDATE_SDP_STRING_LEN) == 0)) {
 		printf("Local candidate  1: %s\n", local);
 		printf("Remote candidate 1: %s\n", remote);
+		if(!strstr(local, "typ host") || !strstr(remote, "typ host"))
+			success = false; // local connection should be possible
 	}
 	if (success &= (juice_get_selected_candidates(agent2, local, JUICE_MAX_CANDIDATE_SDP_STRING_LEN,
 	                                             remote, JUICE_MAX_CANDIDATE_SDP_STRING_LEN) == 0)) {
 		printf("Local candidate  2: %s\n", local);
 		printf("Remote candidate 2: %s\n", remote);
+		if(!strstr(local, "typ host") || !strstr(remote, "typ host"))
+			success = false; // local connection should be possible
 	}
 
 	// Retrieve addresses

@@ -48,11 +48,11 @@ int test_gathering() {
 	juice_config_t config;
 	memset(&config, 0, sizeof(config));
 
-	// Example STUN server
+	// STUN server
 	config.stun_server_host = "stun.stunprotocol.org";
 	config.stun_server_port = 3478;
 
-	// Example TURN server
+	// TURN server
 	// Please do not use outside of libjuice tests
 	juice_turn_server_t turn_server;
 	memset(&turn_server, 0, sizeof(turn_server));
