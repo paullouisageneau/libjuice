@@ -135,18 +135,22 @@ int test_connectivity() {
 	// Retrieve candidates
 	char local[JUICE_MAX_CANDIDATE_SDP_STRING_LEN];
 	char remote[JUICE_MAX_CANDIDATE_SDP_STRING_LEN];
-	if (success &= (juice_get_selected_candidates(agent1, local, JUICE_MAX_CANDIDATE_SDP_STRING_LEN,
-	                                             remote, JUICE_MAX_CANDIDATE_SDP_STRING_LEN) == 0)) {
+	if (success &=
+	    (juice_get_selected_candidates(agent1, local, JUICE_MAX_CANDIDATE_SDP_STRING_LEN, remote,
+	                                   JUICE_MAX_CANDIDATE_SDP_STRING_LEN) == 0)) {
 		printf("Local candidate  1: %s\n", local);
 		printf("Remote candidate 1: %s\n", remote);
-		if(!strstr(local, "typ host") || !strstr(remote, "typ host"))
+		if ((!strstr(local, "typ host") && !strstr(local, "typ prflx")) ||
+		    (!strstr(remote, "typ host") && !strstr(remote, "typ prflx")))
 			success = false; // local connection should be possible
 	}
-	if (success &= (juice_get_selected_candidates(agent2, local, JUICE_MAX_CANDIDATE_SDP_STRING_LEN,
-	                                             remote, JUICE_MAX_CANDIDATE_SDP_STRING_LEN) == 0)) {
+	if (success &=
+	    (juice_get_selected_candidates(agent2, local, JUICE_MAX_CANDIDATE_SDP_STRING_LEN, remote,
+	                                   JUICE_MAX_CANDIDATE_SDP_STRING_LEN) == 0)) {
 		printf("Local candidate  2: %s\n", local);
 		printf("Remote candidate 2: %s\n", remote);
-		if(!strstr(local, "typ host") || !strstr(remote, "typ host"))
+		if ((!strstr(local, "typ host") && !strstr(local, "typ prflx")) ||
+		    (!strstr(remote, "typ host") && !strstr(remote, "typ prflx")))
 			success = false; // local connection should be possible
 	}
 
