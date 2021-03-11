@@ -766,17 +766,20 @@ int agent_interrupt(juice_agent_t *agent) {
 		return -1;
 	}
 
-	addr_record_t record;
-	if (udp_get_local_addr(agent->sock, &record) == 0) {
-		if (sendto(agent->sock, NULL, 0, 0, (struct sockaddr *)&record.addr, record.len) == 0) {
-			mutex_unlock(&agent->mutex);
-			return 0;
-		}
+	addr_record_t local;
+	if (udp_get_local_addr(agent->sock, AF_INET, &local) < 0) {
+		mutex_unlock(&agent->mutex);
+		return -1;
 	}
 
-	JLOG_WARN("Failed to interrupt thread by triggering socket, errno=%d", sockerrno);
+	if (agent_direct_send(agent, &local, NULL, 0, 0) < 0) {
+		JLOG_WARN("Failed to interrupt thread by triggering socket, errno=%d", sockerrno);
+		mutex_unlock(&agent->mutex);
+		return -1;
+	}
+
 	mutex_unlock(&agent->mutex);
-	return -1;
+	return 0;
 }
 
 void agent_change_state(juice_agent_t *agent, juice_state_t state) {
