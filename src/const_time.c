@@ -35,7 +35,7 @@ int const_time_strcmp(const void *a, const void *b) {
 	size_t i = 0;
 	for(;;) {
 		x |= ca[i] ^ cb[i];
-		if (ca[i] || cb[i])
+		if (!ca[i] || !cb[i])
 			break;
 		++i;
 	}
