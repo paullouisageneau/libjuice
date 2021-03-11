@@ -233,9 +233,37 @@ int udp_get_bound_addr(socket_t sock, addr_record_t *record) {
 	return 0;
 }
 
-int udp_get_local_addr(socket_t sock, addr_record_t *record) {
-	if (udp_get_bound_addr(sock, record) < 0)
-		return -1;
+int udp_get_local_addr(socket_t sock, int family, addr_record_t *record) {
+	switch (family) {
+	case AF_INET: {
+		uint16_t port = udp_get_port(sock);
+		if (port == 0)
+			return -1;
+
+		struct sockaddr_in *sin = (struct sockaddr_in *)&record->addr;
+		memset(sin, 0, sizeof(*sin));
+		sin->sin_family = AF_INET;
+		sin->sin_port = htons(port);
+		record->len = sizeof(*sin);
+		break;
+	}
+	case AF_INET6: {
+		uint16_t port = udp_get_port(sock);
+		if (port == 0)
+			return -1;
+
+		struct sockaddr_in6 *sin6 = (struct sockaddr_in6 *)&record->addr;
+		memset(sin6, 0, sizeof(*sin6));
+		sin6->sin6_family = AF_INET6;
+		sin6->sin6_port = htons(port);
+		record->len = sizeof(*sin6);
+		break;
+	}
+	default: { // AF_UNSPEC falls here
+		if (udp_get_bound_addr(sock, record) < 0)
+			return -1;
+	}
+	}
 
 	switch (record->addr.ss_family) {
 	case AF_INET: {
@@ -251,6 +279,9 @@ int udp_get_local_addr(socket_t sock, addr_record_t *record) {
 		b[15] = 0x01; // localhost
 		break;
 	}
+	default:
+		// Ignore
+		break;
 	}
 	return 0;
 }
@@ -322,26 +353,20 @@ int udp_get_addrs(socket_t sock, addr_record_t *records, size_t count) {
 
 #if JUICE_ENABLE_LOCALHOST_ADDRESS
 	// Add localhost for test purposes
-	if (current != end) {
+	addr_record_t local;
+	if (bound.addr.ss_family == AF_INET6 && udp_get_local_addr(sock, AF_INET6, &local) == 0) {
 		++ret;
-		struct sockaddr_in6 *sin6 = (struct sockaddr_in6 *)&current->addr;
-		current->len = sizeof(*sin6);
-		memset(sin6, 0, sizeof(*sin6));
-		sin6->sin6_family = AF_INET6;
-		*((uint8_t *)&sin6->sin6_addr + 15) = 0x01;
-		sin6->sin6_port = htons(port);
-		++current;
+		if (current != end) {
+			*current = local;
+			++current;
+		}
 	}
-	if (current != end) {
+	if (udp_get_local_addr(sock, AF_INET, &local) == 0) {
 		++ret;
-		const uint8_t localhost[4] = {127, 0, 0, 1};
-		struct sockaddr_in *sin = (struct sockaddr_in *)&current->addr;
-		current->len = sizeof(*sin);
-		memset(sin, 0, sizeof(*sin));
-		sin->sin_family = AF_INET;
-		memcpy(&sin->sin_addr, localhost, 4);
-		sin->sin_port = htons(port);
-		++current;
+		if (current != end) {
+			*current = local;
+			++current;
+		}
 	}
 #endif
 

@@ -527,17 +527,20 @@ int server_interrupt(juice_server_t *server) {
 		return -1;
 	}
 
-	addr_record_t record;
-	if (udp_get_local_addr(server->sock, &record) == 0) {
-		if (sendto(server->sock, NULL, 0, 0, (struct sockaddr *)&record.addr, record.len) == 0) {
-			mutex_unlock(&server->mutex);
-			return 0;
-		}
+	addr_record_t local;
+	if (udp_get_local_addr(server->sock, AF_INET, &local) < 0) {
+		mutex_unlock(&server->mutex);
+		return -1;
 	}
 
-	JLOG_WARN("Failed to interrupt thread by triggering socket, errno=%d", sockerrno);
+	if (server_send(server, &local, NULL, 0) < 0) {
+		JLOG_WARN("Failed to interrupt thread by triggering socket, errno=%d", sockerrno);
+		mutex_unlock(&server->mutex);
+		return -1;
+	}
+
 	mutex_unlock(&server->mutex);
-	return -1;
+	return 0;
 }
 
 int server_bookkeeping(juice_server_t *server, timestamp_t *next_timestamp) {
