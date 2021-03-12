@@ -23,7 +23,7 @@ For a STUN/TURN server application based on libjuice, see [Violet](https://githu
 
 None!
 
-Optionally, Nettle (https://www.lysator.liu.se/~nisse/nettle/) can provide the HMAC-SHA1 algorithm instead of the internal implementation.
+Optionally, [Nettle](https://www.lysator.liu.se/~nisse/nettle/) can provide SHA1 and SHA256 algorithms instead of the internal implementation.
 
 ## Building
 
@@ -34,7 +34,7 @@ $ git clone https://github.com/paullouisageneau/libjuice.git
 $ cd libjuice
 ```
 
-### Building with CMake
+### Build with CMake
 
 The CMake library targets `libjuice` and `libjuice-static` respectively correspond to the shared and static libraries. The default target will build the library and tests.
 
@@ -69,7 +69,7 @@ $ cd build
 $ nmake
 ```
 
-### Building directly with Make (Linux only)
+### Build directly with Make (Linux only)
 
 ```bash
 $ make
