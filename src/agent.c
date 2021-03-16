@@ -1426,19 +1426,18 @@ int agent_send_stun_binding(juice_agent_t *agent, const agent_stun_entry_t *entr
 				JLOG_ERROR("Attempted to send STUN Binding to peer without remote ICE credentials");
 				return -1;
 			}
-			// Local candidates are undifferentiated, always set the maximum priority
-			uint32_t local_priority = 0;
-			for (int i = 0; i < agent->local.candidates_count; ++i) {
-				ice_candidate_t *candidate = agent->local.candidates + i;
-				if (local_priority < candidate->priority)
-					local_priority = candidate->priority;
-			}
 			snprintf(msg.credentials.username, STUN_MAX_USERNAME_LEN, "%s:%s",
 			         agent->remote.ice_ufrag, agent->local.ice_ufrag);
 			password = agent->remote.ice_pwd;
-			msg.priority = local_priority;
 			msg.ice_controlling = agent->mode == AGENT_MODE_CONTROLLING ? agent->ice_tiebreaker : 0;
 			msg.ice_controlled = agent->mode == AGENT_MODE_CONTROLLED ? agent->ice_tiebreaker : 0;
+
+			// RFC 8445 7.1.1. PRIORITY
+			// The PRIORITY attribute MUST be included in a Binding request and be set to the value
+			// computed by the algorithm in Section 5.1.2 for the local candidate, but with the
+			// candidate type preference of peer-reflexive candidates.
+			int family = entry->record.addr.ss_family;
+			msg.priority = ice_compute_priority(ICE_CANDIDATE_TYPE_PEER_REFLEXIVE, family, 1);
 
 			// RFC 8445 8.1.1. Nominating Pairs:
 			// Once the controlling agent has picked a valid pair for nomination, it repeats the

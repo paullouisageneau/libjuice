@@ -104,4 +104,6 @@ int ice_update_candidate_pair(ice_candidate_pair_t *pair, bool is_controlling);
 
 int ice_candidates_count(const ice_description_t *description, ice_candidate_type_t type);
 
+uint32_t ice_compute_priority(ice_candidate_type_t type, int family, int component);
+
 #endif
