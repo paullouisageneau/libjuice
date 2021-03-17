@@ -2158,10 +2158,7 @@ void agent_update_candidate_pairs(juice_agent_t *agent) {
 	bool is_controlling = agent->mode == AGENT_MODE_CONTROLLING;
 	for (int i = 0; i < agent->candidate_pairs_count; ++i) {
 		ice_candidate_pair_t *pair = agent->candidate_pairs + i;
-		ice_candidate_t *local = pair->local;
-		pair->local = NULL; // don't take local candidate into account
 		ice_update_candidate_pair(pair, is_controlling);
-		pair->local = local;
 	}
 	agent_update_ordered_pairs(agent);
 }
