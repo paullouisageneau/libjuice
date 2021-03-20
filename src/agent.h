@@ -103,6 +103,7 @@ typedef struct agent_turn_state {
 typedef struct agent_stun_entry {
 	agent_stun_entry_type_t type;
 	agent_stun_entry_state_t state;
+	agent_mode_t mode;
 	ice_candidate_pair_t *pair;
 	addr_record_t record;
 	addr_record_t relayed;
@@ -193,7 +194,7 @@ int agent_dispatch_stun(juice_agent_t *agent, void *buf, size_t size, stun_messa
 int agent_process_stun_binding(juice_agent_t *agent, const stun_message_t *msg,
                                agent_stun_entry_t *entry, const addr_record_t *src,
                                const addr_record_t *relayed); // relayed may be NULL
-int agent_send_stun_binding(juice_agent_t *agent, const agent_stun_entry_t *entry,
+int agent_send_stun_binding(juice_agent_t *agent, agent_stun_entry_t *entry,
                             stun_class_t msg_class, unsigned int error_code,
                             const uint8_t *transaction_id, const addr_record_t *mapped);
 int agent_process_turn_allocate(juice_agent_t *agent, const stun_message_t *msg,
