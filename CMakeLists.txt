@@ -64,6 +64,7 @@ set(TESTS_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/test/notrickle.c
     ${CMAKE_CURRENT_SOURCE_DIR}/test/turn.c
     ${CMAKE_CURRENT_SOURCE_DIR}/test/server.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/test/conflict.c
 )
 
 set(THREADS_PREFER_PTHREAD_FLAG ON)

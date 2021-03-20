@@ -27,6 +27,7 @@ int test_connectivity(void);
 int test_notrickle(void);
 int test_gathering(void);
 int test_turn(void);
+int test_conflict(void);
 
 #ifndef NO_SERVER
 int test_server(void);
@@ -74,6 +75,12 @@ int main(int argc, char **argv) {
 	printf("\nRunning non-trickled connectivity test...\n");
 	if (test_notrickle()) {
 		fprintf(stderr, "Non-trickled connectivity test failed\n");
+		return -1;
+	}
+
+	printf("\nRunning connectivity test with role conflict...\n");
+	if (test_conflict()) {
+		fprintf(stderr, "Connectivity test with role conflict failed\n");
 		return -1;
 	}
 

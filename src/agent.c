@@ -1219,8 +1219,10 @@ int agent_process_stun_binding(juice_agent_t *agent, const stun_message_t *msg,
 		JLOG_DEBUG("Received STUN Binding request");
 		if (entry->type != AGENT_STUN_ENTRY_TYPE_CHECK)
 			return -1;
+
 		ice_candidate_pair_t *pair = entry->pair;
 		if (msg->ice_controlling == msg->ice_controlled) {
+			JLOG_WARN("Controlling and controlled attributes mismatch in request");
 			agent_send_stun_binding(agent, entry, STUN_CLASS_RESP_ERROR, 400, msg->transaction_id,
 			                        NULL);
 			return -1;
@@ -1351,23 +1353,25 @@ int agent_process_stun_binding(juice_agent_t *agent, const stun_message_t *msg,
 			JLOG_WARN("Got STUN Binding error response, code=%u", (unsigned int)msg->error_code);
 
 		if (entry->type == AGENT_STUN_ENTRY_TYPE_CHECK && msg->error_code == 487) {
-			// RFC 8445 7.2.5.1. Role Conflict:
-			// If the Binding request generates a 487 (Role Conflict) error response, and if the ICE
-			// agent included an ICE-CONTROLLED attribute in the request, the agent MUST switch to
-			// the controlling role. If the agent included an ICE-CONTROLLING attribute in the
-			// request, the agent MUST switch to the controlled role. Once the agent has switched
-			// its role, the agent MUST [...] set the candidate pair state to Waiting [and] change
-			// the tiebreaker value.
-			if ((agent->mode == AGENT_MODE_CONTROLLING && msg->ice_controlling) ||
-			    (agent->mode == AGENT_MODE_CONTROLLED && msg->ice_controlled)) {
+			if (entry->mode == agent->mode) {
+				// RFC 8445 7.2.5.1. Role Conflict:
+				// If the Binding request generates a 487 (Role Conflict) error response, and if the
+				// ICE agent included an ICE-CONTROLLED attribute in the request, the agent MUST
+				// switch to the controlling role. If the agent included an ICE-CONTROLLING
+				// attribute in the request, the agent MUST switch to the controlled role. Once the
+				// agent has switched its role, the agent MUST [...] set the candidate pair state to
+				// Waiting [and] change the tiebreaker value.
 				JLOG_WARN("ICE role conflit");
 				JLOG_DEBUG("Switching roles to %s as requested",
-				           msg->ice_controlling ? "controlled" : "controlling");
-				agent->mode = msg->ice_controlling ? AGENT_MODE_CONTROLLED : AGENT_MODE_CONTROLLING;
+				           entry->mode == AGENT_MODE_CONTROLLING ? "controlled" : "controlling");
+				agent->mode = entry->mode == AGENT_MODE_CONTROLLING ? AGENT_MODE_CONTROLLED : AGENT_MODE_CONTROLLING;
 				agent_update_candidate_pairs(agent);
-			}
 
-			juice_random(&agent->ice_tiebreaker, sizeof(agent->ice_tiebreaker));
+				juice_random(&agent->ice_tiebreaker, sizeof(agent->ice_tiebreaker));
+			} else {
+				JLOG_DEBUG("Already switched roles to %s as requested",
+				           agent->mode == AGENT_MODE_CONTROLLING ? "controlling" : "controlled");
+			}
 
 			entry->state = AGENT_STUN_ENTRY_STATE_PENDING;
 			agent_arm_transmission(agent, entry, 0);
@@ -1391,9 +1395,9 @@ int agent_process_stun_binding(juice_agent_t *agent, const stun_message_t *msg,
 	return 0;
 }
 
-int agent_send_stun_binding(juice_agent_t *agent, const agent_stun_entry_t *entry,
-                            stun_class_t msg_class, unsigned int error_code,
-                            const uint8_t *transaction_id, const addr_record_t *mapped) {
+int agent_send_stun_binding(juice_agent_t *agent, agent_stun_entry_t *entry, stun_class_t msg_class,
+                            unsigned int error_code, const uint8_t *transaction_id,
+                            const addr_record_t *mapped) {
 	// Send STUN Binding
 	JLOG_DEBUG("Sending STUN Binding %s",
 	           msg_class == STUN_CLASS_REQUEST
@@ -1445,6 +1449,8 @@ int agent_send_stun_binding(juice_agent_t *agent, const agent_stun_entry_t *entr
 			// USE-CANDIDATE attribute.
 			msg.use_candidate = agent->mode == AGENT_MODE_CONTROLLING && entry->pair &&
 			                    entry->pair->nomination_requested;
+
+			entry->mode = agent->mode; // save current mode in case of conflict
 			break;
 		}
 		case STUN_CLASS_RESP_SUCCESS:
@@ -1453,6 +1459,7 @@ int agent_send_stun_binding(juice_agent_t *agent, const agent_stun_entry_t *entr
 			msg.error_code = error_code;
 			if (mapped)
 				msg.mapped = *mapped;
+
 			break;
 		}
 		case STUN_CLASS_INDICATION: {
@@ -2028,6 +2035,7 @@ int agent_add_candidate_pair(juice_agent_t *agent, ice_candidate_t *local, // lo
 	agent_stun_entry_t *entry = agent->entries + agent->entries_count;
 	entry->type = AGENT_STUN_ENTRY_TYPE_CHECK;
 	entry->state = AGENT_STUN_ENTRY_STATE_IDLE;
+	entry->mode = AGENT_MODE_UNKNOWN;
 	entry->pair = pos;
 	entry->record = pos->remote->resolved;
 	entry->relay_entry = relay_entry;
