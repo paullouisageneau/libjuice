@@ -1364,7 +1364,8 @@ int agent_process_stun_binding(juice_agent_t *agent, const stun_message_t *msg,
 				JLOG_WARN("ICE role conflit");
 				JLOG_DEBUG("Switching roles to %s as requested",
 				           entry->mode == AGENT_MODE_CONTROLLING ? "controlled" : "controlling");
-				agent->mode = entry->mode == AGENT_MODE_CONTROLLING ? AGENT_MODE_CONTROLLED : AGENT_MODE_CONTROLLING;
+				agent->mode = entry->mode == AGENT_MODE_CONTROLLING ? AGENT_MODE_CONTROLLED
+				                                                    : AGENT_MODE_CONTROLLING;
 				agent_update_candidate_pairs(agent);
 
 				juice_random(&agent->ice_tiebreaker, sizeof(agent->ice_tiebreaker));
@@ -2180,8 +2181,17 @@ void agent_update_ordered_pairs(juice_agent_t *agent) {
 		uint64_t priority = agent->candidate_pairs[i].priority;
 		while (--prev >= begin && (*prev)->priority < priority)
 			*(prev + 1) = *prev;
+
 		*(prev + 1) = agent->candidate_pairs + i;
 	}
+}
+
+static inline bool pair_is_relayed(const ice_candidate_pair_t *pair) {
+	return pair->local && pair->local->type == ICE_CANDIDATE_TYPE_RELAYED;
+}
+
+static inline bool entry_is_relayed(const agent_stun_entry_t *entry) {
+	return entry->pair && pair_is_relayed(entry->pair);
 }
 
 agent_stun_entry_t *agent_find_entry_from_record(juice_agent_t *agent, const addr_record_t *record,
@@ -2195,62 +2205,63 @@ agent_stun_entry_t *agent_find_entry_from_record(juice_agent_t *agent, const add
 	if (agent->state == JUICE_STATE_COMPLETED && selected_entry) {
 		// As an optimization, try to match the selected entry first
 		if (relayed) {
-			if (selected_entry->pair && selected_entry->pair->local &&
-			    selected_entry->pair->local->type == ICE_CANDIDATE_TYPE_RELAYED &&
+			if (entry_is_relayed(selected_entry) &&
 			    addr_record_is_equal(&selected_entry->pair->local->resolved, relayed, true) &&
 			    addr_record_is_equal(&selected_entry->record, record, true)) {
+				JLOG_DEBUG("STUN selected entry matching incoming relayed address");
 				return selected_entry;
 			}
-		} else if (addr_record_is_equal(&selected_entry->record, record, true)) {
-			JLOG_DEBUG("STUN selected entry matching incoming address");
-			return selected_entry;
+		} else {
+			if (!entry_is_relayed(selected_entry) &&
+			    addr_record_is_equal(&selected_entry->record, record, true)) {
+				JLOG_DEBUG("STUN selected entry matching incoming address");
+				return selected_entry;
+			}
 		}
 	}
 
 	if (relayed) {
 		for (int i = 0; i < agent->entries_count; ++i) {
 			agent_stun_entry_t *entry = agent->entries + i;
-			if (entry->pair && entry->pair->local &&
-			    entry->pair->local->type == ICE_CANDIDATE_TYPE_RELAYED &&
+			if (entry_is_relayed(entry) &&
 			    addr_record_is_equal(&entry->pair->local->resolved, relayed, true) &&
 			    addr_record_is_equal(&entry->record, record, true)) {
+				JLOG_DEBUG("STUN entry %d matching incoming relayed address", i);
 				return entry;
 			}
 		}
-
-		return NULL;
-	}
-
-	// Try to match pairs by priority first
-	ice_candidate_pair_t *matching_pair = NULL;
-	for (int i = 0; i < agent->candidate_pairs_count; ++i) {
-		ice_candidate_pair_t *pair = agent->ordered_pairs[i];
-		if (addr_record_is_equal(&pair->remote->resolved, record, true)) {
-			matching_pair = pair;
-			break;
+	} else {
+		// Try to match pairs by priority first
+		ice_candidate_pair_t *matching_pair = NULL;
+		for (int i = 0; i < agent->candidate_pairs_count; ++i) {
+			ice_candidate_pair_t *pair = agent->ordered_pairs[i];
+			if (!pair_is_relayed(pair) &&
+			    addr_record_is_equal(&pair->remote->resolved, record, true)) {
+				matching_pair = pair;
+				break;
+			}
 		}
-	}
 
-	if (matching_pair) {
-		// Just find the corresponding entry
+		if (matching_pair) {
+			// Just find the corresponding entry
+			for (int i = 0; i < agent->entries_count; ++i) {
+				agent_stun_entry_t *entry = agent->entries + i;
+				if (entry->pair == matching_pair) {
+					JLOG_DEBUG("STUN entry %d pair matching incoming address", i);
+					return entry;
+				}
+			}
+		}
+
+		// Try to match entries directly
 		for (int i = 0; i < agent->entries_count; ++i) {
 			agent_stun_entry_t *entry = agent->entries + i;
-			if (entry->pair == matching_pair) {
+			if (!entry_is_relayed(entry) && addr_record_is_equal(&entry->record, record, true)) {
 				JLOG_DEBUG("STUN entry %d matching incoming address", i);
 				return entry;
 			}
 		}
 	}
-
-	// Try to match entries directly
-	for (int i = 0; i < agent->entries_count; ++i) {
-		agent_stun_entry_t *entry = agent->entries + i;
-		if (addr_record_is_equal(&entry->record, record, true)) {
-			JLOG_DEBUG("STUN entry %d matching incoming address", i);
-			return entry;
-		}
-	}
-
 	return NULL;
 }
 
