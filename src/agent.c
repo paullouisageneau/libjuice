@@ -830,18 +830,24 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 			JLOG_DEBUG("STUN entry %d: Failed", i);
 			entry->state = AGENT_STUN_ENTRY_STATE_FAILED;
 			entry->next_transmission = 0;
-			if (entry->pair)
-				entry->pair->state = ICE_CANDIDATE_PAIR_STATE_FAILED;
 
-			if (entry->type == AGENT_STUN_ENTRY_TYPE_RELAY) {
-				// TURN server
-				JLOG_INFO("TURN allocation failed");
+			switch (entry->type) {
+			case AGENT_STUN_ENTRY_TYPE_RELAY:
+				JLOG_INFO("TURN allocation failed (timeout)");
 				agent_update_gathering_done(agent);
+				break;
 
-			} else if (entry->type == AGENT_STUN_ENTRY_TYPE_SERVER) {
-				// STUN server
-				JLOG_INFO("STUN server binding failed");
+			case AGENT_STUN_ENTRY_TYPE_SERVER:
+				JLOG_INFO("STUN server binding failed (timeout)");
 				agent_update_gathering_done(agent);
+				break;
+
+			default:
+				if (entry->pair) {
+					JLOG_INFO("Candidate pair check failed (timeout)");
+					entry->pair->state = ICE_CANDIDATE_PAIR_STATE_FAILED;
+				}
+				break;
 			}
 		}
 		// STUN keepalives
@@ -863,19 +869,19 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 			int ret;
 			switch (entry->type) {
 			case AGENT_STUN_ENTRY_TYPE_RELAY:
-				// RFC 8445 5.1.1.4. Keeping Candidates Alive
+				// RFC 8445 5.1.1.4. Keeping Candidates Alive:
 				// Refreshes for allocations are done using the Refresh transaction, as described in
 				// [RFC5766]
 				ret = agent_send_turn_allocate_request(agent, entry, STUN_METHOD_REFRESH);
 				break;
 			case AGENT_STUN_ENTRY_TYPE_SERVER:
-				// RFC 8445 5.1.1.4. Keeping Candidates Alive
+				// RFC 8445 5.1.1.4. Keeping Candidates Alive:
 				// For server-reflexive candidates learned through a Binding request, the bindings
 				// MUST be kept alive by additional Binding requests to the server.
 				ret = agent_send_stun_binding(agent, entry, STUN_CLASS_REQUEST, 0, NULL, NULL);
 				break;
 			default:
-				// RFC 8445 11. Keepalives
+				// RFC 8445 11. Keepalives:
 				// All endpoints MUST send keepalives for each data session. [...] STUN keepalives
 				// MUST be used when an ICE agent is a full ICE implementation and is communicating
 				// with a peer that supports ICE (lite or full). [...] When STUN is being used for
@@ -1163,6 +1169,7 @@ int agent_dispatch_stun(juice_agent_t *agent, void *buf, size_t size, stun_messa
 			if (agent->entries[i].turn) {
 				if (turn_find_transaction_id(&agent->entries[i].turn->map, msg->transaction_id,
 				                             NULL)) {
+					JLOG_VERBOSE("STUN entry %d matching incoming transaction ID (TURN)", i);
 					entry = &agent->entries[i];
 					break;
 				}
@@ -1339,10 +1346,25 @@ int agent_process_stun_binding(juice_agent_t *agent, const stun_message_t *msg,
 			}
 		}
 		if (entry->type == AGENT_STUN_ENTRY_TYPE_CHECK) {
+			// 7.2.5.2.1. Non-Symmetric Transport Addresses:
+			// The ICE agent MUST check that the source and destination transport addresses in the
+			// Binding request and response are symmetric. [...] If the addresses are not symmetric,
+			// the agent MUST set the candidate pair state to Failed.
+			if (!addr_record_is_equal(src, &entry->record, true)) {
+				JLOG_DEBUG(
+				    "Candidate pair check failed (non-symmetric source address in response)");
+				entry->state = AGENT_STUN_ENTRY_STATE_FAILED;
+				break;
+			}
+
 			ice_candidate_pair_t *pair = entry->pair;
+			if (!pair) {
+				JLOG_ERROR("STUN entry for candidate pair checking has no candidate pair");
+				return -1;
+			}
 
 			if (pair->state != ICE_CANDIDATE_PAIR_STATE_SUCCEEDED) {
-				JLOG_DEBUG("Pair check succeeded");
+				JLOG_DEBUG("Candidate pair check succeeded");
 				pair->state = ICE_CANDIDATE_PAIR_STATE_SUCCEEDED;
 			}
 
@@ -1367,33 +1389,43 @@ int agent_process_stun_binding(juice_agent_t *agent, const stun_message_t *msg,
 		if (msg->error_code != STUN_ERROR_INTERNAL_VALIDATION_FAILED)
 			JLOG_WARN("Got STUN Binding error response, code=%u", (unsigned int)msg->error_code);
 
-		if (entry->type == AGENT_STUN_ENTRY_TYPE_CHECK && msg->error_code == 487) {
-			if (entry->mode == agent->mode) {
-				// RFC 8445 7.2.5.1. Role Conflict:
-				// If the Binding request generates a 487 (Role Conflict) error response, and if the
-				// ICE agent included an ICE-CONTROLLED attribute in the request, the agent MUST
-				// switch to the controlling role. If the agent included an ICE-CONTROLLING
-				// attribute in the request, the agent MUST switch to the controlled role. Once the
-				// agent has switched its role, the agent MUST [...] set the candidate pair state to
-				// Waiting [and] change the tiebreaker value.
-				JLOG_WARN("ICE role conflit");
-				JLOG_DEBUG("Switching roles to %s as requested",
-				           entry->mode == AGENT_MODE_CONTROLLING ? "controlled" : "controlling");
-				agent->mode = entry->mode == AGENT_MODE_CONTROLLING ? AGENT_MODE_CONTROLLED
-				                                                    : AGENT_MODE_CONTROLLING;
-				agent_update_candidate_pairs(agent);
+		if (entry->type == AGENT_STUN_ENTRY_TYPE_CHECK) {
+			if (msg->error_code == 487) {
+				if (entry->mode == agent->mode) {
+					// RFC 8445 7.2.5.1. Role Conflict:
+					// If the Binding request generates a 487 (Role Conflict) error response, and if
+					// the ICE agent included an ICE-CONTROLLED attribute in the request, the agent
+					// MUST switch to the controlling role. If the agent included an ICE-CONTROLLING
+					// attribute in the request, the agent MUST switch to the controlled role. Once
+					// the agent has switched its role, the agent MUST [...] set the candidate pair
+					// state to Waiting [and] change the tiebreaker value.
+					JLOG_WARN("ICE role conflit");
+					JLOG_DEBUG("Switching roles to %s as requested",
+					           entry->mode == AGENT_MODE_CONTROLLING ? "controlled"
+					                                                 : "controlling");
+					agent->mode = entry->mode == AGENT_MODE_CONTROLLING ? AGENT_MODE_CONTROLLED
+					                                                    : AGENT_MODE_CONTROLLING;
+					agent_update_candidate_pairs(agent);
 
-				juice_random(&agent->ice_tiebreaker, sizeof(agent->ice_tiebreaker));
+					juice_random(&agent->ice_tiebreaker, sizeof(agent->ice_tiebreaker));
+				} else {
+					JLOG_DEBUG("Already switched roles to %s as requested",
+					           agent->mode == AGENT_MODE_CONTROLLING ? "controlling"
+					                                                 : "controlled");
+				}
+
+				entry->state = AGENT_STUN_ENTRY_STATE_PENDING;
+				agent_arm_transmission(agent, entry, 0);
+
 			} else {
-				JLOG_DEBUG("Already switched roles to %s as requested",
-				           agent->mode == AGENT_MODE_CONTROLLING ? "controlling" : "controlled");
+				// 7.2.5.2.4. Unrecoverable STUN Response:
+				// If the Binding request generates a STUN error response that is unrecoverable
+				// [RFC5389], the ICE agent SHOULD set the candidate pair state to Failed.
+				JLOG_DEBUG("Chandidate pair check failed (unrecoverable error)");
+				entry->state = AGENT_STUN_ENTRY_STATE_FAILED;
 			}
-
-			entry->state = AGENT_STUN_ENTRY_STATE_PENDING;
-			agent_arm_transmission(agent, entry, 0);
-
-		} else {
-			JLOG_INFO("STUN server binding failed");
+		} else { // entry->type == AGENT_STUN_ENTRY_TYPE_SERVER
+			JLOG_INFO("STUN server binding failed (unrecoverable error)");
 			entry->state = AGENT_STUN_ENTRY_STATE_FAILED;
 			agent_update_gathering_done(agent);
 		}
