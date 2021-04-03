@@ -809,14 +809,16 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 			if (entry->retransmissions >= 0) {
 				JLOG_DEBUG("STUN entry %d: Sending request (%d retransmissions left)", i,
 				           entry->retransmissions);
-
 				int ret;
-				if (entry->type == AGENT_STUN_ENTRY_TYPE_RELAY)
-					// TURN server
+				switch (entry->type) {
+				case AGENT_STUN_ENTRY_TYPE_RELAY:
 					ret = agent_send_turn_allocate_request(agent, entry, STUN_METHOD_ALLOCATE);
-				else
-					// STUN server or peer
+					break;
+
+				default:
 					ret = agent_send_stun_binding(agent, entry, STUN_CLASS_REQUEST, 0, NULL, NULL);
+					break;
+				}
 
 				if (ret >= 0) {
 					--entry->retransmissions;
