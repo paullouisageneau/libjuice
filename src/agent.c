@@ -840,12 +840,11 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 
 			} else if (entry->type == AGENT_STUN_ENTRY_TYPE_SERVER) {
 				// STUN server
-				JLOG_INFO("STUN binding failed");
+				JLOG_INFO("STUN server binding failed");
 				agent_update_gathering_done(agent);
 			}
 		}
 		// STUN keepalives
-		// RFC 8445 11. Keepalives: All endpoints MUST send keepalives for each data session.
 		else if (entry->state == AGENT_STUN_ENTRY_STATE_SUCCEEDED_KEEPALIVE) {
 #ifdef NO_ATOMICS
 			bool must_arm = !entry->armed;
@@ -862,12 +861,28 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 
 			JLOG_DEBUG("STUN entry %d: Sending keepalive", i);
 			int ret;
-			if (entry->type == AGENT_STUN_ENTRY_TYPE_RELAY)
-				// TURN server
+			switch (entry->type) {
+			case AGENT_STUN_ENTRY_TYPE_RELAY:
+				// RFC 8445 5.1.1.4. Keeping Candidates Alive
+				// Refreshes for allocations are done using the Refresh transaction, as described in
+				// [RFC5766]
 				ret = agent_send_turn_allocate_request(agent, entry, STUN_METHOD_REFRESH);
-			else
-				// STUN server or peer
+				break;
+			case AGENT_STUN_ENTRY_TYPE_SERVER:
+				// RFC 8445 5.1.1.4. Keeping Candidates Alive
+				// For server-reflexive candidates learned through a Binding request, the bindings
+				// MUST be kept alive by additional Binding requests to the server.
+				ret = agent_send_stun_binding(agent, entry, STUN_CLASS_REQUEST, 0, NULL, NULL);
+				break;
+			default:
+				// RFC 8445 11. Keepalives
+				// All endpoints MUST send keepalives for each data session. [...] STUN keepalives
+				// MUST be used when an ICE agent is a full ICE implementation and is communicating
+				// with a peer that supports ICE (lite or full). [...] When STUN is being used for
+				// keepalives, a STUN Binding Indication is used [RFC5389].
 				ret = agent_send_stun_binding(agent, entry, STUN_CLASS_INDICATION, 0, NULL, NULL);
+				break;
+			}
 
 			if (ret < 0) {
 				JLOG_ERROR("Sending keepalive failed");
