@@ -108,10 +108,10 @@ socket_t udp_create_socket(const udp_socket_config_t *config) {
 #endif
 #endif
 
-	// Set buffer size to 2 MiB for performance
-	const sockopt_t bufferSize = 2 * 1024 * 1024;
-	setsockopt(sock, SOL_SOCKET, SO_RCVBUF, (const char *)&bufferSize, sizeof(bufferSize));
-	setsockopt(sock, SOL_SOCKET, SO_SNDBUF, (const char *)&bufferSize, sizeof(bufferSize));
+	// Set buffer size up to 1 MiB for performance
+	const sockopt_t buffer_size = 1 * 1024 * 1024;
+	setsockopt(sock, SOL_SOCKET, SO_RCVBUF, (const char *)&buffer_size, sizeof(buffer_size));
+	setsockopt(sock, SOL_SOCKET, SO_SNDBUF, (const char *)&buffer_size, sizeof(buffer_size));
 
 	ctl_t blocking = 1;
 	if (ioctlsocket(sock, FIONBIO, &blocking)) {
