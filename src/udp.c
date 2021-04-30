@@ -198,7 +198,14 @@ int udp_recvfrom(socket_t sock, char *buffer, size_t size, addr_record_t *src) {
 int udp_sendto(socket_t sock, const char *data, size_t size, const addr_record_t *dst) {
 #if defined(_WIN32) || defined(__APPLE__)
 	addr_record_t tmp = *dst;
-	addr_map_inet6_v4mapped(&tmp.addr, &tmp.len);
+	addr_record_t name;
+	name.len = sizeof(name.addr);
+	if (getsockname(sock, (struct sockaddr *)&name.addr, &name.len) == 0) {
+		if (name.addr.ss_family == AF_INET6)
+			addr_map_inet6_v4mapped(&tmp.addr, &tmp.len);
+	} else {
+		JLOG_WARN("getsockname failed, errno=%d", sockerrno);
+	}
 	return sendto(sock, data, (socklen_t)size, 0, (const struct sockaddr *)&tmp.addr, tmp.len);
 #else
 	return sendto(sock, data, size, 0, (const struct sockaddr *)&dst->addr, dst->len);
