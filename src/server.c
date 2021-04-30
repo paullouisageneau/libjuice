@@ -356,13 +356,7 @@ void server_run(juice_server_t *server) {
 int server_send(juice_server_t *server, const addr_record_t *dst, const char *data, size_t size) {
 	JLOG_VERBOSE("Sending datagram, size=%d", size);
 
-#if defined(_WIN32) || defined(__APPLE__)
-	addr_record_t tmp = *dst;
-	addr_map_inet6_v4mapped(&tmp.addr, &tmp.len);
-	int ret = sendto(server->sock, data, (int)size, 0, (const struct sockaddr *)&tmp.addr, tmp.len);
-#else
-	int ret = sendto(server->sock, data, size, 0, (const struct sockaddr *)&dst->addr, dst->len);
-#endif
+	int ret = udp_sendto(server->sock, data, size, dst);
 	if (ret < 0 && sockerrno != SEAGAIN && sockerrno != SEWOULDBLOCK)
 		JLOG_WARN("Send failed, errno=%d", sockerrno);
 
@@ -390,21 +384,8 @@ int server_recv(juice_server_t *server) {
 	while (true) {
 		char buffer[BUFFER_SIZE];
 		addr_record_t record;
-		record.len = sizeof(record.addr);
-		int len = recvfrom(server->sock, buffer, BUFFER_SIZE, 0, (struct sockaddr *)&record.addr,
-		                   &record.len);
+		int len = udp_recvfrom(server->sock, buffer, BUFFER_SIZE, &record);
 		if (len < 0) {
-			if (sockerrno == SECONNRESET || sockerrno == SENETRESET || sockerrno == SECONNREFUSED) {
-				// On Windows, if a UDP socket receives an ICMP port unreachable response after
-				// sending a datagram, this error is stored, and the next call to recvfrom() returns
-				// WSAECONNRESET (port unreachable) or WSAENETRESET (TTL expired).
-				// Therefore, it may be ignored.
-				JLOG_DEBUG("Ignoring %s returned by recvfrom",
-				           sockerrno == SECONNRESET
-				               ? "ECONNRESET"
-				               : (sockerrno == SENETRESET ? "ENETRESET" : "ECONNREFUSED"));
-				continue;
-			}
 			if (sockerrno == SEAGAIN || sockerrno == SEWOULDBLOCK) {
 				JLOG_VERBOSE("No more datagrams to receive");
 				break;
@@ -429,21 +410,8 @@ int server_forward(juice_server_t *server, server_turn_alloc_t *alloc) {
 	while (true) {
 		char buffer[BUFFER_SIZE];
 		addr_record_t record;
-		record.len = sizeof(record.addr);
-		int len = recvfrom(alloc->sock, buffer, BUFFER_SIZE, 0, (struct sockaddr *)&record.addr,
-		                   &record.len);
+		int len = udp_recvfrom(alloc->sock, buffer, BUFFER_SIZE, &record);
 		if (len < 0) {
-			if (sockerrno == SECONNRESET || sockerrno == SENETRESET || sockerrno == SECONNREFUSED) {
-				// On Windows, if a UDP socket receives an ICMP port unreachable response after
-				// sending a datagram, this error is stored, and the next call to recvfrom() returns
-				// WSAECONNRESET (port unreachable) or WSAENETRESET (TTL expired).
-				// Therefore, it may be ignored.
-				JLOG_DEBUG("Ignoring %s returned by recvfrom",
-				           sockerrno == SECONNRESET
-				               ? "ECONNRESET"
-				               : (sockerrno == SENETRESET ? "ENETRESET" : "ECONNREFUSED"));
-				continue;
-			}
 			if (sockerrno == SEAGAIN || sockerrno == SEWOULDBLOCK) {
 				break;
 			}
@@ -463,15 +431,7 @@ int server_forward(juice_server_t *server, server_turn_alloc_t *alloc) {
 
 			JLOG_VERBOSE("Forwarding as ChannelData, size=%d", len);
 
-#if defined(_WIN32) || defined(__APPLE__)
-			addr_record_t tmp = alloc->record;
-			addr_map_inet6_v4mapped(&tmp.addr, &tmp.len);
-			int ret =
-			    sendto(server->sock, buffer, len, 0, (const struct sockaddr *)&tmp.addr, tmp.len);
-#else
-			int ret = sendto(server->sock, buffer, (size_t)len, 0,
-			                 (const struct sockaddr *)&alloc->record.addr, alloc->record.len);
-#endif
+			int ret = udp_sendto(server->sock, buffer, len, &alloc->record);
 			if (ret < 0 && sockerrno != SEAGAIN && sockerrno != SEWOULDBLOCK)
 				JLOG_WARN("Send failed, errno=%d", sockerrno);
 
@@ -1024,15 +984,7 @@ int server_process_turn_send(juice_server_t *server, const stun_message_t *msg,
 
 	JLOG_VERBOSE("Forwarding datagram to peer, size=%zu", msg->data_size);
 
-#if defined(_WIN32) || defined(__APPLE__)
-	addr_record_t tmp = msg->peer;
-	addr_map_inet6_v4mapped(&tmp.addr, &tmp.len);
-	int ret = sendto(alloc->sock, msg->data, (int)msg->data_size, 0,
-	                 (const struct sockaddr *)&tmp.addr, tmp.len);
-#else
-	int ret = sendto(alloc->sock, msg->data, msg->data_size, 0,
-	                 (const struct sockaddr *)&msg->peer.addr, msg->peer.len);
-#endif
+	int ret = udp_sendto(alloc->sock, msg->data, msg->data_size, &msg->peer);
 	if (ret < 0 && sockerrno != SEAGAIN && sockerrno != SEWOULDBLOCK)
 		JLOG_WARN("Forwarding failed, errno=%d", sockerrno);
 
@@ -1072,13 +1024,7 @@ int server_process_channel_data(juice_server_t *server, char *buf, size_t len,
 
 	JLOG_VERBOSE("Forwarding datagram to peer, size=%zu", len);
 
-#if defined(_WIN32) || defined(__APPLE__)
-	addr_map_inet6_v4mapped(&record.addr, &record.len);
-	int ret =
-	    sendto(alloc->sock, buf, (int)len, 0, (const struct sockaddr *)&record.addr, record.len);
-#else
-	int ret = sendto(alloc->sock, buf, len, 0, (const struct sockaddr *)&record.addr, record.len);
-#endif
+	int ret = udp_sendto(alloc->sock, buf, len, &record);
 	if (ret < 0 && sockerrno != SEAGAIN && sockerrno != SEWOULDBLOCK)
 		JLOG_WARN("Send failed, errno=%d", sockerrno);
 
