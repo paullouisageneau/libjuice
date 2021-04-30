@@ -171,6 +171,40 @@ error:
 	return INVALID_SOCKET;
 }
 
+int udp_recvfrom(socket_t sock, char *buffer, size_t size, addr_record_t *src) {
+	while (true) {
+		src->len = sizeof(src->addr);
+		int len =
+		    recvfrom(sock, buffer, (socklen_t)size, 0, (struct sockaddr *)&src->addr, &src->len);
+		if (len >= 0) {
+			addr_unmap_inet6_v4mapped((struct sockaddr *)&src->addr, &src->len);
+
+		} else if (sockerrno == SECONNRESET || sockerrno == SENETRESET ||
+		           sockerrno == SECONNREFUSED) {
+			// On Windows, if a UDP socket receives an ICMP port unreachable response after
+			// sending a datagram, this error is stored, and the next call to recvfrom() returns
+			// WSAECONNRESET (port unreachable) or WSAENETRESET (TTL expired).
+			// Therefore, it may be ignored.
+			JLOG_DEBUG("Ignoring %s returned by recvfrom",
+			           sockerrno == SECONNRESET
+			               ? "ECONNRESET"
+			               : (sockerrno == SENETRESET ? "ENETRESET" : "ECONNREFUSED"));
+			continue;
+		}
+		return len;
+	}
+}
+
+int udp_sendto(socket_t sock, const char *data, size_t size, const addr_record_t *dst) {
+#if defined(_WIN32) || defined(__APPLE__)
+	addr_record_t tmp = *dst;
+	addr_map_inet6_v4mapped(&tmp.addr, &tmp.len);
+	return sendto(sock, data, (socklen_t)size, 0, (const struct sockaddr *)&tmp.addr, tmp.len);
+#else
+	return sendto(sock, data, size, 0, (const struct sockaddr *)&dst->addr, dst->len);
+#endif
+}
+
 int udp_set_diffserv(socket_t sock, int ds) {
 #ifdef _WIN32
 	// IP_TOS has been intentionally broken on Windows in favor of a convoluted proprietary

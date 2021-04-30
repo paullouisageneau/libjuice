@@ -415,13 +415,7 @@ int agent_direct_send(juice_agent_t *agent, const addr_record_t *dst, const char
 
 	JLOG_VERBOSE("Sending datagram, size=%d", size);
 
-#if defined(_WIN32) || defined(__APPLE__)
-	addr_record_t tmp = *dst;
-	addr_map_inet6_v4mapped(&tmp.addr, &tmp.len);
-	int ret = sendto(agent->sock, data, (int)size, 0, (const struct sockaddr *)&tmp.addr, tmp.len);
-#else
-	int ret = sendto(agent->sock, data, size, 0, (const struct sockaddr *)&dst->addr, dst->len);
-#endif
+	int ret = udp_sendto(agent->sock, data, size, dst);
 	if (ret < 0 && sockerrno != SEAGAIN && sockerrno != SEWOULDBLOCK)
 		JLOG_WARN("Send failed, errno=%d", sockerrno);
 
@@ -682,21 +676,8 @@ int agent_recv(juice_agent_t *agent) {
 	while (true) {
 		char buffer[BUFFER_SIZE];
 		addr_record_t record;
-		record.len = sizeof(record.addr);
-		int len = recvfrom(agent->sock, buffer, BUFFER_SIZE, 0, (struct sockaddr *)&record.addr,
-		                   &record.len);
+		int len = udp_recvfrom(agent->sock, buffer, BUFFER_SIZE, &record);
 		if (len < 0) {
-			if (sockerrno == SECONNRESET || sockerrno == SENETRESET || sockerrno == SECONNREFUSED) {
-				// On Windows, if a UDP socket receives an ICMP port unreachable response after
-				// sending a datagram, this error is stored, and the next call to recvfrom() returns
-				// WSAECONNRESET (port unreachable) or WSAENETRESET (TTL expired).
-				// Therefore, it may be ignored.
-				JLOG_DEBUG("Ignoring %s returned by recvfrom",
-				           sockerrno == SECONNRESET
-				               ? "ECONNRESET"
-				               : (sockerrno == SENETRESET ? "ENETRESET" : "ECONNREFUSED"));
-				continue;
-			}
 			if (sockerrno == SEAGAIN || sockerrno == SEWOULDBLOCK) {
 				JLOG_VERBOSE("No more datagrams to receive");
 				break;
