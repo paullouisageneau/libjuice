@@ -28,6 +28,7 @@ int test_notrickle(void);
 int test_gathering(void);
 int test_turn(void);
 int test_conflict(void);
+int test_bind(void);
 
 #ifndef NO_SERVER
 int test_server(void);
@@ -81,6 +82,12 @@ int main(int argc, char **argv) {
 	printf("\nRunning connectivity test with role conflict...\n");
 	if (test_conflict()) {
 		fprintf(stderr, "Connectivity test with role conflict failed\n");
+		return -1;
+	}
+
+	printf("\nRunning connectivity test with bind address...\n");
+	if (test_bind()) {
+		fprintf(stderr, "Connectivity test with bind address failed\n");
 		return -1;
 	}
 
