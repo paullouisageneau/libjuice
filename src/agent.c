@@ -114,6 +114,15 @@ juice_agent_t *agent_create(const juice_config_t *config) {
 		}
 	}
 
+	if (agent->config.bind_address) {
+		agent->config.bind_address = alloc_string_copy(agent->config.bind_address);
+		if (!agent->config.bind_address) {
+			JLOG_FATAL("alloc for bind address failed");
+			goto error;
+		}
+	}
+
+
 	agent->state = JUICE_STATE_DISCONNECTED;
 	agent->mode = AGENT_MODE_UNKNOWN;
 	agent->sock = INVALID_SOCKET;
@@ -164,12 +173,13 @@ void agent_do_destroy(juice_agent_t *agent) {
 	// Free strings in config
 	free((void *)agent->config.stun_server_host);
 	for (int i = 0; i < agent->config.turn_servers_count; ++i) {
-		juice_turn_server_t *stun_server = agent->config.turn_servers + i;
-		free((void *)stun_server->host);
-		free((void *)stun_server->username);
-		free((void *)stun_server->password);
+		juice_turn_server_t *turn_server = agent->config.turn_servers + i;
+		free((void *)turn_server->host);
+		free((void *)turn_server->username);
+		free((void *)turn_server->password);
 	}
 	free(agent->config.turn_servers);
+	free((void *)agent->config.bind_address);
 	free(agent);
 
 #ifdef _WIN32
@@ -208,6 +218,7 @@ int agent_gather_candidates(juice_agent_t *agent) {
 
 	udp_socket_config_t socket_config;
 	memset(&socket_config, 0, sizeof(socket_config));
+	socket_config.bind_address = agent->config.bind_address;
 	socket_config.port_begin = agent->config.local_port_range_begin;
 	socket_config.port_end = agent->config.local_port_range_end;
 	agent->sock = udp_create_socket(&socket_config);
