@@ -196,7 +196,7 @@ int udp_recvfrom(socket_t sock, char *buffer, size_t size, addr_record_t *src) {
 }
 
 int udp_sendto(socket_t sock, const char *data, size_t size, const addr_record_t *dst) {
-#if defined(_WIN32) || defined(__APPLE__)
+#ifndef __linux__
 	addr_record_t tmp = *dst;
 	addr_record_t name;
 	name.len = sizeof(name.addr);
