@@ -816,18 +816,18 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 
 			switch (entry->type) {
 			case AGENT_STUN_ENTRY_TYPE_RELAY:
-				JLOG_INFO("TURN allocation failed (timeout)");
+				JLOG_INFO("TURN allocation failed");
 				agent_update_gathering_done(agent);
 				break;
 
 			case AGENT_STUN_ENTRY_TYPE_SERVER:
-				JLOG_INFO("STUN server binding failed (timeout)");
+				JLOG_INFO("STUN server binding failed");
 				agent_update_gathering_done(agent);
 				break;
 
 			default:
 				if (entry->pair) {
-					JLOG_INFO("Candidate pair check failed (timeout)");
+					JLOG_INFO("Candidate pair check failed");
 					entry->pair->state = ICE_CANDIDATE_PAIR_STATE_FAILED;
 				}
 				break;
