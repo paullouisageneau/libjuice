@@ -274,10 +274,18 @@ int udp_get_bound_addr(socket_t sock, addr_record_t *record) {
 	return 0;
 }
 
-int udp_get_local_addr(socket_t sock, int family, addr_record_t *record) {
-	switch (family) {
-	case AF_INET: {
-		uint16_t port = udp_get_port(sock);
+int udp_get_local_addr(socket_t sock, int family_hint, addr_record_t *record) {
+	if (udp_get_bound_addr(sock, record) < 0)
+		return -1;
+
+	// If the socket is bound to a particular address, return it
+	if(!addr_is_any((struct sockaddr *)&record->addr))
+		return 0;
+
+	if(record->addr.ss_family == AF_INET6 && family_hint == AF_INET) {
+		// Generate an IPv4 instead (socket is listening to any IPv4 or IPv6)
+
+		uint16_t port = addr_get_port((struct sockaddr *)&record->addr);
 		if (port == 0)
 			return -1;
 
@@ -286,24 +294,6 @@ int udp_get_local_addr(socket_t sock, int family, addr_record_t *record) {
 		sin->sin_family = AF_INET;
 		sin->sin_port = htons(port);
 		record->len = sizeof(*sin);
-		break;
-	}
-	case AF_INET6: {
-		uint16_t port = udp_get_port(sock);
-		if (port == 0)
-			return -1;
-
-		struct sockaddr_in6 *sin6 = (struct sockaddr_in6 *)&record->addr;
-		memset(sin6, 0, sizeof(*sin6));
-		sin6->sin6_family = AF_INET6;
-		sin6->sin6_port = htons(port);
-		record->len = sizeof(*sin6);
-		break;
-	}
-	default: { // AF_UNSPEC falls here
-		if (udp_get_bound_addr(sock, record) < 0)
-			return -1;
-	}
 	}
 
 	switch (record->addr.ss_family) {

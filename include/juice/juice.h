@@ -75,6 +75,8 @@ typedef struct juice_config {
 	juice_turn_server_t *turn_servers;
 	int turn_servers_count;
 
+	const char *bind_address;
+
 	uint16_t local_port_range_begin;
 	uint16_t local_port_range_end;
 
