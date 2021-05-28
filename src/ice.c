@@ -72,7 +72,7 @@ static int parse_sdp_candidate(const char *line, ice_candidate_t *candidate) {
 
 	char transport[32 + 1];
 	char type[32 + 1];
-	if (sscanf(line, "%32s %u %32s %u %256s %32s typ %32s", candidate->foundation,
+	if (sscanf(line, "%32s %d %32s %u %256s %32s typ %32s", candidate->foundation,
 	           &candidate->component, transport, &candidate->priority, candidate->hostname,
 	           candidate->service, type) != 7) {
 		JLOG_WARN("Failed to parse candidate: %s", line);
