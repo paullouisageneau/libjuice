@@ -159,6 +159,8 @@ if(NOT NO_TESTS)
 	target_include_directories(juice-tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include/juice)
 	set_target_properties(juice-tests PROPERTIES VERSION ${PROJECT_VERSION})
 	set_target_properties(juice-tests PROPERTIES OUTPUT_NAME tests)
+	set_target_properties(juice-tests PROPERTIES
+		XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER com.github.paullouisageneau.libjuice.tests)
 	target_link_libraries(juice-tests juice)
 endif()
 
