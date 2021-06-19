@@ -29,7 +29,9 @@ extern "C" {
 
 #ifdef JUICE_HAS_EXPORT_HEADER
 #include "juice_export.h"
-#else
+#endif
+
+#ifndef JUICE_EXPORT
 #ifdef _WIN32
 #define JUICE_EXPORT __declspec(dllexport)
 #else
