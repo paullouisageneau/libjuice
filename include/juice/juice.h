@@ -27,10 +27,14 @@ extern "C" {
 #include <stddef.h>
 #include <stdint.h>
 
+#ifdef JUICE_HAS_EXPORT_HEADER
+#include "juice_export.h"
+#else
 #ifdef _WIN32
 #define JUICE_EXPORT __declspec(dllexport)
 #else
 #define JUICE_EXPORT
+#endif
 #endif
 
 #define JUICE_ERR_SUCCESS 0
