@@ -61,6 +61,15 @@ static bool use_color(void) {
 #endif
 }
 
+static int get_localtime(const time_t *t, struct tm *buf) {
+#ifdef _WIN32
+	// Windows does not have POSIX localtime_r...
+	return localtime_s(buf, t) == 0 ? 0 : -1;
+#else // POSIX
+	return localtime_r(t, buf) != NULL ? 0 : -1;
+#endif
+}
+
 JUICE_EXPORT void juice_set_log_level(juice_log_level_t level) {
 #ifdef NO_ATOMICS
 	mutex_lock(&log_mutex);
@@ -111,9 +120,9 @@ void juice_log_write(juice_log_level_t level, const char *file, int line, const 
 			log_cb(level, message);
 	} else {
 		time_t t = time(NULL);
-		struct tm *lt = localtime(&t);
+		struct tm lt;
 		char buffer[16];
-		if (strftime(buffer, 16, "%H:%M:%S", lt) == 0)
+		if (get_localtime(&t, &lt) != 0 || strftime(buffer, 16, "%H:%M:%S", &lt) == 0)
 			buffer[0] = '\0';
 
 		if (use_color())
