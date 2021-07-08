@@ -167,7 +167,7 @@ int ice_create_local_candidate(ice_candidate_type_t type, int component,
 
 	if (getnameinfo((struct sockaddr *)&record->addr, record->len, candidate->hostname, 256,
 	                candidate->service, 32, NI_NUMERICHOST | NI_NUMERICSERV | NI_DGRAM)) {
-		JLOG_ERROR("getnameinfo failed");
+		JLOG_ERROR("getnameinfo failed, errno=%d", sockerrno);
 		return -1;
 	}
 	return 0;
