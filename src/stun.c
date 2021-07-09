@@ -68,6 +68,9 @@ static size_t generate_hmac_key(const stun_message_t *msg, const char *password,
 		if (input_len < 0)
 			return 0;
 
+		if (input_len >= MAX_HMAC_INPUT_LEN)
+			input_len = MAX_HMAC_INPUT_LEN - 1;
+
 		switch (msg->credentials.password_algorithm) {
 		case STUN_PASSWORD_ALGORITHM_SHA256:
 			hash_sha256(input, input_len, key);
@@ -79,7 +82,13 @@ static size_t generate_hmac_key(const stun_message_t *msg, const char *password,
 	} else {
 		// short-term credentials
 		int key_len = snprintf((char *)key, MAX_HMAC_KEY_LEN, "%s", password ? password : "");
-		return key_len < 0 ? 0 : key_len;
+		if (key_len < 0)
+			return 0;
+
+		if (key_len >= MAX_HMAC_KEY_LEN)
+			key_len = MAX_HMAC_KEY_LEN - 1;
+
+		return key_len;
 	}
 }
 
@@ -584,7 +593,7 @@ int stun_read(void *data, size_t size, stun_message_t *msg) {
 	}
 
 	if (security_bits & STUN_SECURITY_USERNAME_ANONYMITY_BIT) {
-		JLOG_VERBOSE("Remote agent supports user anonymity");
+		JLOG_DEBUG("Remote agent supports user anonymity");
 		credentials->enable_userhash = true;
 	}
 
@@ -651,12 +660,20 @@ int stun_read_attr(const void *data, size_t size, stun_message_t *msg, uint8_t *
 		    (const struct stun_value_error_code *)attr->value;
 		msg->error_code = (error->code_class & 0x07) * 100 + error->code_number;
 
-		size_t reason_length = length - sizeof(struct stun_value_error_code);
-		char buffer[STUN_MAX_ERROR_REASON_LEN];
-		memcpy(buffer, (const char *)error->reason, reason_length);
-		buffer[reason_length] = '\0';
+		if (msg->error_code == 401) { // Unauthenticated
+			JLOG_DEBUG("Got STUN error code %u", msg->error_code);
 
-		JLOG_INFO("Got STUN error code %u, reason \"%s\"", msg->error_code, buffer);
+		} else if (JLOG_INFO_ENABLED) {
+			size_t reason_length = length - sizeof(struct stun_value_error_code);
+			if (reason_length >= STUN_MAX_ERROR_REASON_LEN)
+				reason_length = STUN_MAX_ERROR_REASON_LEN - 1;
+
+			char buffer[STUN_MAX_ERROR_REASON_LEN];
+			memcpy(buffer, (const char *)error->reason, reason_length);
+			buffer[reason_length] = '\0';
+
+			JLOG_INFO("Got STUN error code %u, reason \"%s\"", msg->error_code, buffer);
+		}
 		break;
 	}
 	case STUN_ATTR_UNKNOWN_ATTRIBUTES: {
@@ -762,7 +779,7 @@ int stun_read_attr(const void *data, size_t size, stun_message_t *msg, uint8_t *
 				security_bits = 0;
 			}
 		} else if (msg->msg_class == STUN_CLASS_RESP_ERROR) {
-			JLOG_INFO("Remote agent does not support RFC 8489");
+			JLOG_DEBUG("Remote agent does not support RFC 8489");
 		}
 		break;
 	}
@@ -1140,6 +1157,9 @@ void stun_compute_userhash(const char *username, const char *realm, uint8_t *out
 	int input_len = snprintf(input, MAX_USERHASH_INPUT_LEN, "%s:%s", username, realm);
 	if (input_len < 0)
 		return;
+
+	if (input_len >= MAX_USERHASH_INPUT_LEN)
+		input_len = MAX_USERHASH_INPUT_LEN - 1;
 
 	hash_sha256(input, input_len, out);
 }

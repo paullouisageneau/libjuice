@@ -712,7 +712,17 @@ int agent_input(juice_agent_t *agent, char *buf, size_t len, const addr_record_t
 	JLOG_VERBOSE("Received datagram, size=%d", len);
 
 	if (is_stun_datagram(buf, len)) {
-		JLOG_DEBUG("Received STUN datagram%s", relayed ? " via relay" : "");
+		if (JLOG_DEBUG_ENABLED) {
+			char src_str[ADDR_MAX_STRING_LEN];
+			addr_record_to_string(src, src_str, ADDR_MAX_STRING_LEN);
+			if (relayed) {
+				char relayed_str[ADDR_MAX_STRING_LEN];
+				addr_record_to_string(relayed, relayed_str, ADDR_MAX_STRING_LEN);
+				JLOG_DEBUG("Received STUN datagram from %s relayed via %s", src_str, relayed_str);
+			} else {
+				JLOG_DEBUG("Received STUN datagram from %s", src_str);
+			}
+		}
 		stun_message_t msg;
 		if (stun_read(buf, len, &msg) < 0) {
 			JLOG_ERROR("STUN message reading failed");
@@ -721,7 +731,17 @@ int agent_input(juice_agent_t *agent, char *buf, size_t len, const addr_record_t
 		return agent_dispatch_stun(agent, buf, len, &msg, src, relayed);
 	}
 
-	JLOG_DEBUG("Received non-STUN datagram%s", relayed ? " via relay" : "");
+	if (JLOG_DEBUG_ENABLED) {
+		char src_str[ADDR_MAX_STRING_LEN];
+		addr_record_to_string(src, src_str, ADDR_MAX_STRING_LEN);
+		if (relayed) {
+			char relayed_str[ADDR_MAX_STRING_LEN];
+			addr_record_to_string(relayed, relayed_str, ADDR_MAX_STRING_LEN);
+			JLOG_DEBUG("Received non-STUN datagram from %s relayed via %s", src_str, relayed_str);
+		} else {
+			JLOG_DEBUG("Received non-STUN datagram from %s", src_str);
+		}
+	}
 	agent_stun_entry_t *entry = agent_find_entry_from_record(agent, src, relayed);
 	if (!entry) {
 		JLOG_WARN("Received a datagram from unknown address, ignoring");
@@ -798,8 +818,12 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 				continue;
 
 			if (entry->retransmissions >= 0) {
-				JLOG_DEBUG("STUN entry %d: Sending request (%d retransmissions left)", i,
-				           entry->retransmissions);
+				if (JLOG_DEBUG_ENABLED) {
+					char record_str[ADDR_MAX_STRING_LEN];
+					addr_record_to_string(&entry->record, record_str, ADDR_MAX_STRING_LEN);
+					JLOG_DEBUG("STUN entry %d: Sending request to %s (%d retransmissions left)", i,
+					           record_str, entry->retransmissions);
+				}
 				int ret;
 				switch (entry->type) {
 				case AGENT_STUN_ENTRY_TYPE_RELAY:
@@ -1331,6 +1355,13 @@ int agent_process_stun_binding(juice_agent_t *agent, const stun_message_t *msg,
 
 		if (msg->mapped.len && !relayed) {
 			JLOG_VERBOSE("Response has mapped address");
+
+			if (JLOG_INFO_ENABLED && entry->type != AGENT_STUN_ENTRY_TYPE_CHECK) {
+				char mapped_str[ADDR_MAX_STRING_LEN];
+				addr_record_to_string(&msg->mapped, mapped_str, ADDR_MAX_STRING_LEN);
+				JLOG_INFO("Got STUN mapped address %s from server", mapped_str);
+			}
+
 			ice_candidate_type_t type = (entry->type == AGENT_STUN_ENTRY_TYPE_CHECK)
 			                                ? ICE_CANDIDATE_TYPE_PEER_REFLEXIVE
 			                                : ICE_CANDIDATE_TYPE_SERVER_REFLEXIVE;
@@ -1564,7 +1595,6 @@ int agent_process_turn_allocate(juice_agent_t *agent, const stun_message_t *msg,
 			break;
 		}
 
-		JLOG_INFO("TURN allocation successful");
 		if (entry->state != AGENT_STUN_ENTRY_STATE_SUCCEEDED_KEEPALIVE) {
 			entry->state = AGENT_STUN_ENTRY_STATE_SUCCEEDED;
 			entry->next_transmission = 0;
@@ -1579,6 +1609,13 @@ int agent_process_turn_allocate(juice_agent_t *agent, const stun_message_t *msg,
 
 		if (msg->mapped.len) {
 			JLOG_VERBOSE("Response has mapped address");
+
+			if (JLOG_INFO_ENABLED) {
+				char mapped_str[ADDR_MAX_STRING_LEN];
+				addr_record_to_string(&msg->mapped, mapped_str, ADDR_MAX_STRING_LEN);
+				JLOG_INFO("Got STUN mapped address %s from TURN server", mapped_str);
+			}
+
 			if (agent_add_local_reflexive_candidate(agent, ICE_CANDIDATE_TYPE_SERVER_REFLEXIVE,
 			                                        &msg->mapped)) {
 				JLOG_WARN("Failed to add local peer reflexive candidate from TURN mapped address");
@@ -1596,6 +1633,12 @@ int agent_process_turn_allocate(juice_agent_t *agent, const stun_message_t *msg,
 		if (agent_add_local_relayed_candidate(agent, &msg->relayed)) {
 			JLOG_WARN("Failed to add local relayed candidate from TURN relayed address");
 			return -1;
+		}
+
+		if (JLOG_INFO_ENABLED) {
+			char relayed_str[ADDR_MAX_STRING_LEN];
+			addr_record_to_string(&entry->relayed, relayed_str, ADDR_MAX_STRING_LEN);
+			JLOG_INFO("Allocated TURN relayed address %s", relayed_str);
 		}
 
 		agent_update_gathering_done(agent);

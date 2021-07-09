@@ -167,7 +167,7 @@ int ice_create_local_candidate(ice_candidate_type_t type, int component,
 
 	if (getnameinfo((struct sockaddr *)&record->addr, record->len, candidate->hostname, 256,
 	                candidate->service, 32, NI_NUMERICHOST | NI_NUMERICSERV | NI_DGRAM)) {
-		JLOG_ERROR("getnameinfo failed");
+		JLOG_ERROR("getnameinfo failed, errno=%d", sockerrno);
 		return -1;
 	}
 	return 0;
@@ -254,7 +254,7 @@ int ice_generate_sdp(const ice_description_t *description, char *buffer, size_t 
 	if (!*description->ice_ufrag || !*description->ice_pwd)
 		return -1;
 
-	size_t len = 0;
+	int len = 0;
 	char *begin = buffer;
 	char *end = begin + size;
 
@@ -283,10 +283,13 @@ int ice_generate_sdp(const ice_description_t *description, char *buffer, size_t 
 		}
 		if (ret < 0)
 			return -1;
+
 		len += ret;
-		begin += ret < end - begin - 1 ? ret : end - begin - 1;
+
+		if (begin < end)
+			begin += ret >= end - begin ? end - begin - 1 : ret;
 	}
-	return (int)len;
+	return len;
 }
 
 int ice_generate_candidate_sdp(const ice_candidate_t *candidate, char *buffer, size_t size) {

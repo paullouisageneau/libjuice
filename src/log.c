@@ -86,19 +86,25 @@ JUICE_EXPORT void juice_set_log_handler(juice_log_cb_t cb) {
 	mutex_unlock(&log_mutex);
 }
 
-void juice_log_write(juice_log_level_t level, const char *file, int line, const char *fmt, ...) {
+bool juice_log_is_enabled(juice_log_level_t level) {
+	if (level == JUICE_LOG_LEVEL_NONE)
+		return false;
+
 #ifdef NO_ATOMICS
 	mutex_lock(&log_mutex);
-	if (level < log_level) {
-		mutex_unlock(&log_mutex);
-		return;
-	}
+	bool enabled = level >= log_level;
+	mutex_unlock(&log_mutex);
+	return enabled;
 #else
-	if (level < atomic_load(&log_level) || level == JUICE_LOG_LEVEL_NONE)
+	return level >= atomic_load(&log_level);
+#endif
+}
+
+void juice_log_write(juice_log_level_t level, const char *file, int line, const char *fmt, ...) {
+	if (!juice_log_is_enabled(level))
 		return;
 
 	mutex_lock(&log_mutex);
-#endif
 
 	const char *filename = file + strlen(file);
 	while (filename != file && *filename != '/' && *filename != '\\')
@@ -109,15 +115,17 @@ void juice_log_write(juice_log_level_t level, const char *file, int line, const 
 	if (log_cb) {
 		char message[BUFFER_SIZE];
 		int len = snprintf(message, BUFFER_SIZE, "%s:%d: ", filename, line);
-		len = len >= 0 ? len : 0;
+		if(len < 0)
+			return;
 
-		va_list args;
-		va_start(args, fmt);
-		len = vsnprintf(message + len, BUFFER_SIZE - len, fmt, args);
-		va_end(args);
+		if(len < BUFFER_SIZE) {
+			va_list args;
+			va_start(args, fmt);
+			vsnprintf(message + len, BUFFER_SIZE - len, fmt, args);
+			va_end(args);
+		}
 
-		if (len >= 0)
-			log_cb(level, message);
+		log_cb(level, message);
 	} else {
 		time_t t = time(NULL);
 		struct tm lt;

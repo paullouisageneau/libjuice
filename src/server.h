@@ -104,6 +104,8 @@ int server_answer_stun_error(juice_server_t *server, const uint8_t *transaction_
                              const addr_record_t *src, stun_method_t method, unsigned int code,
                              const juice_server_credentials_t *credentials);
 
+int server_process_stun_binding(juice_server_t *server, const stun_message_t *msg,
+                                const addr_record_t *src);
 int server_process_turn_allocate(juice_server_t *server, const stun_message_t *msg,
                                  const addr_record_t *src, juice_server_credentials_t *credentials);
 int server_process_turn_create_permission(juice_server_t *server, const stun_message_t *msg,
