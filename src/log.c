@@ -86,19 +86,25 @@ JUICE_EXPORT void juice_set_log_handler(juice_log_cb_t cb) {
 	mutex_unlock(&log_mutex);
 }
 
-void juice_log_write(juice_log_level_t level, const char *file, int line, const char *fmt, ...) {
+bool juice_log_is_enabled(juice_log_level_t level) {
+	if (level == JUICE_LOG_LEVEL_NONE)
+		return false;
+
 #ifdef NO_ATOMICS
 	mutex_lock(&log_mutex);
-	if (level < log_level) {
-		mutex_unlock(&log_mutex);
-		return;
-	}
+	bool enabled = level >= log_level;
+	mutex_unlock(&log_mutex);
+	return enabled;
 #else
-	if (level < atomic_load(&log_level) || level == JUICE_LOG_LEVEL_NONE)
+	return level >= atomic_load(&log_level);
+#endif
+}
+
+void juice_log_write(juice_log_level_t level, const char *file, int line, const char *fmt, ...) {
+	if (!juice_log_is_enabled(level))
 		return;
 
 	mutex_lock(&log_mutex);
-#endif
 
 	const char *filename = file + strlen(file);
 	while (filename != file && *filename != '/' && *filename != '\\')

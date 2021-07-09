@@ -19,6 +19,7 @@
 #include "addr.h"
 #include "log.h"
 
+#include <stdio.h>
 #include <string.h>
 
 socklen_t addr_get_len(const struct sockaddr *sa) {
@@ -198,6 +199,31 @@ bool addr_is_equal(const struct sockaddr *a, const struct sockaddr *b, bool comp
 	return true;
 }
 
+int addr_to_string(const struct sockaddr *sa, char *buffer, size_t size) {
+	socklen_t salen = addr_get_len(sa);
+	if (salen == 0)
+		goto error;
+
+	char host[ADDR_MAX_NUMERICHOST_LEN];
+	char service[ADDR_MAX_NUMERICSERV_LEN];
+	if (getnameinfo(sa, salen, host, ADDR_MAX_NUMERICHOST_LEN, service, ADDR_MAX_NUMERICSERV_LEN,
+	                NI_NUMERICHOST | NI_NUMERICSERV | NI_DGRAM)) {
+		JLOG_ERROR("getnameinfo failed, errno=%d", sockerrno);
+		goto error;
+	}
+
+	int len = snprintf(buffer, size, "%s:%s", host, service);
+	if (len < 0 || (size_t)len >= size)
+		goto error;
+
+	return len;
+
+error:
+	// Make sure we still write a valid null-terminated string
+	snprintf(buffer, size, "?");
+	return -1;
+}
+
 // djb2 hash function
 #define DJB2_INIT 5381
 static void djb2(unsigned long *hash, int i) {
@@ -272,6 +298,10 @@ int addr_resolve(const char *hostname, const char *service, addr_record_t *recor
 bool addr_record_is_equal(const addr_record_t *a, const addr_record_t *b, bool compare_ports) {
 	return addr_is_equal((const struct sockaddr *)&a->addr, (const struct sockaddr *)&b->addr,
 	                     compare_ports);
+}
+
+int addr_record_to_string(const addr_record_t *record, char *buffer, size_t size) {
+	return addr_to_string((const struct sockaddr *)&record->addr, buffer, size);
 }
 
 unsigned long addr_record_hash(const addr_record_t *record, bool with_port) {

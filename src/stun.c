@@ -584,7 +584,7 @@ int stun_read(void *data, size_t size, stun_message_t *msg) {
 	}
 
 	if (security_bits & STUN_SECURITY_USERNAME_ANONYMITY_BIT) {
-		JLOG_VERBOSE("Remote agent supports user anonymity");
+		JLOG_DEBUG("Remote agent supports user anonymity");
 		credentials->enable_userhash = true;
 	}
 
@@ -651,12 +651,20 @@ int stun_read_attr(const void *data, size_t size, stun_message_t *msg, uint8_t *
 		    (const struct stun_value_error_code *)attr->value;
 		msg->error_code = (error->code_class & 0x07) * 100 + error->code_number;
 
-		size_t reason_length = length - sizeof(struct stun_value_error_code);
-		char buffer[STUN_MAX_ERROR_REASON_LEN];
-		memcpy(buffer, (const char *)error->reason, reason_length);
-		buffer[reason_length] = '\0';
+		if (msg->error_code == 401) { // Unauthenticated
+			JLOG_DEBUG("Got STUN error code %u", msg->error_code);
 
-		JLOG_INFO("Got STUN error code %u, reason \"%s\"", msg->error_code, buffer);
+		} else if (JLOG_INFO_ENABLED) {
+			size_t reason_length = length - sizeof(struct stun_value_error_code);
+			if (reason_length >= STUN_MAX_ERROR_REASON_LEN)
+				reason_length = STUN_MAX_ERROR_REASON_LEN - 1;
+
+			char buffer[STUN_MAX_ERROR_REASON_LEN];
+			memcpy(buffer, (const char *)error->reason, reason_length);
+			buffer[reason_length] = '\0';
+
+			JLOG_INFO("Got STUN error code %u, reason \"%s\"", msg->error_code, buffer);
+		}
 		break;
 	}
 	case STUN_ATTR_UNKNOWN_ATTRIBUTES: {
@@ -762,7 +770,7 @@ int stun_read_attr(const void *data, size_t size, stun_message_t *msg, uint8_t *
 				security_bits = 0;
 			}
 		} else if (msg->msg_class == STUN_CLASS_RESP_ERROR) {
-			JLOG_INFO("Remote agent does not support RFC 8489");
+			JLOG_DEBUG("Remote agent does not support RFC 8489");
 		}
 		break;
 	}
