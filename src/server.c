@@ -461,7 +461,11 @@ int server_input(juice_server_t *server, char *buf, size_t len, const addr_recor
 	JLOG_VERBOSE("Received datagram, size=%d", len);
 
 	if (is_stun_datagram(buf, len)) {
-		JLOG_DEBUG("Received STUN datagram");
+		if (JLOG_DEBUG_ENABLED) {
+			char src_str[ADDR_MAX_STRING_LEN];
+			addr_record_to_string(src, src_str, ADDR_MAX_STRING_LEN);
+			JLOG_DEBUG("Received STUN datagram from %s", src_str);
+		}
 		stun_message_t msg;
 		if (stun_read(buf, len, &msg) < 0) {
 			JLOG_ERROR("STUN message reading failed");
@@ -471,11 +475,19 @@ int server_input(juice_server_t *server, char *buf, size_t len, const addr_recor
 	}
 
 	if (is_channel_data(buf, len)) {
-		JLOG_DEBUG("Received ChannelData datagram");
+		if (JLOG_DEBUG_ENABLED) {
+			char src_str[ADDR_MAX_STRING_LEN];
+			addr_record_to_string(src, src_str, ADDR_MAX_STRING_LEN);
+			JLOG_DEBUG("Received ChannelData datagram from %s", src_str);
+		}
 		return server_process_channel_data(server, buf, len, src);
 	}
 
-	JLOG_WARN("Received unexpected non-STUN datagram, ignoring");
+	if (JLOG_WARN_ENABLED) {
+		char src_str[ADDR_MAX_STRING_LEN];
+		addr_record_to_string(src, src_str, ADDR_MAX_STRING_LEN);
+		JLOG_WARN("Received unexpected non-STUN datagram from %s, ignoring", src_str);
+	}
 	return -1;
 }
 
@@ -652,7 +664,7 @@ int server_dispatch_stun(juice_server_t *server, void *buf, size_t size, stun_me
 
 	switch (msg->msg_method) {
 	case STUN_METHOD_BINDING:
-		return server_answer_stun_binding(server, msg->transaction_id, src);
+		return server_process_stun_binding(server, msg, src);
 
 	case STUN_METHOD_ALLOCATE:
 	case STUN_METHOD_REFRESH:
@@ -715,6 +727,17 @@ int server_answer_stun_error(juice_server_t *server, const uint8_t *transaction_
 		server_prepare_credentials(server, src, credentials, &ans);
 
 	return server_stun_send(server, src, &ans, credentials ? credentials->password : NULL);
+}
+
+int server_process_stun_binding(juice_server_t *server, const stun_message_t *msg,
+                                const addr_record_t *src) {
+	if (JLOG_INFO_ENABLED) {
+		char src_str[ADDR_MAX_STRING_LEN];
+		addr_record_to_string(src, src_str, ADDR_MAX_STRING_LEN);
+		JLOG_INFO("Got STUN binding from client %s", src_str);
+	}
+
+	return server_answer_stun_binding(server, msg->transaction_id, src);
 }
 
 int server_process_turn_allocate(juice_server_t *server, const stun_message_t *msg,
@@ -836,6 +859,14 @@ int server_process_turn_allocate(juice_server_t *server, const stun_message_t *m
 			JLOG_ERROR("No advertisable relayed address found");
 			goto error;
 		}
+	}
+
+	if (JLOG_INFO_ENABLED) {
+		char src_str[ADDR_MAX_STRING_LEN];
+		addr_record_to_string(src, src_str, ADDR_MAX_STRING_LEN);
+		char relayed_str[ADDR_MAX_STRING_LEN];
+		addr_record_to_string(relayed, relayed_str, ADDR_MAX_STRING_LEN);
+		JLOG_INFO("Allocated TURN relayed address %s for client %s", relayed_str, src_str);
 	}
 
 	stun_message_t ans;

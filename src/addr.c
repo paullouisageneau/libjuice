@@ -202,21 +202,26 @@ bool addr_is_equal(const struct sockaddr *a, const struct sockaddr *b, bool comp
 int addr_to_string(const struct sockaddr *sa, char *buffer, size_t size) {
 	socklen_t salen = addr_get_len(sa);
 	if (salen == 0)
-		return -1;
+		goto error;
 
 	char host[ADDR_MAX_NUMERICHOST_LEN];
 	char service[ADDR_MAX_NUMERICSERV_LEN];
 	if (getnameinfo(sa, salen, host, ADDR_MAX_NUMERICHOST_LEN, service, ADDR_MAX_NUMERICSERV_LEN,
 	                NI_NUMERICHOST | NI_NUMERICSERV | NI_DGRAM)) {
 		JLOG_ERROR("getnameinfo failed, errno=%d", sockerrno);
-		return -1;
+		goto error;
 	}
 
 	int len = snprintf(buffer, size, "%s:%s", host, service);
 	if (len < 0 || (size_t)len >= size)
-		return -1;
+		goto error;
 
 	return len;
+
+error:
+	// Make sure we still write a valid null-terminated string
+	snprintf(buffer, size, "?");
+	return -1;
 }
 
 // djb2 hash function
