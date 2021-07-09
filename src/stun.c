@@ -68,6 +68,9 @@ static size_t generate_hmac_key(const stun_message_t *msg, const char *password,
 		if (input_len < 0)
 			return 0;
 
+		if (input_len >= MAX_HMAC_INPUT_LEN)
+			input_len = MAX_HMAC_INPUT_LEN - 1;
+
 		switch (msg->credentials.password_algorithm) {
 		case STUN_PASSWORD_ALGORITHM_SHA256:
 			hash_sha256(input, input_len, key);
@@ -79,7 +82,13 @@ static size_t generate_hmac_key(const stun_message_t *msg, const char *password,
 	} else {
 		// short-term credentials
 		int key_len = snprintf((char *)key, MAX_HMAC_KEY_LEN, "%s", password ? password : "");
-		return key_len < 0 ? 0 : key_len;
+		if (key_len < 0)
+			return 0;
+
+		if (key_len >= MAX_HMAC_KEY_LEN)
+			key_len = MAX_HMAC_KEY_LEN - 1;
+
+		return key_len;
 	}
 }
 
@@ -1148,6 +1157,9 @@ void stun_compute_userhash(const char *username, const char *realm, uint8_t *out
 	int input_len = snprintf(input, MAX_USERHASH_INPUT_LEN, "%s:%s", username, realm);
 	if (input_len < 0)
 		return;
+
+	if (input_len >= MAX_USERHASH_INPUT_LEN)
+		input_len = MAX_USERHASH_INPUT_LEN - 1;
 
 	hash_sha256(input, input_len, out);
 }
