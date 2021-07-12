@@ -136,19 +136,13 @@ static void picohash_init_hmac(picohash_ctx_t *ctx, void (*initf)(picohash_ctx_t
  * SET reads 4 input bytes in little-endian byte order and stores them
  * in a properly aligned word in host byte order.
  *
- * The check for little-endian architectures which tolerate unaligned
- * memory accesses is just an optimization.  Nothing will break if it
- * doesn't work.
+ * Paul-Louis Ageneau: Removed optimization for little-endian architectures
+ * as it resulted in incorrect behavior when compiling with gcc optimizations.
  */
-#if defined(__i386__) || defined(__x86_64__) || defined(__vax__)
-#define _PICOHASH_MD5_SET(n) (*(const uint32_t *)&ptr[(n)*4])
-#define _PICOHASH_MD5_GET(n) _PICOHASH_MD5_SET(n)
-#else
 #define _PICOHASH_MD5_SET(n)                                                                                                       \
     (ctx->block[(n)] = (uint_fast32_t)ptr[(n)*4] | ((uint_fast32_t)ptr[(n)*4 + 1] << 8) | ((uint_fast32_t)ptr[(n)*4 + 2] << 16) |  \
                        ((uint_fast32_t)ptr[(n)*4 + 3] << 24))
 #define _PICOHASH_MD5_GET(n) (ctx->block[(n)])
-#endif
 
 /*
  * This processes one or more 64-byte data blocks, but does NOT update
