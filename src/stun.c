@@ -626,8 +626,8 @@ int stun_read_attr(const void *data, size_t size, stun_message_t *msg, uint8_t *
 
 	// RFC 8489: Note that agents MUST ignore all attributes that follow MESSAGE-INTEGRITY, with
 	// the exception of the MESSAGE-INTEGRITY-SHA256 and FINGERPRINT attributes.
-	if (msg->has_integrity && type != STUN_ATTR_MESSAGE_INTEGRITY_SHA256 &&
-	    type != STUN_ATTR_FINGERPRINT) {
+	if (msg->has_integrity && type != STUN_ATTR_MESSAGE_INTEGRITY &&
+	    type != STUN_ATTR_MESSAGE_INTEGRITY_SHA256 && type != STUN_ATTR_FINGERPRINT) {
 		JLOG_DEBUG("Ignoring STUN attribute 0x%X after message integrity", (unsigned int)type);
 		while (length & 0x03)
 			++length; // attributes are aligned on 4 bytes
