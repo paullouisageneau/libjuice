@@ -332,23 +332,30 @@ int stun_write(void *buf, size_t size, const stun_message_t *msg, const char *pa
 		}
 	}
 	if (msg->msg_class != STUN_CLASS_INDICATION && password) {
-		// According to RFC 8489, the agent must include both MESSAGE-INTEGRITY and
-		// MESSAGE-INTEGRITY-SHA256. However, this make legacy agents and servers fail with error
-		// 420 Unknown Attribute. Therefore, only MESSAGE-INTEGRITY is included in the message for
-		// compatibility.
-		size_t tmp_length = pos - attr_begin + STUN_ATTR_SIZE + HMAC_SHA1_SIZE;
-		stun_update_header_length(begin, tmp_length);
 		uint8_t key[MAX_HMAC_KEY_LEN];
 		size_t key_len = generate_hmac_key(msg, password, key);
 
+		size_t tmp_length = pos - attr_begin + STUN_ATTR_SIZE + HMAC_SHA1_SIZE;
+		stun_update_header_length(begin, tmp_length);
+
+		uint8_t hmac[HMAC_SHA1_SIZE];
+		hmac_sha1(begin, pos - begin, key, key_len, hmac);
+		len = stun_write_attr(pos, end - pos, STUN_ATTR_MESSAGE_INTEGRITY, hmac, HMAC_SHA1_SIZE);
+		if (len <= 0)
+			goto overflow;
+		pos += len;
+
 		// According to RFC 8489, the agent must include both MESSAGE-INTEGRITY and
-		// MESSAGE-INTEGRITY-SHA256. However, this makes older servers fail with error 420 Unknown
-		// Attribute. Therefore, unless the password algorithm SHA-256 is enabled, only
+		// MESSAGE-INTEGRITY-SHA256. However, this makes legacy agents and servers fail with error
+		// 420 Unknown Attribute. Therefore, unless the password algorithm SHA-256 is enabled, only
 		// MESSAGE-INTEGRITY is included in the message for compatibility.
 		if (msg->credentials.password_algorithm != STUN_PASSWORD_ALGORITHM_UNSET) {
 			// If the response contains a PASSWORD-ALGORITHMS attribute, all the
 			// subsequent requests MUST be authenticated using MESSAGE-INTEGRITY-
 			// SHA256 only.
+			size_t tmp_length = pos - attr_begin + STUN_ATTR_SIZE + HMAC_SHA256_SIZE;
+			stun_update_header_length(begin, tmp_length);
+
 			uint8_t hmac[HMAC_SHA256_SIZE];
 			hmac_sha256(begin, pos - begin, key, key_len, hmac);
 			len = stun_write_attr(pos, end - pos, STUN_ATTR_MESSAGE_INTEGRITY_SHA256, hmac,
@@ -357,13 +364,6 @@ int stun_write(void *buf, size_t size, const stun_message_t *msg, const char *pa
 				goto overflow;
 			pos += len;
 		}
-
-		uint8_t hmac[HMAC_SHA1_SIZE];
-		hmac_sha1(begin, pos - begin, key, key_len, hmac);
-		len = stun_write_attr(pos, end - pos, STUN_ATTR_MESSAGE_INTEGRITY, hmac, HMAC_SHA1_SIZE);
-		if (len <= 0)
-			goto overflow;
-		pos += len;
 	}
 
 	size_t length = pos - attr_begin + STUN_ATTR_SIZE + 4;
@@ -626,7 +626,8 @@ int stun_read_attr(const void *data, size_t size, stun_message_t *msg, uint8_t *
 
 	// RFC 8489: Note that agents MUST ignore all attributes that follow MESSAGE-INTEGRITY, with
 	// the exception of the MESSAGE-INTEGRITY-SHA256 and FINGERPRINT attributes.
-	if (msg->has_integrity && type != STUN_ATTR_FINGERPRINT) {
+	if (msg->has_integrity && type != STUN_ATTR_MESSAGE_INTEGRITY_SHA256 &&
+	    type != STUN_ATTR_FINGERPRINT) {
 		JLOG_DEBUG("Ignoring STUN attribute 0x%X after message integrity", (unsigned int)type);
 		while (length & 0x03)
 			++length; // attributes are aligned on 4 bytes
