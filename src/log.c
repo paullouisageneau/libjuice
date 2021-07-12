@@ -106,19 +106,26 @@ void juice_log_write(juice_log_level_t level, const char *file, int line, const 
 
 	mutex_lock(&log_mutex);
 
+#if !RELEASE
 	const char *filename = file + strlen(file);
 	while (filename != file && *filename != '/' && *filename != '\\')
 		--filename;
 	if (filename != file)
 		++filename;
+#else
+	(void)file;
+	(void)line;
+#endif
 
 	if (log_cb) {
 		char message[BUFFER_SIZE];
-		int len = snprintf(message, BUFFER_SIZE, "%s:%d: ", filename, line);
-		if(len < 0)
+		int len = 0;
+#if !RELEASE
+		len = snprintf(message, BUFFER_SIZE, "%s:%d: ", filename, line);
+		if (len < 0)
 			return;
-
-		if(len < BUFFER_SIZE) {
+#endif
+		if (len < BUFFER_SIZE) {
 			va_list args;
 			va_start(args, fmt);
 			vsnprintf(message + len, BUFFER_SIZE - len, fmt, args);
@@ -126,6 +133,7 @@ void juice_log_write(juice_log_level_t level, const char *file, int line, const 
 		}
 
 		log_cb(level, message);
+
 	} else {
 		time_t t = time(NULL);
 		struct tm lt;
@@ -136,7 +144,11 @@ void juice_log_write(juice_log_level_t level, const char *file, int line, const 
 		if (use_color())
 			fprintf(stdout, "%s", log_level_colors[level]);
 
-		fprintf(stdout, "%s %-7s %s:%d: ", buffer, log_level_names[level], filename, line);
+		fprintf(stdout, "%s %-7s ", buffer, log_level_names[level]);
+
+#if !RELEASE
+		fprintf(stdout, "%s:%d: ", filename, line);
+#endif
 
 		va_list args;
 		va_start(args, fmt);

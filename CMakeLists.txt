@@ -72,6 +72,7 @@ find_package(Threads REQUIRED)
 
 add_library(juice SHARED ${LIBJUICE_SOURCES})
 set_target_properties(juice PROPERTIES VERSION ${PROJECT_VERSION})
+target_compile_definitions(juice PRIVATE $<$<CONFIG:Release>:RELEASE=1>)
 
 target_include_directories(juice PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_include_directories(juice PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include/juice)
@@ -80,6 +81,7 @@ target_link_libraries(juice PUBLIC Threads::Threads)
 
 add_library(juice-static STATIC EXCLUDE_FROM_ALL ${LIBJUICE_SOURCES})
 set_target_properties(juice-static PROPERTIES VERSION ${PROJECT_VERSION})
+target_compile_definitions(juice-static PRIVATE $<$<CONFIG:Release>:RELEASE=1>)
 
 target_include_directories(juice-static PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_include_directories(juice-static PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include/juice)
