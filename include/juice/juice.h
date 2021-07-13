@@ -50,6 +50,13 @@ extern "C" {
 #define JUICE_MAX_CANDIDATE_SDP_STRING_LEN 256
 #define JUICE_MAX_SDP_STRING_LEN 4096
 
+typedef enum juice_transport {
+	JUICE_TRANSPORT_NONE,
+	JUICE_TRANSPORT_UDP,
+	JUICE_TRANSPORT_TCP,
+	JUICE_TRANSPORT_TLS
+} juice_transport_t;
+
 typedef struct juice_agent juice_agent_t;
 
 typedef enum juice_state {
@@ -72,6 +79,7 @@ typedef struct juice_turn_server {
 	const char *username;
 	const char *password;
 	uint16_t port;
+	juice_transport_t transport;
 } juice_turn_server_t;
 
 typedef struct juice_config {

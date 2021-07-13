@@ -24,6 +24,7 @@
 #include "stun.h"
 #include "turn.h"
 #include "udp.h"
+#include "transport.h"
 
 #include <assert.h>
 #include <inttypes.h>
@@ -408,7 +409,7 @@ int agent_send(juice_agent_t *agent, const char *data, size_t size, int ds) {
 		return ret;
 	}
 
-	return agent_direct_send(agent, &selected_entry->record, data, size, ds);
+	return agent_direct_send2(agent, selected_entry, data, size, ds);
 }
 
 int agent_direct_send(juice_agent_t *agent, const addr_record_t *dst, const char *data, size_t size,
@@ -426,6 +427,35 @@ int agent_direct_send(juice_agent_t *agent, const addr_record_t *dst, const char
 	JLOG_VERBOSE("Sending datagram, size=%d", size);
 
 	int ret = udp_sendto(agent->sock, data, size, dst);
+	if (ret < 0 && sockerrno != SEAGAIN && sockerrno != SEWOULDBLOCK)
+		JLOG_WARN("Send failed, errno=%d", sockerrno);
+
+	mutex_unlock(&agent->send_mutex);
+	return ret;
+}
+
+int agent_direct_send2(juice_agent_t *agent, const agent_stun_entry_t *entry, const char *data,
+                       size_t size, int ds) {
+	mutex_lock(&agent->send_mutex);
+
+	if (agent->send_ds >= 0 && agent->send_ds != ds) {
+		JLOG_VERBOSE("Setting Differentiated Services field to 0x%X", ds);
+		if (udp_set_diffserv(agent->sock, ds) == 0)
+			agent->send_ds = ds;
+		else
+			agent->send_ds = -1; // disable for next time
+	}
+
+	JLOG_VERBOSE("Sending datagram, size=%d", size);
+
+	int ret;
+	if (entry->sock == INVALID_SOCKET) {
+		ret = udp_sendto(agent->sock, data, size, &entry->record);
+	}
+	else {
+		ret = transport_sendto(entry->sock, data, size, &entry->record);
+	}
+
 	if (ret < 0 && sockerrno != SEAGAIN && sockerrno != SEWOULDBLOCK)
 		JLOG_WARN("Send failed, errno=%d", sockerrno);
 
@@ -464,7 +494,7 @@ int agent_relay_send(juice_agent_t *agent, agent_stun_entry_t *entry, const addr
 		JLOG_ERROR("STUN message write failed");
 		return -1;
 	}
-	if (agent_direct_send(agent, &entry->record, buffer, size, ds) < 0) {
+	if (agent_direct_send2(agent, entry, buffer, size, ds) < 0) {
 		JLOG_WARN("STUN message send failed, errno=%d", sockerrno);
 		return -1;
 	}
@@ -493,7 +523,7 @@ int agent_channel_send(juice_agent_t *agent, agent_stun_entry_t *entry, const ad
 		JLOG_ERROR("TURN ChannelData wrapping failed");
 		return -1;
 	}
-	if (agent_direct_send(agent, &entry->record, buffer, len, ds) < 0) {
+	if (agent_direct_send2(agent, entry, buffer, len, ds) < 0) {
 		JLOG_WARN("ChannelData message send failed, errno=%d", sockerrno);
 		return -1;
 	}
@@ -583,6 +613,34 @@ void agent_run(juice_agent_t *agent) {
 					snprintf(entry->turn->credentials.username, STUN_MAX_USERNAME_LEN, "%s",
 					         turn_server->username);
 					entry->turn->password = turn_server->password;
+
+					transport_socket_config_t socket_config;
+					memset(&socket_config, 0, sizeof(socket_config));
+
+					entry->transport = turn_server->transport;
+				    if (entry->transport) {
+						socket_config.bind_address = agent->config.bind_address;
+						socket_config.port_begin = agent->config.local_port_range_begin;
+						socket_config.port_end = agent->config.local_port_range_end;
+						switch (turn_server->transport) {
+							case JUICE_TRANSPORT_UDP:
+								socket_config.type = SOCKET_UDP;
+								break;
+							case JUICE_TRANSPORT_TCP:
+								socket_config.type = SOCKET_TCP;
+								break;
+							default:
+								JLOG_ERROR("Unknown transport type");
+						}
+
+						socket_config.family = record->addr.ss_family;
+						entry->sock = transport_create_socket(&socket_config);
+						transport_connect(entry->sock, record);
+					}
+					else {
+						entry->sock = INVALID_SOCKET;
+					}
+
 					juice_random(entry->transaction_id, STUN_TRANSACTION_ID_SIZE);
 					++agent->entries_count;
 
@@ -622,8 +680,11 @@ void agent_run(juice_agent_t *agent) {
 				entry->state = AGENT_STUN_ENTRY_STATE_PENDING;
 				entry->pair = NULL;
 				entry->record = records[i];
+				entry->transport = JUICE_TRANSPORT_NONE;
+				entry->sock = INVALID_SOCKET;
 				juice_random(entry->transaction_id, STUN_TRANSACTION_ID_SIZE);
 				++agent->entries_count;
+				entry->sock = INVALID_SOCKET;
 
 				agent_arm_transmission(agent, entry, STUN_PACING_TIME * i);
 			}
@@ -650,6 +711,14 @@ void agent_run(juice_agent_t *agent) {
 		FD_ZERO(&readfds);
 		FD_SET(agent->sock, &readfds);
 		int n = SOCKET_TO_INT(agent->sock) + 1;
+		for (int i = 0; i < agent->entries_count; ++i) {
+			agent_stun_entry_t *entry = agent->entries + i;
+			if (entry->sock == INVALID_SOCKET) continue;
+
+			int n2 = SOCKET_TO_INT(entry->sock) + 1;
+			if (n2 > n) n = n2;
+			FD_SET(entry->sock, &readfds);
+		}
 
 		JLOG_VERBOSE("Entering select");
 		mutex_unlock(&agent->mutex);
@@ -672,8 +741,17 @@ void agent_run(juice_agent_t *agent) {
 		}
 
 		if (FD_ISSET(agent->sock, &readfds)) {
-			if (agent_recv(agent) < 0)
+			if (agent_recv(agent, (agent_stun_entry_t *)NULL) < 0)
 				break;
+		}
+
+		for (int i = 0; i < agent->entries_count; ++i) {
+			agent_stun_entry_t *entry = agent->entries + i;
+			if (entry->sock == INVALID_SOCKET) continue;
+			if (FD_ISSET(entry->sock, &readfds)) {
+				if (agent_recv(agent, entry) < 0)
+					entry->sock = INVALID_SOCKET;
+			}
 		}
 	}
 	JLOG_DEBUG("Leaving agent thread");
@@ -681,12 +759,32 @@ void agent_run(juice_agent_t *agent) {
 	mutex_unlock(&agent->mutex);
 }
 
-int agent_recv(juice_agent_t *agent) {
+int agent_recv(juice_agent_t *agent, agent_stun_entry_t *entry) {
 	JLOG_VERBOSE("Receiving datagrams");
+
+	addr_record_t record;
+	if (entry && entry->transport == JUICE_TRANSPORT_TCP) {
+		// len should be initialized to indicate the amount of space
+		record.len = sizeof(struct sockaddr_storage);
+		transport_getpeername(entry->sock, &record);
+	}
+
 	while (true) {
 		char buffer[BUFFER_SIZE];
-		addr_record_t record;
-		int len = udp_recvfrom(agent->sock, buffer, BUFFER_SIZE, &record);
+		int len;
+
+		if (!entry) {
+			len = udp_recvfrom(agent->sock, buffer, BUFFER_SIZE, &record);
+		}
+		else {
+			if (entry->transport == JUICE_TRANSPORT_TCP) {
+				len = transport_recv(entry->sock, buffer, BUFFER_SIZE);
+			}
+			else {
+				len = transport_recvfrom(entry->sock, buffer, BUFFER_SIZE, &record);
+			}
+		}
+
 		if (len < 0) {
 			if (sockerrno == SEAGAIN || sockerrno == SEWOULDBLOCK) {
 				JLOG_VERBOSE("No more datagrams to receive");
@@ -711,7 +809,8 @@ int agent_input(juice_agent_t *agent, char *buf, size_t len, const addr_record_t
                 const addr_record_t *relayed) {
 	JLOG_VERBOSE("Received datagram, size=%d", len);
 
-	if (is_stun_datagram(buf, len)) {
+	for (;;) {
+		if (!is_stun_datagram2(buf, len)) break;
 		if (JLOG_DEBUG_ENABLED) {
 			char src_str[ADDR_MAX_STRING_LEN];
 			addr_record_to_string(src, src_str, ADDR_MAX_STRING_LEN);
@@ -724,11 +823,17 @@ int agent_input(juice_agent_t *agent, char *buf, size_t len, const addr_record_t
 			}
 		}
 		stun_message_t msg;
-		if (stun_read(buf, len, &msg) < 0) {
+		int msg_size = stun_read(buf, len, &msg);
+		if (msg_size < 0) {
 			JLOG_ERROR("STUN message reading failed");
 			return -1;
 		}
-		return agent_dispatch_stun(agent, buf, len, &msg, src, relayed);
+		int ret = agent_dispatch_stun(agent, buf, len, &msg, src, relayed);
+		if (ret != 0) return ret;
+
+		buf = buf + msg_size;
+		len = len - msg_size;
+		if (len == 0) return 0;
 	}
 
 	if (JLOG_DEBUG_ENABLED) {
@@ -818,6 +923,9 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 				continue;
 
 			if (entry->retransmissions >= 0) {
+                if (entry->sock != INVALID_SOCKET && entry->transport == JUICE_TRANSPORT_TCP)
+                    transport_wait_for_connected(entry->sock, NULL);
+
 				if (JLOG_DEBUG_ENABLED) {
 					char record_str[ADDR_MAX_STRING_LEN];
 					addr_record_to_string(&entry->record, record_str, ADDR_MAX_STRING_LEN);
@@ -1558,7 +1666,7 @@ int agent_send_stun_binding(juice_agent_t *agent, agent_stun_entry_t *entry, stu
 	}
 
 	// Direct send
-	if (agent_direct_send(agent, &entry->record, buffer, size, 0) < 0) {
+	if (agent_direct_send2(agent, entry, buffer, size, 0) < 0) {
 		JLOG_WARN("STUN message send failed, errno=%d", sockerrno);
 		return -1;
 	}
@@ -1569,7 +1677,6 @@ int agent_process_turn_allocate(juice_agent_t *agent, const stun_message_t *msg,
                                 agent_stun_entry_t *entry) {
 	if (msg->msg_method != STUN_METHOD_ALLOCATE && msg->msg_method != STUN_METHOD_REFRESH)
 		return -1;
-
 	if (entry->type != AGENT_STUN_ENTRY_TYPE_RELAY) {
 		JLOG_WARN("Received TURN %s message for a non-relay entry, ignoring",
 		          msg->msg_method == STUN_METHOD_ALLOCATE ? "Allocate" : "Refresh");
@@ -1616,9 +1723,12 @@ int agent_process_turn_allocate(juice_agent_t *agent, const stun_message_t *msg,
 				JLOG_INFO("Got STUN mapped address %s from TURN server", mapped_str);
 			}
 
-			if (agent_add_local_reflexive_candidate(agent, ICE_CANDIDATE_TYPE_SERVER_REFLEXIVE,
-			                                        &msg->mapped)) {
-				JLOG_WARN("Failed to add local peer reflexive candidate from TURN mapped address");
+			if (entry->transport != JUICE_TRANSPORT_TCP) {
+				if (agent_add_local_reflexive_candidate(agent, ICE_CANDIDATE_TYPE_SERVER_REFLEXIVE,
+														&msg->mapped)) {
+					JLOG_WARN("Failed to add local peer reflexive candidate from",
+							  "TURN mapped address");
+				}
 			}
 		}
 
@@ -1736,7 +1846,7 @@ int agent_send_turn_allocate_request(juice_agent_t *agent, const agent_stun_entr
 		JLOG_ERROR("STUN message write failed");
 		return -1;
 	}
-	if (agent_direct_send(agent, &entry->record, buffer, size, 0) < 0) {
+	if (agent_direct_send2(agent, entry, buffer, size, 0) < 0) {
 		JLOG_WARN("STUN message send failed, errno=%d", sockerrno);
 		return -1;
 	}
@@ -1812,7 +1922,7 @@ int agent_send_turn_create_permission_request(juice_agent_t *agent, agent_stun_e
 		JLOG_ERROR("STUN message write failed");
 		return -1;
 	}
-	if (agent_direct_send(agent, &entry->record, buffer, size, ds) < 0) {
+	if (agent_direct_send2(agent, entry, buffer, size, ds) < 0) {
 		JLOG_WARN("STUN message send failed, errno=%d", sockerrno);
 		return -1;
 	}
@@ -1900,7 +2010,7 @@ int agent_send_turn_channel_bind_request(juice_agent_t *agent, agent_stun_entry_
 		JLOG_ERROR("STUN message write failed");
 		return -1;
 	}
-	if (agent_direct_send(agent, &entry->record, buffer, size, ds) < 0) {
+	if (agent_direct_send2(agent, entry, buffer, size, ds) < 0) {
 		JLOG_WARN("STUN message send failed, errno=%d", sockerrno);
 		return -1;
 	}
@@ -2123,6 +2233,8 @@ int agent_add_candidate_pair(juice_agent_t *agent, ice_candidate_t *local, // lo
 	entry->pair = pos;
 	entry->record = pos->remote->resolved;
 	entry->relay_entry = relay_entry;
+	entry->transport = JUICE_TRANSPORT_NONE;
+	entry->sock = INVALID_SOCKET;
 	juice_random(entry->transaction_id, STUN_TRANSACTION_ID_SIZE);
 	++agent->entries_count;
 
@@ -2206,8 +2318,15 @@ void agent_arm_transmission(juice_agent_t *agent, agent_stun_entry_t *entry, tim
 		bool limit = agent->selected_pair &&
 		             (agent->selected_pair->nominated || (agent->selected_pair != entry->pair &&
 		                                                  agent->mode == AGENT_MODE_CONTROLLING));
-		entry->retransmissions = limit ? 1 : MAX_STUN_RETRANSMISSION_COUNT;
-		entry->retransmission_timeout = MIN_STUN_RETRANSMISSION_TIMEOUT;
+		if (entry->sock != INVALID_SOCKET && entry->transport != JUICE_TRANSPORT_TCP) {
+			entry->retransmissions = limit ? 1 : MAX_STUN_RETRANSMISSION_COUNT;
+			entry->retransmission_timeout = MIN_STUN_RETRANSMISSION_TIMEOUT;
+		}
+		else {
+			entry->retransmissions = 1;
+			entry->retransmission_timeout = MIN_STUN_RETRANSMISSION_TIMEOUT *
+											MAX_STUN_RETRANSMISSION_COUNT;
+		}
 	}
 
 	// Find a time slot
