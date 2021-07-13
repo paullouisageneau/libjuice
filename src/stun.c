@@ -661,7 +661,7 @@ int stun_read_attr(const void *data, size_t size, stun_message_t *msg, uint8_t *
 		    (const struct stun_value_error_code *)attr->value;
 		msg->error_code = (error->code_class & 0x07) * 100 + error->code_number;
 
-		if (msg->error_code == 401) { // Unauthenticated
+		if (msg->error_code == 401 || msg->error_code == 438) { // Unauthenticated or Stale Nonce
 			JLOG_DEBUG("Got STUN error code %u", msg->error_code);
 
 		} else if (JLOG_INFO_ENABLED) {
