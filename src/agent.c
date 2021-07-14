@@ -1141,7 +1141,12 @@ int agent_verify_credentials(juice_agent_t *agent, const agent_stun_entry_t *ent
                              size_t size, stun_message_t *msg) {
 	(void)agent;
 
-	if (msg->msg_class == STUN_CLASS_INDICATION || msg->msg_class == STUN_CLASS_RESP_ERROR)
+	// RFC 8489: If the response is an error response with an error code of 400 (Bad Request) and
+	// does not contain either the MESSAGE-INTEGRITY or MESSAGE-INTEGRITY-SHA256 attribute, then the
+	// response MUST be discarded, as if it were never received.  This means that retransmits, if
+	// applicable, will continue.
+	if (msg->msg_class == STUN_CLASS_INDICATION ||
+	    (msg->msg_class == STUN_CLASS_RESP_ERROR && msg->error_code != 400))
 		return 0;
 
 	if (!msg->has_integrity) {
