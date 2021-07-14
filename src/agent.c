@@ -1229,6 +1229,11 @@ int agent_dispatch_stun(juice_agent_t *agent, void *buf, size_t size, stun_messa
 			return -1;
 		}
 
+		if (!entry->turn) {
+			JLOG_WARN("No credentials for entry");
+			return -1;
+		}
+
 		strcpy(entry->turn->credentials.realm, msg->credentials.realm);
 		strcpy(entry->turn->credentials.nonce, msg->credentials.nonce);
 	}
