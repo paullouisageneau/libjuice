@@ -908,7 +908,7 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 				JLOG_WARN("Sending keepalive failed");
 
 			agent_arm_transmission(agent, entry,
-			                       entry->type == AGENT_STUN_ENTRY_TYPE_RELAY
+			                       entry->type == AGENT_STUN_ENTRY_TYPE_RELAY && ret >= 0
 			                           ? TURN_REFRESH_PERIOD
 			                           : STUN_KEEPALIVE_PERIOD);
 
