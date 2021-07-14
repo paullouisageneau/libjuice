@@ -912,7 +912,10 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 				continue;
 			}
 
-			agent_arm_transmission(agent, entry, STUN_KEEPALIVE_PERIOD);
+			agent_arm_transmission(agent, entry,
+			                       entry->type == AGENT_STUN_ENTRY_TYPE_RELAY
+			                           ? TURN_REFRESH_PERIOD
+			                           : STUN_KEEPALIVE_PERIOD);
 
 		} else {
 			// Entry does not transmit, unset next transmission
@@ -1000,34 +1003,37 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 			if (agent->mode == AGENT_MODE_CONTROLLED || pending_count == 0)
 				agent_change_state(agent, JUICE_STATE_COMPLETED);
 
-			// Enable keepalive only for the entry of the nominated pair
+			agent_stun_entry_t *nominated_entry = NULL;
 			agent_stun_entry_t *relay_entry = NULL;
 			for (int i = 0; i < agent->entries_count; ++i) {
 				agent_stun_entry_t *entry = agent->entries + i;
 				if (entry->pair && entry->pair == nominated_pair) {
-					relay_entry = entry->relay_entry;
-					if (entry->state != AGENT_STUN_ENTRY_STATE_SUCCEEDED_KEEPALIVE) {
-						entry->state = AGENT_STUN_ENTRY_STATE_SUCCEEDED_KEEPALIVE;
-						agent_arm_transmission(agent, entry, STUN_KEEPALIVE_PERIOD);
-					}
-				} else {
-					if (entry->state == AGENT_STUN_ENTRY_STATE_SUCCEEDED_KEEPALIVE)
-						entry->state = AGENT_STUN_ENTRY_STATE_SUCCEEDED;
+					nominated_entry = entry;
+					relay_entry = nominated_entry->relay_entry;
+					break;
 				}
 			}
 
-			// If the entry of the nominated candidate is relayed locally, we need also to refresh
-			// the corresponding TURN session regularly
-			if (relay_entry) {
+			// Enable keepalive for the entry of the nominated pair
+			if (nominated_entry &&
+			    nominated_entry->state != AGENT_STUN_ENTRY_STATE_SUCCEEDED_KEEPALIVE) {
+				nominated_entry->state = AGENT_STUN_ENTRY_STATE_SUCCEEDED_KEEPALIVE;
+				agent_arm_transmission(agent, nominated_entry, STUN_KEEPALIVE_PERIOD);
+			}
+
+			// If the entry of the nominated candidate is relayed locally, we need also to
+			// refresh the corresponding TURN session regularly
+			if (relay_entry && relay_entry->state != AGENT_STUN_ENTRY_STATE_SUCCEEDED_KEEPALIVE) {
 				relay_entry->state = AGENT_STUN_ENTRY_STATE_SUCCEEDED_KEEPALIVE;
-#ifdef NO_ATOMICS
-				bool must_arm = !relay_entry->armed;
-#else
-				bool must_arm = !atomic_flag_test_and_set(&relay_entry->armed);
-#endif
-				if (must_arm) {
-					agent_arm_transmission(agent, relay_entry, TURN_REFRESH_PERIOD);
-				}
+				agent_arm_transmission(agent, relay_entry, TURN_REFRESH_PERIOD);
+			}
+
+			// Disable keepalives for other entries
+			for (int i = 0; i < agent->entries_count; ++i) {
+				agent_stun_entry_t *entry = agent->entries + i;
+				if (entry != nominated_entry && entry != relay_entry &&
+				    entry->state == AGENT_STUN_ENTRY_STATE_SUCCEEDED_KEEPALIVE)
+					entry->state = AGENT_STUN_ENTRY_STATE_SUCCEEDED;
 			}
 
 		} else {
@@ -1754,7 +1760,8 @@ int agent_send_turn_allocate_request(juice_agent_t *agent, const agent_stun_entr
 
 	msg.credentials = entry->turn->credentials;
 	msg.lifetime = TURN_LIFETIME / 1000; // seconds
-	// For allocate request only
+
+	// Include allocation attributes in Allocate request only
 	if (method == STUN_METHOD_ALLOCATE) {
 		msg.requested_transport = true;
 		msg.dont_fragment = true;
