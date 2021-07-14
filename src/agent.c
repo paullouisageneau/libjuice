@@ -908,8 +908,7 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 			}
 
 			if (ret < 0) {
-				JLOG_ERROR("Sending keepalive failed");
-				continue;
+				JLOG_WARN("Sending keepalive failed");
 			}
 
 			agent_arm_transmission(agent, entry,
