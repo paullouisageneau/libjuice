@@ -116,6 +116,6 @@ bool turn_set_random_permission_transaction_id(turn_map_t *map, const addr_recor
                                                uint8_t *transaction_id);
 bool turn_set_random_channel_transaction_id(turn_map_t *map, const addr_record_t *record,
                                             uint8_t *transaction_id);
-bool turn_find_transaction_id(turn_map_t *map, const uint8_t *transaction_id,
+bool turn_retrieve_transaction_id(turn_map_t *map, const uint8_t *transaction_id,
                               addr_record_t *record);
 #endif

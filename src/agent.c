@@ -908,11 +908,13 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 			}
 
 			if (ret < 0) {
-				JLOG_ERROR("Sending keepalive failed");
-				continue;
+				JLOG_WARN("Sending keepalive failed");
 			}
 
-			agent_arm_transmission(agent, entry, STUN_KEEPALIVE_PERIOD);
+			agent_arm_transmission(agent, entry,
+			                       entry->type == AGENT_STUN_ENTRY_TYPE_RELAY
+			                           ? TURN_REFRESH_PERIOD
+			                           : STUN_KEEPALIVE_PERIOD);
 
 		} else {
 			// Entry does not transmit, unset next transmission
@@ -1000,34 +1002,37 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 			if (agent->mode == AGENT_MODE_CONTROLLED || pending_count == 0)
 				agent_change_state(agent, JUICE_STATE_COMPLETED);
 
-			// Enable keepalive only for the entry of the nominated pair
+			agent_stun_entry_t *nominated_entry = NULL;
 			agent_stun_entry_t *relay_entry = NULL;
 			for (int i = 0; i < agent->entries_count; ++i) {
 				agent_stun_entry_t *entry = agent->entries + i;
 				if (entry->pair && entry->pair == nominated_pair) {
-					relay_entry = entry->relay_entry;
-					if (entry->state != AGENT_STUN_ENTRY_STATE_SUCCEEDED_KEEPALIVE) {
-						entry->state = AGENT_STUN_ENTRY_STATE_SUCCEEDED_KEEPALIVE;
-						agent_arm_transmission(agent, entry, STUN_KEEPALIVE_PERIOD);
-					}
-				} else {
-					if (entry->state == AGENT_STUN_ENTRY_STATE_SUCCEEDED_KEEPALIVE)
-						entry->state = AGENT_STUN_ENTRY_STATE_SUCCEEDED;
+					nominated_entry = entry;
+					relay_entry = nominated_entry->relay_entry;
+					break;
 				}
 			}
 
-			// If the entry of the nominated candidate is relayed locally, we need also to refresh
-			// the corresponding TURN session regularly
-			if (relay_entry) {
+			// Enable keepalive for the entry of the nominated pair
+			if (nominated_entry &&
+			    nominated_entry->state != AGENT_STUN_ENTRY_STATE_SUCCEEDED_KEEPALIVE) {
+				nominated_entry->state = AGENT_STUN_ENTRY_STATE_SUCCEEDED_KEEPALIVE;
+				agent_arm_transmission(agent, nominated_entry, STUN_KEEPALIVE_PERIOD);
+			}
+
+			// If the entry of the nominated candidate is relayed locally, we need also to
+			// refresh the corresponding TURN session regularly
+			if (relay_entry && relay_entry->state != AGENT_STUN_ENTRY_STATE_SUCCEEDED_KEEPALIVE) {
 				relay_entry->state = AGENT_STUN_ENTRY_STATE_SUCCEEDED_KEEPALIVE;
-#ifdef NO_ATOMICS
-				bool must_arm = !relay_entry->armed;
-#else
-				bool must_arm = !atomic_flag_test_and_set(&relay_entry->armed);
-#endif
-				if (must_arm) {
-					agent_arm_transmission(agent, relay_entry, TURN_REFRESH_PERIOD);
-				}
+				agent_arm_transmission(agent, relay_entry, TURN_REFRESH_PERIOD);
+			}
+
+			// Disable keepalives for other entries
+			for (int i = 0; i < agent->entries_count; ++i) {
+				agent_stun_entry_t *entry = agent->entries + i;
+				if (entry != nominated_entry && entry != relay_entry &&
+				    entry->state == AGENT_STUN_ENTRY_STATE_SUCCEEDED_KEEPALIVE)
+					entry->state = AGENT_STUN_ENTRY_STATE_SUCCEEDED;
 			}
 
 		} else {
@@ -1136,7 +1141,12 @@ int agent_verify_credentials(juice_agent_t *agent, const agent_stun_entry_t *ent
                              size_t size, stun_message_t *msg) {
 	(void)agent;
 
-	if (msg->msg_class == STUN_CLASS_INDICATION || msg->msg_class == STUN_CLASS_RESP_ERROR)
+	// RFC 8489: If the response is an error response with an error code of 400 (Bad Request) and
+	// does not contain either the MESSAGE-INTEGRITY or MESSAGE-INTEGRITY-SHA256 attribute, then the
+	// response MUST be discarded, as if it were never received.  This means that retransmits, if
+	// applicable, will continue.
+	if (msg->msg_class == STUN_CLASS_INDICATION ||
+	    (msg->msg_class == STUN_CLASS_RESP_ERROR && msg->error_code != 400))
 		return 0;
 
 	if (!msg->has_integrity) {
@@ -1191,8 +1201,8 @@ int agent_dispatch_stun(juice_agent_t *agent, void *buf, size_t size, stun_messa
 				break;
 			}
 			if (agent->entries[i].turn) {
-				if (turn_find_transaction_id(&agent->entries[i].turn->map, msg->transaction_id,
-				                             NULL)) {
+				if (turn_retrieve_transaction_id(&agent->entries[i].turn->map, msg->transaction_id,
+				                                 NULL)) {
 					JLOG_VERBOSE("STUN entry %d matching incoming transaction ID (TURN)", i);
 					entry = &agent->entries[i];
 					break;
@@ -1214,28 +1224,6 @@ int agent_dispatch_stun(juice_agent_t *agent, void *buf, size_t size, stun_messa
 			JLOG_DEBUG("No STUN entry matching remote address, ignoring");
 			return 0;
 		}
-	}
-
-	if (msg->msg_class == STUN_CLASS_RESP_ERROR && msg->error_code == 438) {
-		/*
-		 * When the server receives the Refresh request, it notices that the nonce value has
-		 * expired, and so replies with 438 (Stale Nonce) error given a new nonce value.  The
-		 * client then reattempts the request, this time with the new nonce value.
-		 */
-		JLOG_DEBUG("Got TURN Stale Nonce response");
-		if (*msg->credentials.realm == '\0' || *msg->credentials.nonce == '\0') {
-			JLOG_ERROR("Expected realm and nonce in TURN error response");
-			entry->state = AGENT_STUN_ENTRY_STATE_FAILED;
-			return -1;
-		}
-
-		if (!entry->turn) {
-			JLOG_WARN("No credentials for entry");
-			return -1;
-		}
-
-		strcpy(entry->turn->credentials.realm, msg->credentials.realm);
-		strcpy(entry->turn->credentials.nonce, msg->credentials.nonce);
 	}
 
 	switch (msg->msg_method) {
@@ -1754,7 +1742,8 @@ int agent_send_turn_allocate_request(juice_agent_t *agent, const agent_stun_entr
 
 	msg.credentials = entry->turn->credentials;
 	msg.lifetime = TURN_LIFETIME / 1000; // seconds
-	// For allocate request only
+
+	// Include allocation attributes in Allocate request only
 	if (method == STUN_METHOD_ALLOCATE) {
 		msg.requested_transport = true;
 		msg.dont_fragment = true;
@@ -1796,9 +1785,24 @@ int agent_process_turn_create_permission(juice_agent_t *agent, const stun_messag
 		break;
 	}
 	case STUN_CLASS_RESP_ERROR: {
-		if (msg->error_code != STUN_ERROR_INTERNAL_VALIDATION_FAILED)
+		if (msg->error_code == 438) { // Stale Nonce
+			JLOG_DEBUG("Got TURN CreatePermission Stale Nonce response");
+			if (*msg->credentials.realm == '\0' || *msg->credentials.nonce == '\0') {
+				JLOG_ERROR("Expected realm and nonce in TURN error response");
+				return -1;
+			}
+
+			stun_process_credentials(&msg->credentials, &entry->turn->credentials);
+
+			// Resend
+			addr_record_t record;
+			if (turn_retrieve_transaction_id(&entry->turn->map, msg->transaction_id, &record))
+				agent_send_turn_create_permission_request(agent, entry, &record, 0);
+
+		} else if (msg->error_code != STUN_ERROR_INTERNAL_VALIDATION_FAILED) {
 			JLOG_WARN("Got TURN CreatePermission error response, code=%u",
 			          (unsigned int)msg->error_code);
+		}
 		break;
 	}
 	default: {
@@ -1812,7 +1816,11 @@ int agent_process_turn_create_permission(juice_agent_t *agent, const stun_messag
 
 int agent_send_turn_create_permission_request(juice_agent_t *agent, agent_stun_entry_t *entry,
                                               const addr_record_t *record, int ds) {
-	JLOG_DEBUG("Sending TURN CreatePermission request");
+	if (JLOG_DEBUG_ENABLED) {
+		char record_str[ADDR_MAX_STRING_LEN];
+		addr_record_to_string(record, record_str, ADDR_MAX_STRING_LEN);
+		JLOG_DEBUG("Sending TURN CreatePermission request for %s", record_str);
+	}
 
 	if (entry->type != AGENT_STUN_ENTRY_TYPE_RELAY) {
 		JLOG_ERROR("Attempted to send a TURN CreatePermission request for a non-relay entry");
@@ -1833,7 +1841,8 @@ int agent_send_turn_create_permission_request(juice_agent_t *agent, agent_stun_e
 	memset(&msg, 0, sizeof(msg));
 	msg.msg_class = STUN_CLASS_REQUEST;
 	msg.msg_method = STUN_METHOD_CREATE_PERMISSION;
-	turn_set_random_permission_transaction_id(&entry->turn->map, record, msg.transaction_id);
+	if (!turn_set_random_permission_transaction_id(&entry->turn->map, record, msg.transaction_id))
+		return -1;
 
 	msg.credentials = entry->turn->credentials;
 	msg.peer = *record;
@@ -1872,9 +1881,24 @@ int agent_process_turn_channel_bind(juice_agent_t *agent, const stun_message_t *
 		break;
 	}
 	case STUN_CLASS_RESP_ERROR: {
-		if (msg->error_code != STUN_ERROR_INTERNAL_VALIDATION_FAILED)
+		if (msg->error_code == 438) { // Stale Nonce
+			JLOG_DEBUG("Got TURN ChannelBind Stale Nonce response");
+			if (*msg->credentials.realm == '\0' || *msg->credentials.nonce == '\0') {
+				JLOG_ERROR("Expected realm and nonce in TURN error response");
+				return -1;
+			}
+
+			stun_process_credentials(&msg->credentials, &entry->turn->credentials);
+
+			// Resend
+			addr_record_t record;
+			if (turn_retrieve_transaction_id(&entry->turn->map, msg->transaction_id, &record))
+				agent_send_turn_channel_bind_request(agent, entry, &record, 0, NULL);
+
+		} else if (msg->error_code != STUN_ERROR_INTERNAL_VALIDATION_FAILED) {
 			JLOG_WARN("Got TURN ChannelBind error response, code=%u",
 			          (unsigned int)msg->error_code);
+		}
 		break;
 	}
 	default: {
@@ -1889,7 +1913,11 @@ int agent_process_turn_channel_bind(juice_agent_t *agent, const stun_message_t *
 int agent_send_turn_channel_bind_request(juice_agent_t *agent, agent_stun_entry_t *entry,
                                          const addr_record_t *record, int ds,
                                          uint16_t *out_channel) {
-	JLOG_DEBUG("Sending TURN ChannelBind request");
+	if (JLOG_DEBUG_ENABLED) {
+		char record_str[ADDR_MAX_STRING_LEN];
+		addr_record_to_string(record, record_str, ADDR_MAX_STRING_LEN);
+		JLOG_DEBUG("Sending TURN ChannelBind request for %s", record_str);
+	}
 
 	if (entry->type != AGENT_STUN_ENTRY_TYPE_RELAY) {
 		JLOG_ERROR("Attempted to send a TURN ChannelBind request for a non-relay entry");
