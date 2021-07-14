@@ -1020,7 +1020,14 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 			// the corresponding TURN session regularly
 			if (relay_entry) {
 				relay_entry->state = AGENT_STUN_ENTRY_STATE_SUCCEEDED_KEEPALIVE;
-				agent_arm_transmission(agent, relay_entry, TURN_REFRESH_PERIOD);
+#ifdef NO_ATOMICS
+				bool must_arm = !relay_entry->armed;
+#else
+				bool must_arm = !atomic_flag_test_and_set(&relay_entry->armed);
+#endif
+				if (must_arm) {
+					agent_arm_transmission(agent, relay_entry, TURN_REFRESH_PERIOD);
+				}
 			}
 
 		} else {
@@ -1207,6 +1214,23 @@ int agent_dispatch_stun(juice_agent_t *agent, void *buf, size_t size, stun_messa
 			JLOG_DEBUG("No STUN entry matching remote address, ignoring");
 			return 0;
 		}
+	}
+
+	if (msg->msg_class == STUN_CLASS_RESP_ERROR && msg->error_code == 438) {
+		/*
+		 * When the server receives the Refresh request, it notices that the nonce value has
+		 * expired, and so replies with 438 (Stale Nonce) error given a new nonce value.  The
+		 * client then reattempts the request, this time with the new nonce value.
+		 */
+		JLOG_DEBUG("Got TURN Stale Nonce response");
+		if (*msg->credentials.realm == '\0' || *msg->credentials.nonce == '\0') {
+			JLOG_ERROR("Expected realm and nonce in TURN error response");
+			entry->state = AGENT_STUN_ENTRY_STATE_FAILED;
+			return -1;
+		}
+
+		strcpy(entry->turn->credentials.realm, msg->credentials.realm);
+		strcpy(entry->turn->credentials.nonce, msg->credentials.nonce);
 	}
 
 	switch (msg->msg_method) {
@@ -1725,8 +1749,11 @@ int agent_send_turn_allocate_request(juice_agent_t *agent, const agent_stun_entr
 
 	msg.credentials = entry->turn->credentials;
 	msg.lifetime = TURN_LIFETIME / 1000; // seconds
-	msg.requested_transport = true;
-	msg.dont_fragment = true;
+	// For allocate request only
+	if (method == STUN_METHOD_ALLOCATE) {
+		msg.requested_transport = true;
+		msg.dont_fragment = true;
+	}
 
 	const char *password = *msg.credentials.nonce != '\0' ? entry->turn->password : NULL;
 
