@@ -220,7 +220,6 @@ juice_nat_type_t juice_nat_detect(const char *stun_host, unsigned short stun_por
 	}
 
 	if (ret != 0) return JUICE_NAT_TYPE_UNKNOWN;
-	struct sockaddr_in *addr2 = (struct sockaddr_in *)&mapped_addr2->addr;
 	if (mapped_addr->addr.ss_family == mapped_addr2->addr.ss_family &&
 		sockaddr_equal(&mapped_addr->addr, &mapped_addr2->addr)) {
 
