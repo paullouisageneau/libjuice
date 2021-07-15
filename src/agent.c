@@ -752,8 +752,10 @@ void agent_run(juice_agent_t *agent) {
 			agent_stun_entry_t *entry = agent->entries + i;
 			if (entry->sock == INVALID_SOCKET) continue;
 			if (FD_ISSET(entry->sock, &readfds)) {
-				if (agent_recv(agent, entry) < 0)
+				if (agent_recv(agent, entry) < 0) {
+					entry->state = AGENT_STUN_ENTRY_STATE_FAILED;
 					entry->sock = INVALID_SOCKET;
+				}
 			}
 		}
 	}

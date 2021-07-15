@@ -16,8 +16,8 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#ifndef JUICE_TCP_H
-#define JUICE_TCP_H
+#ifndef JUICE_TRANSPORT_H
+#define JUICE_TRANSPORT_H
 
 #include "addr.h"
 #include "socket.h"
@@ -54,4 +54,4 @@ int transport_get_bound_addr(socket_t sock, addr_record_t *record);
 int transport_get_local_addr(socket_t sock, int family, addr_record_t *record); // family may be AF_UNSPEC
 int transport_get_addrs(socket_t sock, addr_record_t *records, size_t count);
 
-#endif // JUICE_TCP_H
+#endif // JUICE_TRANSPORT_H
