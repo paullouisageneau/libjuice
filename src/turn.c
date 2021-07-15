@@ -17,9 +17,9 @@
  */
 
 #include "turn.h"
+#include "log.h"
 #include "random.h"
 #include "socket.h"
-#include "log.h"
 
 #include <string.h>
 
@@ -77,7 +77,7 @@ int turn_wrap_channel_data(char *buffer, size_t size, const char *data, size_t d
 	}
 	if (size < sizeof(struct channel_data_header) + data_size) {
 		JLOG_WARN("Buffer is too small to add ChannelData header, size=%zu, needed=%zu", size,
-		           sizeof(struct channel_data_header) + data_size);
+		          sizeof(struct channel_data_header) + data_size);
 		return -1;
 	}
 
@@ -118,7 +118,8 @@ static int find_ordered_transaction_id_rec(turn_entry_t *const ordered_transacti
 	const turn_entry_t *entry = ordered_transaction_ids[pivot];
 	int ret = memcmp(transaction_id, entry->transaction_id, STUN_TRANSACTION_ID_SIZE);
 	if (ret < 0)
-		return find_ordered_transaction_id_rec(ordered_transaction_ids, transaction_id, begin, pivot);
+		return find_ordered_transaction_id_rec(ordered_transaction_ids, transaction_id, begin,
+		                                       pivot);
 	else if (ret > 0)
 		return find_ordered_transaction_id_rec(ordered_transaction_ids, transaction_id, pivot + 1,
 		                                       end);
@@ -128,7 +129,7 @@ static int find_ordered_transaction_id_rec(turn_entry_t *const ordered_transacti
 
 static int find_ordered_transaction_id(const turn_map_t *map, const uint8_t *transaction_id) {
 	return find_ordered_transaction_id_rec(map->ordered_transaction_ids, transaction_id, 0,
-	                                            map->transaction_ids_count);
+	                                       map->transaction_ids_count);
 }
 
 static void remove_ordered_transaction_id(turn_map_t *map, const uint8_t *transaction_id) {
@@ -141,26 +142,26 @@ static void remove_ordered_transaction_id(turn_map_t *map, const uint8_t *transa
 }
 /*
 static void remove_ordered_channel(turn_map_t *map, uint16_t channel) {
-	int pos = find_ordered_channel(map, channel);
-	if (pos < map->channels_count) {
-		memmove(map->ordered_channels + pos, map->ordered_channels + pos + 1,
-		        (map->channels_count - (pos + 1)) * sizeof(turn_entry_t *));
-		map->channels_count--;
-	}
+    int pos = find_ordered_channel(map, channel);
+    if (pos < map->channels_count) {
+        memmove(map->ordered_channels + pos, map->ordered_channels + pos + 1,
+                (map->channels_count - (pos + 1)) * sizeof(turn_entry_t *));
+        map->channels_count--;
+    }
 }
 
 static void delete_entry(turn_map_t *map, turn_entry_t *entry) {
-	if (entry->type == TURN_ENTRY_TYPE_EMPTY || entry->type == TURN_ENTRY_TYPE_DELETED)
-		return;
+    if (entry->type == TURN_ENTRY_TYPE_EMPTY || entry->type == TURN_ENTRY_TYPE_DELETED)
+        return;
 
-	if (!memory_is_zero(entry->transaction_id, STUN_TRANSACTION_ID_SIZE))
-		remove_ordered_transaction_id(map, entry->transaction_id);
+    if (!memory_is_zero(entry->transaction_id, STUN_TRANSACTION_ID_SIZE))
+        remove_ordered_transaction_id(map, entry->transaction_id);
 
-	if (entry->type == TURN_ENTRY_TYPE_CHANNEL && entry->channel)
-		remove_ordered_channel(map, entry->channel);
+    if (entry->type == TURN_ENTRY_TYPE_CHANNEL && entry->channel)
+        remove_ordered_channel(map, entry->channel);
 
-	memset(entry, 0, sizeof(*entry));
-	entry->type = TURN_ENTRY_TYPE_DELETED;
+    memset(entry, 0, sizeof(*entry));
+    entry->type = TURN_ENTRY_TYPE_DELETED;
 }
 */
 static turn_entry_t *find_entry(turn_map_t *map, const addr_record_t *record,
@@ -338,7 +339,7 @@ bool turn_get_channel(turn_map_t *map, const addr_record_t *record, uint16_t *ch
 	if (!entry || entry->type != TURN_ENTRY_TYPE_CHANNEL)
 		return false;
 
-	if(channel)
+	if (channel)
 		*channel = entry->channel;
 
 	return true;
@@ -352,7 +353,7 @@ bool turn_get_bound_channel(turn_map_t *map, const addr_record_t *record, uint16
 	if (!entry->channel || current_timestamp() >= entry->timestamp)
 		return false;
 
-	if(channel)
+	if (channel)
 		*channel = entry->channel;
 
 	return true;
@@ -426,6 +427,22 @@ static bool set_transaction_id(turn_map_t *map, turn_entry_type_t type, const ad
 	return true;
 }
 
+static bool find_transaction_id(turn_map_t *map, const uint8_t *transaction_id,
+                                addr_record_t *record) {
+	int pos = find_ordered_transaction_id(map, transaction_id);
+	if (pos == map->transaction_ids_count)
+		return false;
+
+	const turn_entry_t *entry = map->ordered_transaction_ids[pos];
+	if (memcmp(entry->transaction_id, transaction_id, STUN_TRANSACTION_ID_SIZE) != 0)
+		return false;
+
+	if (record)
+		*record = entry->record;
+
+	return true;
+}
+
 static bool set_random_transaction_id(turn_map_t *map, turn_entry_type_t type,
                                       const addr_record_t *record, uint8_t *transaction_id) {
 	turn_entry_t *entry = find_entry(map, record, type, false);
@@ -439,7 +456,7 @@ static bool set_random_transaction_id(turn_map_t *map, turn_entry_type_t type,
 	uint8_t tid[STUN_TRANSACTION_ID_SIZE];
 	do {
 		juice_random(tid, STUN_TRANSACTION_ID_SIZE);
-	} while (turn_find_transaction_id(map, tid, NULL));
+	} while (find_transaction_id(map, tid, NULL));
 
 	if (!set_transaction_id(map, type, record, tid))
 		return false;
@@ -470,18 +487,19 @@ bool turn_set_random_channel_transaction_id(turn_map_t *map, const addr_record_t
 	return set_random_transaction_id(map, TURN_ENTRY_TYPE_CHANNEL, record, transaction_id);
 }
 
-bool turn_find_transaction_id(turn_map_t *map, const uint8_t *transaction_id,
-                              addr_record_t *record) {
+bool turn_retrieve_transaction_id(turn_map_t *map, const uint8_t *transaction_id,
+                                  addr_record_t *record) {
 	int pos = find_ordered_transaction_id(map, transaction_id);
 	if (pos == map->transaction_ids_count)
 		return false;
 
-	const turn_entry_t *entry = map->ordered_transaction_ids[pos];
+	turn_entry_t *entry = map->ordered_transaction_ids[pos];
 	if (memcmp(entry->transaction_id, transaction_id, STUN_TRANSACTION_ID_SIZE) != 0)
 		return false;
 
 	if (record)
 		*record = entry->record;
 
+	entry->fresh_transaction_id = false;
 	return true;
 }
