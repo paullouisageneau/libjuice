@@ -497,16 +497,11 @@ int agent_relay_send(juice_agent_t *agent, agent_stun_entry_t *entry, const addr
 		JLOG_ERROR("STUN message write failed");
 		return -1;
 	}
-<<<<<<< HEAD
 	if (agent_direct_send2(agent, entry, buffer, size, ds) < 0) {
 		JLOG_WARN("STUN message send failed, errno=%d", sockerrno);
 		return -1;
 	}
 	return 0;
-=======
-
-	return agent_direct_send(agent, &entry->record, buffer, size, ds);
->>>>>>> 0d938b2e56f67e9a7b55ddc6768b8560cc750640
 }
 
 int agent_channel_send(juice_agent_t *agent, agent_stun_entry_t *entry, const addr_record_t *record,
@@ -531,16 +526,11 @@ int agent_channel_send(juice_agent_t *agent, agent_stun_entry_t *entry, const ad
 		JLOG_ERROR("TURN ChannelData wrapping failed");
 		return -1;
 	}
-<<<<<<< HEAD
 	if (agent_direct_send2(agent, entry, buffer, len, ds) < 0) {
 		JLOG_WARN("ChannelData message send failed, errno=%d", sockerrno);
 		return -1;
 	}
 	return 0;
-=======
-
-	return agent_direct_send(agent, &entry->record, buffer, len, ds);
->>>>>>> 0d938b2e56f67e9a7b55ddc6768b8560cc750640
 }
 
 juice_state_t agent_get_state(juice_agent_t *agent) {
@@ -1699,13 +1689,8 @@ int agent_send_stun_binding(juice_agent_t *agent, agent_stun_entry_t *entry, stu
 	}
 
 	// Direct send
-<<<<<<< HEAD
 	if (agent_direct_send2(agent, entry, buffer, size, 0) < 0) {
 		JLOG_WARN("STUN message send failed, errno=%d", sockerrno);
-=======
-	if (agent_direct_send(agent, &entry->record, buffer, size, 0) < 0) {
-		JLOG_WARN("STUN message send failed");
->>>>>>> 0d938b2e56f67e9a7b55ddc6768b8560cc750640
 		return -1;
 	}
 	return 0;
@@ -1888,13 +1873,8 @@ int agent_send_turn_allocate_request(juice_agent_t *agent, const agent_stun_entr
 		JLOG_ERROR("STUN message write failed");
 		return -1;
 	}
-<<<<<<< HEAD
 	if (agent_direct_send2(agent, entry, buffer, size, 0) < 0) {
 		JLOG_WARN("STUN message send failed, errno=%d", sockerrno);
-=======
-	if (agent_direct_send(agent, &entry->record, buffer, size, 0) < 0) {
-		JLOG_WARN("STUN message send failed");
->>>>>>> 0d938b2e56f67e9a7b55ddc6768b8560cc750640
 		return -1;
 	}
 	return 0;
@@ -1989,13 +1969,8 @@ int agent_send_turn_create_permission_request(juice_agent_t *agent, agent_stun_e
 		JLOG_ERROR("STUN message write failed");
 		return -1;
 	}
-<<<<<<< HEAD
 	if (agent_direct_send2(agent, entry, buffer, size, ds) < 0) {
 		JLOG_WARN("STUN message send failed, errno=%d", sockerrno);
-=======
-	if (agent_direct_send(agent, &entry->record, buffer, size, ds) < 0) {
-		JLOG_WARN("STUN message send failed");
->>>>>>> 0d938b2e56f67e9a7b55ddc6768b8560cc750640
 		return -1;
 	}
 	return 0;
@@ -2101,13 +2076,8 @@ int agent_send_turn_channel_bind_request(juice_agent_t *agent, agent_stun_entry_
 		JLOG_ERROR("STUN message write failed");
 		return -1;
 	}
-<<<<<<< HEAD
 	if (agent_direct_send2(agent, entry, buffer, size, ds) < 0) {
 		JLOG_WARN("STUN message send failed, errno=%d", sockerrno);
-=======
-	if (agent_direct_send(agent, &entry->record, buffer, size, ds) < 0) {
-		JLOG_WARN("STUN message send failed");
->>>>>>> 0d938b2e56f67e9a7b55ddc6768b8560cc750640
 		return -1;
 	}
 	return 0;
