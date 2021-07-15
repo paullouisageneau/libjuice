@@ -112,6 +112,8 @@ struct stun_attr {
 typedef enum stun_attr_type {
 	// Comprehension-required
 	STUN_ATTR_MAPPED_ADDRESS = 0x0001,
+	STUN_ATTR_CHANGE_REQUEST = 0x0003,
+	STUN_ATTR_CHANGED_IP = 0x0005,
 	STUN_ATTR_USERNAME = 0x0006,
 	STUN_ATTR_MESSAGE_INTEGRITY = 0x0008,
 	STUN_ATTR_ERROR_CODE = 0x0009,
@@ -146,6 +148,11 @@ typedef enum stun_attr_type {
 	STUN_ATTR_DONT_FRAGMENT = 0x001A,
 	STUN_ATTR_RESERVATION_TOKEN = 0x0022
 } stun_attr_type_t;
+
+typedef enum stun_value_change_request {
+	STUN_VALUE_CHANGE_PORT = 0x0002,
+	STUN_VALUE_CHANGE_IP = 0x0004,
+} stun_value_change_request_t;
 
 #define STUN_IS_OPTIONAL_ATTR(attr_type) (attr_type & 0x8000)
 
@@ -346,6 +353,8 @@ typedef struct stun_message {
 	bool requested_transport;
 	uint64_t reservation_token;
 
+	uint32_t change_request;
+	addr_record_t changed_ip;
 } stun_message_t;
 
 int stun_write(void *buf, size_t size, const stun_message_t *msg,

@@ -148,6 +148,26 @@ int stun_write(void *buf, size_t size, const stun_message_t *msg, const char *pa
 			pos += len;
 		}
 	}
+	if (msg->change_request) {
+		uint32_t change_request = htonl(msg->change_request);
+		len = stun_write_attr(pos, end - pos, STUN_ATTR_CHANGE_REQUEST, &change_request, 4);
+		if (len <= 0)
+			goto overflow;
+		pos += len;
+	}
+	if (msg->changed_ip.len) {
+		JLOG_VERBOSE("Writing changed ip");
+		uint8_t value[32];
+		uint8_t mask[16] = {0};
+		int value_len = stun_write_value_mapped_address(
+		    value, 32, (const struct sockaddr *)&msg->changed_ip.addr, msg->changed_ip.len, mask);
+		if (value_len > 0) {
+			len = stun_write_attr(pos, end - pos, STUN_ATTR_CHANGED_IP, value, value_len);
+			if (len <= 0)
+				goto overflow;
+			pos += len;
+		}
+	}
 	if (msg->priority) {
 		uint32_t priority = htonl(msg->priority);
 		len = stun_write_attr(pos, end - pos, STUN_ATTR_PRIORITY, &priority, 4);
@@ -648,6 +668,13 @@ int stun_read_attr(const void *data, size_t size, stun_message_t *msg, uint8_t *
 		*((uint32_t *)mask) = htonl(STUN_MAGIC);
 		memcpy(mask + 4, msg->transaction_id, 12);
 		if (stun_read_value_mapped_address(attr->value, length, &msg->mapped, mask) < 0)
+			return -1;
+		break;
+	}
+	case STUN_ATTR_CHANGED_IP: {
+		JLOG_VERBOSE("Reading changed ip");
+		uint8_t zero_mask[16] = {0};
+		if (stun_read_value_mapped_address(attr->value, length, &msg->changed_ip, zero_mask) < 0)
 			return -1;
 		break;
 	}
