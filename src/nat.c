@@ -91,8 +91,9 @@ int juice_nat_do_test(socket_t sock, addr_record_t *srv_addr, struct timeval *ti
 
 	addr_record_t src;
 	msg_size = udp_recvfrom(sock, buffer, BUFFER_SIZE, &src);
-
-	struct sockaddr_in *addr = (struct sockaddr_in *)&src.addr;
+	if (msg_size <= 0) {
+		return -2;
+	}
 
 	if (stun_read(buffer, msg_size, &msg) < 0) {
 		JLOG_ERROR("STUN read error");
