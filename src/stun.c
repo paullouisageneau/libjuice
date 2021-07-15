@@ -306,7 +306,10 @@ int stun_write(void *buf, size_t size, const stun_message_t *msg, const char *pa
 			pos += len;
 		}
 	}
-	if (msg->msg_class == STUN_CLASS_REQUEST || msg->msg_method == STUN_METHOD_ALLOCATE) {
+	if (msg->msg_class == STUN_CLASS_REQUEST ||
+	    (msg->msg_class == STUN_CLASS_RESP_ERROR &&
+	     (msg->error_code == 401 || msg->error_code == 438) // Unauthenticated or Stale Nonce
+	     )) {
 		if (*msg->credentials.realm != '\0') {
 			len = stun_write_attr(pos, end - pos, STUN_ATTR_REALM, msg->credentials.realm,
 			                      strlen(msg->credentials.realm));
