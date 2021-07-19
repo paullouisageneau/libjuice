@@ -654,6 +654,13 @@ int stun_read_attr(const void *data, size_t size, stun_message_t *msg, uint8_t *
 			return -1;
 		break;
 	}
+	case STUN_ATTR_ALTERNATE_SERVER: {
+		JLOG_VERBOSE("Reading alternate server");
+		uint8_t zero_mask[16] = {0};
+		if (stun_read_value_mapped_address(attr->value, length, &msg->alternate_server, zero_mask) < 0)
+			return -1;
+		break;
+	}
 	case STUN_ATTR_ERROR_CODE: {
 		JLOG_VERBOSE("Reading error code");
 		if (length < sizeof(struct stun_value_error_code)) {

@@ -568,6 +568,7 @@ void agent_run(juice_agent_t *agent) {
 					entry->state = AGENT_STUN_ENTRY_STATE_PENDING;
 					entry->pair = NULL;
 					entry->record = *record;
+					entry->turn_redirections = 0;
 					entry->turn = calloc(1, sizeof(agent_turn_state_t));
 					if (!entry->turn) {
 						JLOG_ERROR("calloc for TURN state failed");
@@ -1668,11 +1669,13 @@ int agent_process_turn_allocate(juice_agent_t *agent, const stun_message_t *msg,
 			if (*entry->turn->credentials.realm != '\0') {
 				JLOG_ERROR("TURN authentication failed");
 				entry->state = AGENT_STUN_ENTRY_STATE_FAILED;
+				agent_update_gathering_done(agent);
 				return -1;
 			}
 			if (*msg->credentials.realm == '\0' || *msg->credentials.nonce == '\0') {
 				JLOG_ERROR("Expected realm and nonce in TURN error response");
 				entry->state = AGENT_STUN_ENTRY_STATE_FAILED;
+				agent_update_gathering_done(agent);
 				return -1;
 			}
 
@@ -1687,12 +1690,48 @@ int agent_process_turn_allocate(juice_agent_t *agent, const stun_message_t *msg,
 			if (*msg->credentials.realm == '\0' || *msg->credentials.nonce == '\0') {
 				JLOG_ERROR("Expected realm and nonce in TURN error response");
 				entry->state = AGENT_STUN_ENTRY_STATE_FAILED;
+				agent_update_gathering_done(agent);
 				return -1;
 			}
 
 			stun_process_credentials(&msg->credentials, &entry->turn->credentials);
 
 			// Resend request when possible
+			agent_arm_transmission(agent, entry, 0);
+
+		} else if (msg->msg_method == STUN_METHOD_ALLOCATE &&
+		           msg->error_code == 300) { // Try Alternate
+			// RFC 8489 10. ALTERNATE-SERVER Mechanism:
+			// A client using this extension handles a 300 (Try Alternate) error code as follows.
+			// The client looks for an ALTERNATE-SERVER attribute in the error response. If one is
+			// found, then the client considers the current transaction as failed and reattempts the
+			// request with the server specified in the attribute, using the same transport protocol
+			// used for the previous request.
+			if (!msg->alternate_server.len ||
+			    addr_record_is_equal(&msg->alternate_server, &entry->record, true)) {
+				JLOG_ERROR("Expected alternate server in TURN Allocate 300 Try Alternate response");
+				entry->state = AGENT_STUN_ENTRY_STATE_FAILED;
+				agent_update_gathering_done(agent);
+				return -1;
+			}
+			// Prevent infinite redirection loop
+			if (entry->turn_redirections >= MAX_TURN_REDIRECTIONS) {
+				JLOG_ERROR("Too many redirections for TURN Allocate");
+				entry->state = AGENT_STUN_ENTRY_STATE_FAILED;
+				agent_update_gathering_done(agent);
+				return -1;
+			}
+
+			if (JLOG_INFO_ENABLED) {
+				char alternate_server_str[ADDR_MAX_STRING_LEN];
+				addr_record_to_string(&msg->alternate_server, alternate_server_str,
+				                      ADDR_MAX_STRING_LEN);
+				JLOG_INFO("Trying alternate TURN server %s", alternate_server_str);
+			}
+
+			// Change record and resend request when possible
+			++entry->turn_redirections;
+			entry->record = msg->alternate_server;
 			agent_arm_transmission(agent, entry, 0);
 
 		} else {
