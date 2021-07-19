@@ -7,6 +7,7 @@ set(PROJECT_DESCRIPTION "JUICE is a UDP ICE library")
 option(USE_NETTLE "Use Nettle for hash functions" OFF)
 option(NO_SERVER "Disable server support" OFF)
 option(NO_TESTS "Disable tests build" OFF)
+option(NO_EXPORT_HEADER "Disable export header" OFF)
 option(WARNINGS_AS_ERRORS "Treat warnings as errors" OFF)
 
 # Mitigations
@@ -75,7 +76,7 @@ add_library(juice SHARED ${LIBJUICE_SOURCES})
 set_target_properties(juice PROPERTIES VERSION ${PROJECT_VERSION})
 target_compile_definitions(juice PRIVATE $<$<CONFIG:Release>:RELEASE=1>)
 
-target_include_directories(juice PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_include_directories(juice PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>)
 target_include_directories(juice PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include/juice)
 target_include_directories(juice PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_link_libraries(juice PUBLIC Threads::Threads)
@@ -128,13 +129,24 @@ endif()
 add_library(LibJuice::LibJuice ALIAS juice)
 add_library(LibJuice::LibJuiceStatic ALIAS juice-static)
 
-install(TARGETS juice LIBRARY DESTINATION lib)
+install(TARGETS juice EXPORT libjuice-config
+	RUNTIME DESTINATION bin
+	LIBRARY DESTINATION lib
+	ARCHIVE DESTINATION lib
+)
+
 install(FILES ${LIBJUICE_HEADERS} DESTINATION include/juice)
 
-if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.12")
+install(
+  EXPORT libjuice-config
+  NAMESPACE LibJuice::
+  DESTINATION share/cmake/libjuice
+)
+
+if(NOT NO_EXPORT_HEADER AND CMAKE_VERSION VERSION_GREATER_EQUAL "3.12")
 	include(GenerateExportHeader)
 	generate_export_header(juice)
-	target_include_directories(juice PUBLIC ${CMAKE_BINARY_DIR})
+	target_include_directories(juice PUBLIC $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}>)
 	target_compile_definitions(juice PUBLIC -DJUICE_HAS_EXPORT_HEADER)
 	set_target_properties(juice PROPERTIES C_VISIBILITY_PRESET hidden)
 	install(FILES ${PROJECT_BINARY_DIR}/juice_export.h DESTINATION include/juice)
