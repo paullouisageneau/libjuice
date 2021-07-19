@@ -4,7 +4,9 @@ libjuice :lemon::sweat_drops: (_JUICE is a UDP Interactive Connectivity Establis
 
 The library is a simplified implementation of the Interactive Connectivity Establishment (ICE) protocol written in pure C without dependencies for POSIX platforms (including Linux and Apple macOS) and Microsoft Windows. It supports only a single component over UDP per session in a standard single-gateway network topology, as this should be sufficient for the majority of use cases nowadays.
 
-Licensed under LGPLv2, see [LICENSE](https://github.com/paullouisageneau/libjuice/blob/master/LICENSE).
+libjuice is licensed under LGPLv2, see [LICENSE](https://github.com/paullouisageneau/libjuice/blob/master/LICENSE).
+
+libjuice is available on [AUR](https://aur.archlinux.org/packages/libjuice/) and [vcpkg](https://vcpkg.info/port/libjuice).
 
 ## Compatibility
 
