@@ -333,12 +333,13 @@ typedef struct stun_message {
 	bool has_fingerprint;
 
 	// TURN
-	uint16_t channel_number;
 	addr_record_t peer;
 	addr_record_t relayed;
+	addr_record_t alternate_server;
 	const char *data;
 	size_t data_size;
 	uint32_t lifetime;
+	uint16_t channel_number;
 	bool lifetime_set;
 	bool even_port;
 	bool next_port;

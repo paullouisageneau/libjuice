@@ -62,6 +62,9 @@
 #define MAX_SERVER_ENTRIES_COUNT 2 // max STUN server entries
 #define MAX_RELAY_ENTRIES_COUNT 2  // max TURN server entries
 
+// Max TURN redirections for ALTERNATE-SERVER mechanism
+#define MAX_TURN_REDIRECTIONS 1
+
 // Compute max candidates and entries count
 // This guarantees 8 (+1 to be safe) host candidates slots
 #define MAX_STUN_SERVER_RECORDS_COUNT MAX_SERVER_ENTRIES_COUNT
@@ -114,6 +117,7 @@ typedef struct agent_stun_entry {
 
 	// TURN
 	agent_turn_state_t *turn;
+	unsigned int turn_redirections;
 	struct agent_stun_entry *relay_entry;
 
 #ifdef NO_ATOMICS
