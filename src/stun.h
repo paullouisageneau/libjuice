@@ -292,6 +292,9 @@ typedef enum stun_password_algorithm {
 #define STUN_NONCE_COOKIE "obMatJos2"
 #define STUN_NONCE_COOKIE_LEN 9
 
+// USERHASH is a SHA256 digest
+#define USERHASH_SIZE HASH_SHA256_SIZE
+
 // STUN Security Feature bits as defined in https://tools.ietf.org/html/rfc8489#section-18.1
 // See errata about bit order: https://www.rfc-editor.org/errata_search.php?rfc=8489
 // Bits are assigned starting from the least significant side of the bit set, so Bit 0 is the rightmost bit, and Bit 23 is the leftmost bit.
@@ -308,7 +311,7 @@ typedef struct stun_credentials {
 	char username[STUN_MAX_USERNAME_LEN];
 	char realm[STUN_MAX_REALM_LEN];
 	char nonce[STUN_MAX_NONCE_LEN];
-	uint8_t userhash[HASH_SHA256_SIZE];
+	uint8_t userhash[USERHASH_SIZE];
 	bool enable_userhash;
 	stun_password_algorithm_t password_algorithm;
 	uint8_t password_algorithms_value[STUN_MAX_PASSWORD_ALGORITHMS_VALUE_SIZE];

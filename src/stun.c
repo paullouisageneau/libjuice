@@ -273,7 +273,7 @@ int stun_write(void *buf, size_t size, const stun_message_t *msg, const char *pa
 	if (msg->msg_class == STUN_CLASS_REQUEST) {
 		if (msg->credentials.enable_userhash) {
 			len = stun_write_attr(pos, end - pos, STUN_ATTR_USERHASH, msg->credentials.userhash,
-			                      HASH_SHA256_SIZE);
+			                      USERHASH_SIZE);
 			if (len <= 0)
 				goto overflow;
 			pos += len;
@@ -867,11 +867,11 @@ int stun_read_attr(const void *data, size_t size, stun_message_t *msg, uint8_t *
 	}
 	case STUN_ATTR_USERHASH: {
 		JLOG_VERBOSE("Reading user hash");
-		if (length != HASH_SHA256_SIZE) {
+		if (length != USERHASH_SIZE) {
 			JLOG_WARN("STUN user hash value too long, length=%zu", length);
 			return -1;
 		}
-		memcpy(msg->credentials.userhash, attr->value, HASH_SHA256_SIZE);
+		memcpy(msg->credentials.userhash, attr->value, USERHASH_SIZE);
 		msg->credentials.enable_userhash = true;
 		break;
 	}

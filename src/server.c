@@ -66,18 +66,6 @@ static char *alloc_string_copy(const char *orig) {
 	return copy;
 }
 
-static void *alloc_copy(const void *orig, size_t size) {
-	if (!orig || !size)
-		return NULL;
-
-	char *copy = malloc(size);
-	if (!copy)
-		return NULL;
-
-	memcpy(copy, orig, size);
-	return copy;
-}
-
 static server_turn_alloc_t *find_allocation(server_turn_alloc_t allocs[], int size,
                                             const addr_record_t *record, bool allow_deleted) {
 	unsigned long key = addr_record_hash(record, true) % size;
@@ -170,58 +158,49 @@ juice_server_t *server_create(const juice_server_config_t *config) {
 		goto error;
 	}
 
+	if (server->config.max_allocations == 0)
+		server->config.max_allocations = SERVER_DEFAULT_MAX_ALLOCATIONS;
+
+	server->credentials = NULL;
+
 	if (server->config.credentials_count == 0) {
 		// TURN disabled
 		JLOG_INFO("TURN relaying disabled, STUN-only mode");
-		server->config.max_allocations = 0;
-		server->allocs_count = 0;
 		server->allocs = NULL;
+		server->allocs_count = 0;
 
 	} else {
 		// TURN enabled
-		if (server->config.max_allocations == 0)
-			server->config.max_allocations = SERVER_DEFAULT_MAX_ALLOCATIONS;
-
-		server->config.credentials =
-		    alloc_copy(server->config.credentials,
-		               server->config.credentials_count * sizeof(stun_credentials_t));
-		server->credentials_userhash = calloc(server->config.credentials_count, sizeof(uint8_t *));
-		if (!server->config.credentials || !server->credentials_userhash) {
-			JLOG_FATAL("Memory allocation for TURN credentials array failed");
-			goto error;
-		}
-
 		for (int i = 0; i < server->config.credentials_count; ++i) {
 			juice_server_credentials_t *credentials = server->config.credentials + i;
-			credentials->username =
-			    alloc_string_copy(credentials->username ? credentials->username : "");
-			credentials->password =
-			    alloc_string_copy(credentials->password ? credentials->password : "");
-			server->credentials_userhash[i] = malloc(HASH_SHA256_SIZE);
-			if (!credentials->username || !credentials->password ||
-			    !server->credentials_userhash[i]) {
-				JLOG_FATAL("Memory allocation for TURN credentials failed");
-				goto error;
-			}
-
-			stun_compute_userhash(credentials->username, realm, server->credentials_userhash[i]);
 
 			if (server->config.max_allocations < credentials->allocations_quota)
 				server->config.max_allocations = credentials->allocations_quota;
+
+			if (server_do_add_credentials(server, credentials, 0) == NULL) { // never expires
+				JLOG_FATAL("Failed to add TURN credentials");
+				goto error;
+			}
 		}
 
-		for (int i = 0; i < server->config.credentials_count; ++i) {
-			juice_server_credentials_t *credentials = server->config.credentials + i;
+		server->config.credentials = NULL; // Don't copy
+		server->config.credentials_count = 0;
+
+		juice_credentials_list_t *node = server->credentials;
+		while (node) {
+			juice_server_credentials_t *credentials = &node->credentials;
 			if (credentials->allocations_quota == 0) // unlimited
 				credentials->allocations_quota = server->config.max_allocations;
+
+			node = node->next;
 		}
 
-		server->allocs_count = (int)server->config.max_allocations;
-		server->allocs = calloc(server->allocs_count, sizeof(server_turn_alloc_t));
+		server->allocs = calloc(server->config.max_allocations, sizeof(server_turn_alloc_t));
 		if (!server->allocs) {
 			JLOG_FATAL("Memory allocation for TURN allocation table failed");
 			goto error;
 		}
+		server->allocs_count = (int)server->config.max_allocations;
 	}
 
 	server->config.port = udp_get_port(server->sock);
@@ -253,15 +232,16 @@ void server_do_destroy(juice_server_t *server) {
 	closesocket(server->sock);
 	mutex_destroy(&server->mutex);
 
-	for (int i = 0; i < server->config.credentials_count; ++i) {
-		juice_server_credentials_t *credentials = server->config.credentials + i;
-		free((void *)credentials->username);
-		free((void *)credentials->password);
-		free(server->credentials_userhash[i]);
+	juice_credentials_list_t *node = server->credentials;
+	while (node) {
+		juice_credentials_list_t *prev = node;
+		node = node->next;
+		free((void *)prev->credentials.username);
+		free((void *)prev->credentials.password);
+		free(prev);
 	}
+
 	free((void *)server->config.realm);
-	free(server->config.credentials);
-	free(server->credentials_userhash);
 	free(server);
 
 #ifdef _WIN32
@@ -287,6 +267,81 @@ uint16_t server_get_port(juice_server_t *server) {
 	uint16_t port = server->config.port; // updated at creation
 	mutex_unlock(&server->mutex);
 	return port;
+}
+
+int server_add_credentials(juice_server_t *server, const juice_server_credentials_t *credentials,
+                           timediff_t lifetime) {
+	mutex_lock(&server->mutex);
+
+	if (server->config.max_allocations < credentials->allocations_quota)
+		server->config.max_allocations = credentials->allocations_quota;
+
+	if (server->allocs_count < (int)server->config.max_allocations) {
+		if (server->allocs_count == 0)
+			JLOG_INFO("Enabling TURN relaying");
+
+		server_turn_alloc_t *reallocated =
+		    realloc(server->allocs, server->config.max_allocations * sizeof(server_turn_alloc_t));
+		if (!reallocated) {
+			JLOG_ERROR("Memory allocation for TURN allocation table failed");
+			mutex_unlock(&server->mutex);
+			return -1;
+		}
+		server->allocs_count = (int)server->config.max_allocations;
+		server->allocs = reallocated;
+	}
+
+	juice_credentials_list_t *node = server_do_add_credentials(server, credentials, lifetime);
+	if (!node) {
+		mutex_unlock(&server->mutex);
+		return -1;
+	}
+
+	if (node->credentials.allocations_quota == 0) // unlimited
+		node->credentials.allocations_quota = server->config.max_allocations;
+
+	mutex_unlock(&server->mutex);
+	return 0;
+}
+
+juice_credentials_list_t *server_do_add_credentials(juice_server_t *server,
+                                                    const juice_server_credentials_t *credentials,
+                                                    timediff_t lifetime) {
+	juice_credentials_list_t *node = calloc(1, sizeof(juice_credentials_list_t));
+	if (!node) {
+		JLOG_ERROR("Memory allocation for TURN credentials failed");
+		goto error;
+	}
+
+	node->credentials = *credentials;
+	node->credentials.username =
+	    alloc_string_copy(node->credentials.username ? node->credentials.username : "");
+	node->credentials.password =
+	    alloc_string_copy(node->credentials.password ? node->credentials.password : "");
+
+	if (!node->credentials.username || !node->credentials.password) {
+		JLOG_ERROR("Memory allocation for TURN credentials failed");
+		goto error;
+	}
+
+	stun_compute_userhash(node->credentials.username, server->config.realm, node->userhash);
+
+	if (lifetime > 0)
+		node->timestamp = current_timestamp() + lifetime;
+	else
+		node->timestamp = 0; // never expires
+
+	node->next = server->credentials;
+	server->credentials = node;
+	return server->credentials;
+
+error:
+	if (node) {
+		free((void *)node->credentials.username);
+		free((void *)node->credentials.password);
+		free(node);
+	}
+	return NULL;
 }
 
 void server_run(juice_server_t *server) {
@@ -521,19 +576,38 @@ int server_bookkeeping(juice_server_t *server, timestamp_t *next_timestamp) {
 	timestamp_t now = current_timestamp();
 	*next_timestamp = now + 60000;
 
+	// Handle allocations
 	for (int i = 0; i < server->allocs_count; ++i) {
 		server_turn_alloc_t *alloc = server->allocs + i;
 		if (alloc->state != SERVER_TURN_ALLOC_FULL)
 			continue;
 
-		if (alloc->timestamp > now) {
-			if (alloc->timestamp < *next_timestamp)
-				*next_timestamp = alloc->timestamp;
-		} else {
+		if (alloc->timestamp <= now) {
 			JLOG_DEBUG("Allocation timed out");
 			delete_allocation(alloc);
+			continue;
 		}
+
+		if (alloc->timestamp < *next_timestamp)
+			*next_timestamp = alloc->timestamp;
 	}
+
+	// Handle credentials
+	juice_credentials_list_t **pnode = &server->credentials; // We are deleting some elements
+	while (*pnode) {
+		if ((*pnode)->timestamp && (*pnode)->timestamp <= now) {
+			JLOG_DEBUG("Credentials timed out");
+			juice_credentials_list_t *next = (*pnode)->next;
+			free((void *)(*pnode)->credentials.username);
+			free((void *)(*pnode)->credentials.password);
+			free((*pnode));
+			*pnode = next;
+			continue;
+		}
+
+		pnode = &(*pnode)->next;
+	}
+
 	return 0;
 }
 
@@ -622,12 +696,16 @@ int server_dispatch_stun(juice_server_t *server, void *buf, size_t size, stun_me
 			                                NULL); // No username
 		}
 
+		timestamp_t now = current_timestamp();
 		if (msg->credentials.enable_userhash) {
-			for (int i = 0; i < server->config.credentials_count; ++i) {
-				if (const_time_memcmp(server->credentials_userhash[i], msg->credentials.userhash,
-				                      HASH_SHA256_SIZE) == 0) {
-					credentials = &server->config.credentials[i];
+			juice_credentials_list_t *node = server->credentials;
+			while (node) {
+				if ((!node->timestamp || node->timestamp < now) &&
+				    const_time_memcmp(node->userhash, msg->credentials.userhash, USERHASH_SIZE) ==
+				        0) {
+					credentials = &node->credentials;
 				}
+				node = node->next;
 			}
 
 			if (credentials)
@@ -637,11 +715,13 @@ int server_dispatch_stun(juice_server_t *server, void *buf, size_t size, stun_me
 				JLOG_WARN("No credentials for userhash");
 
 		} else {
-			for (int i = 0; i < server->config.credentials_count; ++i) {
-				if (const_time_strcmp(server->config.credentials[i].username,
-				                      msg->credentials.username) == 0) {
-					credentials = &server->config.credentials[i];
+			juice_credentials_list_t *node = server->credentials;
+			while (node) {
+				if ((!node->timestamp || node->timestamp < now) &&
+				    const_time_strcmp(node->credentials.username, msg->credentials.username) == 0) {
+					credentials = &node->credentials;
 				}
+				node = node->next;
 			}
 
 			if (!credentials)
