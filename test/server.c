@@ -74,6 +74,12 @@ int test_server() {
 	server_config.realm = "Juice test server";
 	server = juice_server_create(&server_config);
 
+	if(juice_server_get_port(server) != 3478) {
+		printf("juice_server_get_port failed\n");
+		juice_server_destroy(server);
+		return -1;
+	}
+
 	// Agent 1: Create agent
 	juice_config_t config1;
 	memset(&config1, 0, sizeof(config1));

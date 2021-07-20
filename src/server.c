@@ -284,7 +284,9 @@ void server_destroy(juice_server_t *server) {
 
 uint16_t server_get_port(juice_server_t *server) {
 	mutex_lock(&server->mutex);
-	return server->config.port; // updated at creation
+	uint16_t port = server->config.port; // updated at creation
+	mutex_unlock(&server->mutex);
+	return port;
 }
 
 void server_run(juice_server_t *server) {
