@@ -861,14 +861,14 @@ int server_process_turn_allocate(juice_server_t *server, const stun_message_t *m
 			JLOG_ERROR("No advertisable relayed address found");
 			goto error;
 		}
-	}
 
-	if (JLOG_INFO_ENABLED) {
-		char src_str[ADDR_MAX_STRING_LEN];
-		addr_record_to_string(src, src_str, ADDR_MAX_STRING_LEN);
-		char relayed_str[ADDR_MAX_STRING_LEN];
-		addr_record_to_string(relayed, relayed_str, ADDR_MAX_STRING_LEN);
-		JLOG_INFO("Allocated TURN relayed address %s for client %s", relayed_str, src_str);
+		if (JLOG_INFO_ENABLED) {
+			char src_str[ADDR_MAX_STRING_LEN];
+			addr_record_to_string(src, src_str, ADDR_MAX_STRING_LEN);
+			char relayed_str[ADDR_MAX_STRING_LEN];
+			addr_record_to_string(relayed, relayed_str, ADDR_MAX_STRING_LEN);
+			JLOG_INFO("Allocated TURN relayed address %s for client %s", relayed_str, src_str);
+		}
 	}
 
 	stun_message_t ans;
