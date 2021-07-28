@@ -45,14 +45,14 @@ The CMake library targets `libjuice` and `libjuice-static` respectively correspo
 ```bash
 $ cmake -B build
 $ cd build
-$ make -j2
+$ cmake --build .
 ```
 
 The option `USE_NETTLE` allows to use the Nettle library instead of the internal implementation for HMAC-SHA1:
 ```bash
 $ cmake -B build -DUSE_NETTLE=1
 $ cd build
-$ make -j2
+$ cmake --build .
 ```
 
 #### Microsoft Windows with MinGW cross-compilation
@@ -60,7 +60,7 @@ $ make -j2
 ```bash
 $ cmake -B build -DCMAKE_TOOLCHAIN_FILE=/usr/share/mingw/toolchain-x86_64-w64-mingw32.cmake # replace with your toolchain file
 $ cd build
-$ make -j2
+$ cmake --build .
 ```
 
 #### Microsoft Windows with Microsoft Visual C++
@@ -68,7 +68,7 @@ $ make -j2
 ```bash
 $ cmake -B build -G "NMake Makefiles"
 $ cd build
-$ nmake
+$ cmake --build .
 ```
 
 ### Build directly with Make (Linux only)

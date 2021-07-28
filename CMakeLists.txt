@@ -50,10 +50,12 @@ set(LIBJUICE_SOURCES
 	${CMAKE_CURRENT_SOURCE_DIR}/src/turn.c
 	${CMAKE_CURRENT_SOURCE_DIR}/src/udp.c
 )
+source_group("Source Files" FILES "${LIBJUICE_SOURCES}")
 
 set(LIBJUICE_HEADERS
 	${CMAKE_CURRENT_SOURCE_DIR}/include/juice/juice.h
 )
+source_group("Header Files" FILES "${LIBJUICE_HEADERS}")
 
 set(TESTS_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/test/main.c
@@ -68,6 +70,7 @@ set(TESTS_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/test/conflict.c
     ${CMAKE_CURRENT_SOURCE_DIR}/test/bind.c
 )
+source_group("Test Files" FILES "${TESTS_SOURCES}")
 
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
