@@ -359,6 +359,7 @@ int stun_write_value_mapped_address(void *buf, size_t size, const struct sockadd
                                     socklen_t addrlen, const uint8_t *mask);
 
 bool is_stun_datagram(const void *data, size_t size);
+bool is_stun_datagram2(const void *data, size_t size);
 
 int stun_read(void *data, size_t size, stun_message_t *msg);
 int stun_read_attr(const void *data, size_t size, stun_message_t *msg, uint8_t *begin,

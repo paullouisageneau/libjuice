@@ -511,6 +511,39 @@ bool is_stun_datagram(const void *data, size_t size) {
 	return true;
 }
 
+bool is_stun_datagram2(const void *data, size_t size) {
+	// RFC 8489: The most significant 2 bits of every STUN message MUST be zeroes. This can be used
+	// to differentiate STUN packets from other protocols when STUN is multiplexed with other
+	// protocols on the same port.
+	if (!size || *((uint8_t *)data) & 0xC0) {
+		JLOG_VERBOSE("Not a STUN message: first 2 bits are not zeroes");
+		return false;
+	}
+
+	if (size < sizeof(struct stun_header)) {
+		JLOG_VERBOSE("Not a STUN message: message too short, size=%zu", size);
+		return false;
+	}
+
+	const struct stun_header *header = data;
+	if (ntohl(header->magic) != STUN_MAGIC) {
+		JLOG_VERBOSE("Not a STUN message: magic number invalid");
+		return false;
+	}
+
+	// RFC 8489: The message length MUST contain the size of the message in bytes, not including the
+	// 20-byte STUN header.  Since all STUN attributes are padded to a multiple of 4 bytes, the last
+	// 2 bits of this field are always zero.  This provides another way to distinguish STUN packets
+	// from packets of other protocols.
+	const size_t length = ntohs(header->length);
+	if (length & 0x03) {
+		JLOG_VERBOSE("Not a STUN message: invalid length %zu not multiple of 4", length);
+		return false;
+	}
+
+	return true;
+}
+
 int stun_read(void *data, size_t size, stun_message_t *msg) {
 	memset(msg, 0, sizeof(*msg));
 

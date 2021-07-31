@@ -125,6 +125,9 @@ typedef struct agent_stun_entry {
 #else
 	atomic_flag armed;
 #endif
+
+	juice_transport_t transport;
+	socket_t sock;
 } agent_stun_entry_t;
 
 struct juice_agent {
@@ -173,6 +176,8 @@ int agent_set_remote_gathering_done(juice_agent_t *agent);
 int agent_send(juice_agent_t *agent, const char *data, size_t size, int ds);
 int agent_direct_send(juice_agent_t *agent, const addr_record_t *dst, const char *data, size_t size,
                       int ds);
+int agent_direct_send2(juice_agent_t *agent, const agent_stun_entry_t *entry, const char *data,
+                       size_t size, int ds);
 int agent_relay_send(juice_agent_t *agent, agent_stun_entry_t *entry, const addr_record_t *dst,
                      const char *data, size_t size, int ds);
 int agent_channel_send(juice_agent_t *agent, agent_stun_entry_t *entry, const addr_record_t *dst,
@@ -182,7 +187,7 @@ int agent_get_selected_candidate_pair(juice_agent_t *agent, ice_candidate_t *loc
                                       ice_candidate_t *remote);
 
 void agent_run(juice_agent_t *agent);
-int agent_recv(juice_agent_t *agent);
+int agent_recv(juice_agent_t *agent, agent_stun_entry_t *entry);
 int agent_input(juice_agent_t *agent, char *buf, size_t len, const addr_record_t *src,
                 const addr_record_t *relayed); // relayed may be NULL
 int agent_interrupt(juice_agent_t *agent);
