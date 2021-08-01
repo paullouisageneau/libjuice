@@ -199,7 +199,7 @@ JUICE_EXPORT uint16_t juice_server_get_port(juice_server_t *server) {
 
 JUICE_EXPORT int juice_server_add_credentials(juice_server_t *server,
                                               const juice_server_credentials_t *credentials,
-                                              unsigned int lifetime_ms) {
+                                              unsigned long lifetime_ms) {
 #ifndef NO_SERVER
 	if (!server || !credentials)
 		return JUICE_ERR_INVALID;
