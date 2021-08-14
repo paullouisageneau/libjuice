@@ -1,6 +1,6 @@
 cmake_minimum_required (VERSION 3.7)
 project (libjuice
-	VERSION 0.8.4
+	VERSION 0.8.5
 	LANGUAGES C)
 set(PROJECT_DESCRIPTION "JUICE is a UDP ICE library")
 
@@ -13,12 +13,6 @@ option(WARNINGS_AS_ERRORS "Treat warnings as errors" OFF)
 # Mitigations
 option(ENABLE_LOCALHOST_ADDRESS "List locahost addresses in candidates" OFF)
 option(ENABLE_LOCAL_ADDRESS_TRANSLATION "Translate local addresses to localhost" OFF)
-
-if(MSVC)
-	option(NO_ATOMICS "Force disabling C11 atomics" ON)
-else()
-	option(NO_ATOMICS "Force disabling C11 atomics" OFF)
-endif()
 
 set(C_STANDARD 11)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
@@ -113,11 +107,6 @@ endif()
 if (NO_SERVER)
 	target_compile_definitions(juice PRIVATE NO_SERVER)
 	target_compile_definitions(juice-static PRIVATE NO_SERVER)
-endif()
-
-if (NO_ATOMICS)
-	target_compile_definitions(juice PRIVATE NO_ATOMICS)
-	target_compile_definitions(juice-static PRIVATE NO_ATOMICS)
 endif()
 
 if(APPLE)
