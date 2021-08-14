@@ -105,13 +105,13 @@ static inline int mutex_init_impl(mutex_t *m, int flags) {
 
 #endif // ifdef _WIN32
 
-#ifndef __STDC_NO_ATOMICS__
+#if __STDC_VERSION__ >= 201112L && !defined(__STDC_NO_ATOMICS__)
 
 #include <stdatomic.h>
 #define atomic(T) _Atomic(T)
 #define atomic_ptr(T) _Atomic(T*)
 
-#else
+#else // no atomics
 
 // Since we don't need compare-and-swap, just assume store and load are atomic
 #define atomic(T) volatile T
@@ -120,7 +120,7 @@ static inline int mutex_init_impl(mutex_t *m, int flags) {
 #define atomic_load(a) (*(a))
 #define ATOMIC_VAR_INIT(v) (v)
 
-#endif // ifndef __STDC_NO_ATOMICS__
+#endif // if atomics
 
 #endif // JUICE_THREAD_H
 
