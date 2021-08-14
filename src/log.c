@@ -17,16 +17,12 @@
  */
 
 #include "log.h"
-#include "thread.h" // for mutexes
+#include "thread.h" // for mutexes and atomics
 
 #include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
-
-#ifndef NO_ATOMICS
-#include <stdatomic.h>
-#endif
 
 #ifndef _WIN32
 #include <unistd.h>
@@ -47,11 +43,7 @@ static const char *log_level_colors[] = {
 
 static mutex_t log_mutex = MUTEX_INITIALIZER;
 static volatile juice_log_cb_t log_cb = NULL;
-#ifdef NO_ATOMICS
-static volatile juice_log_level_t log_level = JUICE_LOG_LEVEL_WARN;
-#else
-static _Atomic(juice_log_level_t) log_level = JUICE_LOG_LEVEL_WARN;
-#endif
+static atomic(juice_log_level_t) log_level = ATOMIC_VAR_INIT(JUICE_LOG_LEVEL_WARN);
 
 static bool use_color(void) {
 #ifdef _WIN32
@@ -70,15 +62,7 @@ static int get_localtime(const time_t *t, struct tm *buf) {
 #endif
 }
 
-JUICE_EXPORT void juice_set_log_level(juice_log_level_t level) {
-#ifdef NO_ATOMICS
-	mutex_lock(&log_mutex);
-	log_level = level;
-	mutex_unlock(&log_mutex);
-#else
-	atomic_store(&log_level, level);
-#endif
-}
+JUICE_EXPORT void juice_set_log_level(juice_log_level_t level) { atomic_store(&log_level, level); }
 
 JUICE_EXPORT void juice_set_log_handler(juice_log_cb_t cb) {
 	mutex_lock(&log_mutex);
@@ -87,17 +71,7 @@ JUICE_EXPORT void juice_set_log_handler(juice_log_cb_t cb) {
 }
 
 bool juice_log_is_enabled(juice_log_level_t level) {
-	if (level == JUICE_LOG_LEVEL_NONE)
-		return false;
-
-#ifdef NO_ATOMICS
-	mutex_lock(&log_mutex);
-	bool enabled = level >= log_level;
-	mutex_unlock(&log_mutex);
-	return enabled;
-#else
-	return level >= atomic_load(&log_level);
-#endif
+	return level != JUICE_LOG_LEVEL_NONE && level >= atomic_load(&log_level);
 }
 
 void juice_log_write(juice_log_level_t level, const char *file, int line, const char *fmt, ...) {

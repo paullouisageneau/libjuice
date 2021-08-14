@@ -24,11 +24,6 @@ ifneq ($(NO_SERVER), 0)
         CFLAGS+=-DNO_SERVER
 endif
 
-NO_ATOMICS ?= 0
-ifneq ($(NO_ATOMICS), 0)
-        CFLAGS+=-DNO_ATOMICS
-endif
-
 ifneq ($(LIBS), "")
 INCLUDES+=$(if $(LIBS),$(shell pkg-config --cflags $(LIBS)),)
 LDLIBS+=$(if $(LIBS), $(shell pkg-config --libs $(LIBS)),)

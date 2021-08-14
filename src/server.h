@@ -21,10 +21,6 @@
 
 #ifndef NO_SERVER
 
-#ifdef __STDC_NO_ATOMICS__
-#define NO_ATOMICS
-#endif
-
 #include "addr.h"
 #include "juice.h"
 #include "socket.h"
