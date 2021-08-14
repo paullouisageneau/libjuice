@@ -103,6 +103,24 @@ static inline int mutex_init_impl(mutex_t *m, int flags) {
 #define thread_init(t, func, arg) pthread_create(t, NULL, func, arg)
 #define thread_join(t, res) (void)pthread_join(t, res)
 
-#endif
+#endif // ifdef _WIN32
+
+#if __STDC_VERSION__ >= 201112L && !defined(__STDC_NO_ATOMICS__)
+
+#include <stdatomic.h>
+#define atomic(T) _Atomic(T)
+#define atomic_ptr(T) _Atomic(T*)
+
+#else // no atomics
+
+// Since we don't need compare-and-swap, just assume store and load are atomic
+#define atomic(T) volatile T
+#define atomic_ptr(T) T* volatile
+#define atomic_store(a, v) (void)(*(a) = (v))
+#define atomic_load(a) (*(a))
+#define ATOMIC_VAR_INIT(v) (v)
+
+#endif // if atomics
 
 #endif // JUICE_THREAD_H
+

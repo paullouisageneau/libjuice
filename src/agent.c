@@ -126,12 +126,7 @@ juice_agent_t *agent_create(const juice_config_t *config) {
 	agent->mode = AGENT_MODE_UNKNOWN;
 	agent->sock = INVALID_SOCKET;
 	agent->send_ds = 0;
-
-#ifdef NO_ATOMICS
-	agent->selected_entry = NULL;
-#else
-	atomic_init(&agent->selected_entry, NULL);
-#endif
+	agent->selected_entry = ATOMIC_VAR_INIT(NULL);
 
 	ice_create_local_description(&agent->local);
 
@@ -381,23 +376,14 @@ int agent_set_remote_gathering_done(juice_agent_t *agent) {
 }
 
 int agent_send(juice_agent_t *agent, const char *data, size_t size, int ds) {
-	// For performance reasons, try not to lock the global mutex if the platform has atomics
-#ifdef NO_ATOMICS
-	mutex_lock(&agent->mutex);
-	agent_stun_entry_t *selected_entry = agent->selected_entry;
-	if (selected_entry)
-		selected_entry->armed = false; // so keepalive will be rescheduled
-	mutex_unlock(&agent->mutex);
-#else
+	// Do not lock the global mutex in the send path as it would be deadlock-prone for the user
 	agent_stun_entry_t *selected_entry = atomic_load(&agent->selected_entry);
-	if (selected_entry)
-		atomic_flag_clear(&selected_entry->armed); // so keepalive will be rescheduled
-#endif
-
 	if (!selected_entry) {
 		JLOG_ERROR("Send called before ICE is connected");
 		return -1;
 	}
+
+	atomic_store(&selected_entry->armed, false); // so keepalive will be rescheduled
 
 	if (selected_entry->relay_entry) {
 		// The datagram should be sent through the relay, use a channel to minimize overhead
@@ -867,12 +853,8 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 		}
 		// STUN keepalives
 		else if (entry->state == AGENT_STUN_ENTRY_STATE_SUCCEEDED_KEEPALIVE) {
-#ifdef NO_ATOMICS
-			bool must_arm = !entry->armed;
-#else
-			bool must_arm = !atomic_flag_test_and_set(&entry->armed);
-#endif
-			if (must_arm) {
+			bool armed = atomic_load(&entry->armed);
+			if (!armed) {
 				JLOG_VERBOSE("STUN entry %d: Must be rearmed", i);
 				agent_arm_transmission(agent, entry, STUN_KEEPALIVE_PERIOD);
 			}
@@ -970,11 +952,7 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 			for (int i = 0; i < agent->entries_count; ++i) {
 				agent_stun_entry_t *entry = agent->entries + i;
 				if (entry->pair == selected_pair) {
-#ifdef NO_ATOMICS
-					agent->selected_entry = entry;
-#else
 					atomic_store(&agent->selected_entry, entry);
-#endif
 					break;
 				}
 			}
@@ -2289,11 +2267,7 @@ int agent_unfreeze_candidate_pair(juice_agent_t *agent, ice_candidate_pair_t *pa
 }
 
 void agent_arm_transmission(juice_agent_t *agent, agent_stun_entry_t *entry, timediff_t delay) {
-#ifdef NO_ATOMICS
-	entry->armed = true;
-#else
-	atomic_flag_test_and_set(&entry->armed);
-#endif
+	atomic_store(&entry->armed, true);
 
 	if (entry->state != AGENT_STUN_ENTRY_STATE_SUCCEEDED_KEEPALIVE)
 		entry->state = AGENT_STUN_ENTRY_STATE_PENDING;
@@ -2378,11 +2352,7 @@ static inline bool entry_is_relayed(const agent_stun_entry_t *entry) {
 
 agent_stun_entry_t *agent_find_entry_from_record(juice_agent_t *agent, const addr_record_t *record,
                                                  const addr_record_t *relayed) {
-#ifdef NO_ATOMICS
-	agent_stun_entry_t *selected_entry = agent->selected_entry;
-#else
 	agent_stun_entry_t *selected_entry = atomic_load(&agent->selected_entry);
-#endif
 
 	if (agent->state == JUICE_STATE_COMPLETED && selected_entry) {
 		// As an optimization, try to match the selected entry first
