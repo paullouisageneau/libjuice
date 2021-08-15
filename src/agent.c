@@ -376,7 +376,7 @@ int agent_set_remote_gathering_done(juice_agent_t *agent) {
 }
 
 int agent_send(juice_agent_t *agent, const char *data, size_t size, int ds) {
-	// Do not lock the global mutex in the send path as it would be deadlock-prone for the user
+	// Try not to lock the global mutex in the send path
 	agent_stun_entry_t *selected_entry = atomic_load(&agent->selected_entry);
 	if (!selected_entry) {
 		JLOG_ERROR("Send called before ICE is connected");
