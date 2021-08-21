@@ -68,21 +68,23 @@ find_package(Threads REQUIRED)
 
 add_library(juice SHARED ${LIBJUICE_SOURCES})
 set_target_properties(juice PROPERTIES VERSION ${PROJECT_VERSION})
-target_compile_definitions(juice PRIVATE $<$<CONFIG:Release>:RELEASE=1>)
-
-target_include_directories(juice PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>)
+target_include_directories(juice PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include>)
 target_include_directories(juice PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include/juice)
 target_include_directories(juice PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_link_libraries(juice PUBLIC Threads::Threads)
+target_compile_definitions(juice PRIVATE $<$<CONFIG:Release>:RELEASE=1>)
+target_link_libraries(juice PRIVATE Threads::Threads)
 
 add_library(juice-static STATIC EXCLUDE_FROM_ALL ${LIBJUICE_SOURCES})
 set_target_properties(juice-static PROPERTIES VERSION ${PROJECT_VERSION})
-target_compile_definitions(juice-static PRIVATE $<$<CONFIG:Release>:RELEASE=1>)
-
-target_include_directories(juice-static PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_include_directories(juice-static PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include>)
 target_include_directories(juice-static PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include/juice)
 target_include_directories(juice-static PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_link_libraries(juice-static PUBLIC Threads::Threads)
+target_compile_definitions(juice-static PRIVATE $<$<CONFIG:Release>:RELEASE=1>)
+target_link_libraries(juice-static PRIVATE Threads::Threads)
 
 if(WIN32)
 	target_link_libraries(juice PRIVATE
@@ -115,7 +117,10 @@ if(APPLE)
 	target_include_directories(juice-static PRIVATE /usr/local/include)
 endif()
 
+set_target_properties(juice PROPERTIES EXPORT_NAME LibJuice)
 add_library(LibJuice::LibJuice ALIAS juice)
+
+set_target_properties(juice-static PROPERTIES EXPORT_NAME LibJuiceStatic)
 add_library(LibJuice::LibJuiceStatic ALIAS juice-static)
 
 install(TARGETS juice EXPORT libjuice-config
@@ -169,10 +174,14 @@ if(NOT NO_TESTS)
 	add_executable(juice-tests ${TESTS_SOURCES})
 	target_include_directories(juice-tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 	target_include_directories(juice-tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include/juice)
-	set_target_properties(juice-tests PROPERTIES VERSION ${PROJECT_VERSION})
-	set_target_properties(juice-tests PROPERTIES OUTPUT_NAME tests)
+
+	set_target_properties(juice-tests PROPERTIES
+		VERSION ${PROJECT_VERSION}
+		OUTPUT_NAME tests)
+
 	set_target_properties(juice-tests PROPERTIES
 		XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER com.github.paullouisageneau.libjuice.tests)
-	target_link_libraries(juice-tests juice)
+
+	target_link_libraries(juice-tests juice Threads::Threads)
 endif()
 
