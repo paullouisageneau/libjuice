@@ -115,7 +115,10 @@ if(APPLE)
 	target_include_directories(juice-static PRIVATE /usr/local/include)
 endif()
 
+set_target_properties(juice PROPERTIES EXPORT_NAME LibJuice)
 add_library(LibJuice::LibJuice ALIAS juice)
+
+set_target_properties(juice-static PROPERTIES EXPORT_NAME LibJuiceStatic)
 add_library(LibJuice::LibJuiceStatic ALIAS juice-static)
 
 install(TARGETS juice EXPORT libjuice-config
@@ -169,10 +172,14 @@ if(NOT NO_TESTS)
 	add_executable(juice-tests ${TESTS_SOURCES})
 	target_include_directories(juice-tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 	target_include_directories(juice-tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include/juice)
-	set_target_properties(juice-tests PROPERTIES VERSION ${PROJECT_VERSION})
-	set_target_properties(juice-tests PROPERTIES OUTPUT_NAME tests)
+
+	set_target_properties(juice-tests PROPERTIES
+		VERSION ${PROJECT_VERSION}
+		OUTPUT_NAME tests)
+
 	set_target_properties(juice-tests PROPERTIES
 		XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER com.github.paullouisageneau.libjuice.tests)
+
 	target_link_libraries(juice-tests juice Threads::Threads)
 endif()
 
