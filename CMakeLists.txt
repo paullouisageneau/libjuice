@@ -173,6 +173,6 @@ if(NOT NO_TESTS)
 	set_target_properties(juice-tests PROPERTIES OUTPUT_NAME tests)
 	set_target_properties(juice-tests PROPERTIES
 		XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER com.github.paullouisageneau.libjuice.tests)
-	target_link_libraries(juice-tests juice)
+	target_link_libraries(juice-tests juice Threads::Threads)
 endif()
 
