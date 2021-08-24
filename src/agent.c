@@ -1402,8 +1402,12 @@ int agent_process_stun_binding(juice_agent_t *agent, const stun_message_t *msg,
 		break;
 	}
 	case STUN_CLASS_RESP_ERROR: {
-		if (msg->error_code != STUN_ERROR_INTERNAL_VALIDATION_FAILED)
-			JLOG_WARN("Got STUN Binding error response, code=%u", (unsigned int)msg->error_code);
+		if (msg->error_code != STUN_ERROR_INTERNAL_VALIDATION_FAILED) {
+			if(msg->error_code == 487)
+				JLOG_DEBUG("Got STUN Binding error response, code=%u", (unsigned int)msg->error_code);
+			else
+				JLOG_WARN("Got STUN Binding error response, code=%u", (unsigned int)msg->error_code);
+		}
 
 		if (entry->type == AGENT_STUN_ENTRY_TYPE_CHECK) {
 			if (msg->error_code == 487) {
