@@ -1424,15 +1424,15 @@ int agent_process_stun_binding(juice_agent_t *agent, const stun_message_t *msg,
 					agent_update_candidate_pairs(agent);
 
 					juice_random(&agent->ice_tiebreaker, sizeof(agent->ice_tiebreaker));
+					if (entry->state != AGENT_STUN_ENTRY_STATE_IDLE) { // Check might not be started
+						entry->state = AGENT_STUN_ENTRY_STATE_PENDING;
+						agent_arm_transmission(agent, entry, 0);
+					}
 				} else {
 					JLOG_DEBUG("Already switched roles to %s as requested",
 					           agent->mode == AGENT_MODE_CONTROLLING ? "controlling"
 					                                                 : "controlled");
 				}
-
-				entry->state = AGENT_STUN_ENTRY_STATE_PENDING;
-				agent_arm_transmission(agent, entry, 0);
-
 			} else {
 				// 7.2.5.2.4. Unrecoverable STUN Response:
 				// If the Binding request generates a STUN error response that is unrecoverable
