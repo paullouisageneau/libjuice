@@ -1491,8 +1491,8 @@ int agent_send_stun_binding(juice_agent_t *agent, agent_stun_entry_t *entry, stu
 		switch (msg_class) {
 		case STUN_CLASS_REQUEST: {
 			if (*agent->remote.ice_ufrag == '\0' || *agent->remote.ice_pwd == '\0') {
-				JLOG_ERROR("Attempted to send STUN Binding to peer without remote ICE credentials");
-				return -1;
+				JLOG_DEBUG("Missing remote ICE credentials, dropping STUN binding request");
+				return 0;
 			}
 			snprintf(msg.credentials.username, STUN_MAX_USERNAME_LEN, "%s:%s",
 			         agent->remote.ice_ufrag, agent->local.ice_ufrag);
