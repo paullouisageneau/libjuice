@@ -1424,15 +1424,15 @@ int agent_process_stun_binding(juice_agent_t *agent, const stun_message_t *msg,
 					agent_update_candidate_pairs(agent);
 
 					juice_random(&agent->ice_tiebreaker, sizeof(agent->ice_tiebreaker));
+					if (entry->state != AGENT_STUN_ENTRY_STATE_IDLE) { // Check might not be started
+						entry->state = AGENT_STUN_ENTRY_STATE_PENDING;
+						agent_arm_transmission(agent, entry, 0);
+					}
 				} else {
 					JLOG_DEBUG("Already switched roles to %s as requested",
 					           agent->mode == AGENT_MODE_CONTROLLING ? "controlling"
 					                                                 : "controlled");
 				}
-
-				entry->state = AGENT_STUN_ENTRY_STATE_PENDING;
-				agent_arm_transmission(agent, entry, 0);
-
 			} else {
 				// 7.2.5.2.4. Unrecoverable STUN Response:
 				// If the Binding request generates a STUN error response that is unrecoverable
@@ -1491,8 +1491,8 @@ int agent_send_stun_binding(juice_agent_t *agent, agent_stun_entry_t *entry, stu
 		switch (msg_class) {
 		case STUN_CLASS_REQUEST: {
 			if (*agent->remote.ice_ufrag == '\0' || *agent->remote.ice_pwd == '\0') {
-				JLOG_ERROR("Attempted to send STUN Binding to peer without remote ICE credentials");
-				return -1;
+				JLOG_DEBUG("Missing remote ICE credentials, dropping STUN binding request");
+				return 0;
 			}
 			snprintf(msg.credentials.username, STUN_MAX_USERNAME_LEN, "%s:%s",
 			         agent->remote.ice_ufrag, agent->local.ice_ufrag);
