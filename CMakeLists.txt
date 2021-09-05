@@ -138,6 +138,14 @@ install(
 	DESTINATION share/cmake/LibJuice
 )
 
+include(CMakePackageConfigHelpers)
+write_basic_package_version_file(
+    ${CMAKE_BINARY_DIR}/LibJuiceConfigVersion.cmake
+    VERSION ${PROJECT_VERSION}
+    COMPATIBILITY SameMajorVersion)
+install(FILES ${CMAKE_BINARY_DIR}/LibJuiceConfigVersion.cmake
+    DESTINATION share/cmake/LibJuice)
+
 if(NOT NO_EXPORT_HEADER AND CMAKE_VERSION VERSION_GREATER_EQUAL "3.12")
 	include(GenerateExportHeader)
 	generate_export_header(juice)
