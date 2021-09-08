@@ -123,7 +123,7 @@ add_library(LibJuice::LibJuice ALIAS juice)
 set_target_properties(juice-static PROPERTIES EXPORT_NAME LibJuiceStatic)
 add_library(LibJuice::LibJuiceStatic ALIAS juice-static)
 
-install(TARGETS juice EXPORT LibJuiceConfig
+install(TARGETS juice EXPORT LibJuiceTargets
 	RUNTIME DESTINATION bin
 	LIBRARY DESTINATION lib
 	ARCHIVE DESTINATION lib
@@ -131,11 +131,18 @@ install(TARGETS juice EXPORT LibJuiceConfig
 
 install(FILES ${LIBJUICE_HEADERS} DESTINATION include/juice)
 
+# Export Targets
 install(
-	EXPORT LibJuiceConfig
-	FILE LibJuiceConfig.cmake
+	EXPORT LibJuiceTargets
+	FILE LibJuiceTargets.cmake
 	NAMESPACE LibJuice::
-	DESTINATION share/cmake/LibJuice
+	DESTINATION lib/cmake/LibJuice
+)
+
+# Export config
+install(
+        FILES ${CMAKE_CURRENT_SOURCE_DIR}/cmake/LibJuiceConfig.cmake
+        DESTINATION lib/cmake/LibJuice
 )
 
 include(CMakePackageConfigHelpers)
@@ -144,7 +151,7 @@ write_basic_package_version_file(
     VERSION ${PROJECT_VERSION}
     COMPATIBILITY SameMajorVersion)
 install(FILES ${CMAKE_BINARY_DIR}/LibJuiceConfigVersion.cmake
-    DESTINATION share/cmake/LibJuice)
+    DESTINATION lib/cmake/LibJuice)
 
 if(NOT NO_EXPORT_HEADER AND CMAKE_VERSION VERSION_GREATER_EQUAL "3.12")
 	include(GenerateExportHeader)
