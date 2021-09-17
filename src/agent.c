@@ -625,27 +625,21 @@ void agent_run(juice_agent_t *agent) {
 		if (timediff < 0)
 			timediff = 0;
 
-		JLOG_VERBOSE("Setting select timeout to %ld ms", (long)timediff);
-		struct timeval timeout;
-		timeout.tv_sec = (long)(timediff / 1000);
-		timeout.tv_usec = (long)((timediff % 1000) * 1000);
+		struct pollfd pfd[1];
+		pfd[0].fd = agent->sock;
+		pfd[0].events = POLLIN;
 
-		fd_set readfds;
-		FD_ZERO(&readfds);
-		FD_SET(agent->sock, &readfds);
-		int n = SOCKET_TO_INT(agent->sock) + 1;
-
-		JLOG_VERBOSE("Entering select");
+		JLOG_VERBOSE("Entering poll for %d ms", (int)timediff);
 		mutex_unlock(&agent->mutex);
-		int ret = select(n, &readfds, NULL, NULL, &timeout);
+		int ret = poll(pfd, 1, (int)timediff);
 		mutex_lock(&agent->mutex);
-		JLOG_VERBOSE("Leaving select");
+		JLOG_VERBOSE("Leaving poll");
 		if (ret < 0) {
 			if (sockerrno == SEINTR || sockerrno == SEAGAIN) {
-				JLOG_VERBOSE("select interrupted");
+				JLOG_VERBOSE("poll interrupted");
 				continue;
 			} else {
-				JLOG_FATAL("select failed, errno=%d", sockerrno);
+				JLOG_FATAL("poll failed, errno=%d", sockerrno);
 				break;
 			}
 		}
@@ -655,7 +649,12 @@ void agent_run(juice_agent_t *agent) {
 			break;
 		}
 
-		if (FD_ISSET(agent->sock, &readfds)) {
+		if(pfd[0].revents & POLLNVAL || pfd[0].revents & POLLERR) {
+			JLOG_FATAL("Error when polling socket");
+			break;
+		}
+
+		if (pfd[0].revents & POLLIN) {
 			if (agent_recv(agent) < 0)
 				break;
 		}

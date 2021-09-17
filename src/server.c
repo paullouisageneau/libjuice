@@ -345,6 +345,13 @@ error:
 }
 
 void server_run(juice_server_t *server) {
+	const nfds_t nfd = 1 + server->allocs_count;
+	struct pollfd *pfd = calloc(nfd, sizeof(struct pollfd));
+	if(!pfd) {
+		JLOG_FATAL("alloc for poll descriptors failed");
+		return;
+	}
+
 	mutex_lock(&server->mutex);
 
 	// Main loop
@@ -354,60 +361,59 @@ void server_run(juice_server_t *server) {
 		if (timediff < 0)
 			timediff = 0;
 
-		JLOG_VERBOSE("Setting select timeout to %ld ms", (long)timediff);
-		struct timeval timeout;
-		timeout.tv_sec = (long)(timediff / 1000);
-		timeout.tv_usec = (long)((timediff % 1000) * 1000);
+		pfd[0].fd = server->sock;
+		pfd[0].events = POLLIN;
 
-		fd_set readfds;
-		FD_ZERO(&readfds);
-		FD_SET(server->sock, &readfds);
-		int max = SOCKET_TO_INT(server->sock);
-
-		int count = 1;
 		for (int i = 0; i < server->allocs_count; ++i) {
 			server_turn_alloc_t *alloc = server->allocs + i;
 			if (alloc->state == SERVER_TURN_ALLOC_FULL) {
-				++count;
-				FD_SET(alloc->sock, &readfds);
-				if (max < SOCKET_TO_INT(alloc->sock))
-					max = SOCKET_TO_INT(alloc->sock);
+				pfd[1 + i].fd = alloc->sock;
+				pfd[1 + i].events = POLLIN;
+			} else {
+				pfd[1 + i].fd = -1; // ignore
 			}
 		}
 
-		JLOG_VERBOSE("Entering select on %d socket(s)", count);
+		JLOG_VERBOSE("Entering poll for %d ms", (int)timediff);
 		mutex_unlock(&server->mutex);
-		int ret = select(max + 1, &readfds, NULL, NULL, &timeout);
+		int ret = poll(pfd, nfd, (int)timediff);
 		mutex_lock(&server->mutex);
-		JLOG_VERBOSE("Leaving select");
+		JLOG_VERBOSE("Leaving poll");
 		if (ret < 0) {
 			if (sockerrno == SEINTR || sockerrno == SEAGAIN) {
-				JLOG_VERBOSE("select interrupted");
+				JLOG_VERBOSE("poll interrupted");
 				continue;
 			} else {
-				JLOG_FATAL("select failed, errno=%d", sockerrno);
+				JLOG_FATAL("poll failed, errno=%d", sockerrno);
 				break;
 			}
 		}
 
 		if (server->thread_stopped) {
-			JLOG_VERBOSE("Agent destruction requested");
+			JLOG_VERBOSE("Server destruction requested");
 			break;
+		}
+
+		if (pfd[0].revents & POLLNVAL || pfd[0].revents & POLLERR) {
+			JLOG_FATAL("Error when polling server socket");
+			break;
+		}
+
+		if (pfd[0].revents & POLLIN) {
+			if (server_recv(server) < 0)
+				break;
 		}
 
 		for (int i = 0; i < server->allocs_count; ++i) {
 			server_turn_alloc_t *alloc = server->allocs + i;
-			if (alloc->state == SERVER_TURN_ALLOC_FULL && FD_ISSET(alloc->sock, &readfds))
+			if (alloc->state == SERVER_TURN_ALLOC_FULL && pfd[1 + i].revents & POLLIN)
 				server_forward(server, alloc);
 		}
-
-		if (FD_ISSET(server->sock, &readfds)) {
-			if (server_recv(server) < 0)
-				break;
-		}
 	}
+
 	JLOG_DEBUG("Leaving server thread");
 	mutex_unlock(&server->mutex);
+	free(pfd);
 }
 
 int server_send(juice_server_t *server, const addr_record_t *dst, const char *data, size_t size) {
