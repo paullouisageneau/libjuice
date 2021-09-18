@@ -54,6 +54,8 @@ static uint16_t get_next_port_in_range(uint16_t begin, uint16_t end) {
 }
 
 socket_t udp_create_socket(const udp_socket_config_t *config) {
+	socket_t sock = INVALID_SOCKET;
+
 	// Obtain local Address
 	struct addrinfo *ai_list = NULL;
 	struct addrinfo hints;
@@ -77,7 +79,7 @@ socket_t udp_create_socket(const udp_socket_config_t *config) {
 	}
 
 	// Create socket
-	socket_t sock = socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
+	sock = socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
 	if (sock == INVALID_SOCKET) {
 		JLOG_ERROR("UDP socket creation failed, errno=%d", sockerrno);
 		goto error;
@@ -168,6 +170,9 @@ socket_t udp_create_socket(const udp_socket_config_t *config) {
 
 error:
 	freeaddrinfo(ai_list);
+	if(sock != INVALID_SOCKET)
+		closesocket(sock);
+
 	return INVALID_SOCKET;
 }
 
