@@ -1,6 +1,6 @@
 cmake_minimum_required (VERSION 3.7)
 project (libjuice
-	VERSION 0.8.6
+	VERSION 0.9.0
 	LANGUAGES C)
 set(PROJECT_DESCRIPTION "JUICE is a UDP ICE library")
 
