@@ -33,7 +33,7 @@
 #include <stdint.h>
 
 #define SERVER_DEFAULT_REALM "libjuice"
-#define SERVER_DEFAULT_MAX_ALLOCATIONS 1024
+#define SERVER_DEFAULT_MAX_ALLOCATIONS 1000 // should be 1024-1 or less to be safe for poll()
 #define SERVER_DEFAULT_MAX_PEERS 16
 
 #define SERVER_NONCE_KEY_SIZE 32
