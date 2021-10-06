@@ -445,7 +445,6 @@ int agent_relay_send(juice_agent_t *agent, agent_stun_entry_t *entry, const addr
 	msg.peer = *dst;
 	msg.data = data;
 	msg.data_size = size;
-	msg.dont_fragment = true;
 
 	char buffer[BUFFER_SIZE];
 	size = stun_write(buffer, BUFFER_SIZE, &msg, NULL); // no password
@@ -1766,7 +1765,6 @@ int agent_send_turn_allocate_request(juice_agent_t *agent, const agent_stun_entr
 	// Include allocation attributes in Allocate request only
 	if (method == STUN_METHOD_ALLOCATE) {
 		msg.requested_transport = true;
-		msg.dont_fragment = true;
 	}
 
 	const char *password = *msg.credentials.nonce != '\0' ? entry->turn->password : NULL;
