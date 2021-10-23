@@ -347,7 +347,7 @@ error:
 void server_run(juice_server_t *server) {
 	const nfds_t nfd = 1 + server->allocs_count;
 	struct pollfd *pfd = calloc(nfd, sizeof(struct pollfd));
-	if(!pfd) {
+	if (!pfd) {
 		JLOG_FATAL("alloc for poll descriptors failed");
 		return;
 	}
@@ -562,16 +562,12 @@ int server_interrupt(juice_server_t *server) {
 		return -1;
 	}
 
-	addr_record_t local;
-	if (udp_get_local_addr(server->sock, AF_INET, &local) < 0) {
-		mutex_unlock(&server->mutex);
-		return -1;
-	}
-
-	if (server_send(server, &local, NULL, 0) < 0) {
-		JLOG_WARN("Failed to interrupt thread by triggering socket, errno=%d", sockerrno);
-		mutex_unlock(&server->mutex);
-		return -1;
+	if (udp_sendto_self(server->sock, NULL, 0) < 0) {
+		if (sockerrno != SEAGAIN && sockerrno != SEWOULDBLOCK) {
+			JLOG_WARN("Failed to interrupt thread by triggering socket, errno=%d", sockerrno);
+			mutex_unlock(&server->mutex);
+			return -1;
+		}
 	}
 
 	mutex_unlock(&server->mutex);

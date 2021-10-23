@@ -648,7 +648,7 @@ void agent_run(juice_agent_t *agent) {
 			break;
 		}
 
-		if(pfd[0].revents & POLLNVAL || pfd[0].revents & POLLERR) {
+		if (pfd[0].revents & POLLNVAL || pfd[0].revents & POLLERR) {
 			JLOG_FATAL("Error when polling socket");
 			break;
 		}
@@ -759,18 +759,17 @@ int agent_interrupt(juice_agent_t *agent) {
 		return -1;
 	}
 
-	addr_record_t local;
-	if (udp_get_local_addr(agent->sock, AF_INET, &local) < 0) {
-		mutex_unlock(&agent->mutex);
-		return -1;
+	mutex_lock(&agent->send_mutex);
+	if (udp_sendto_self(agent->sock, NULL, 0) < 0) {
+		if (sockerrno != SEAGAIN && sockerrno != SEWOULDBLOCK) {
+			JLOG_WARN("Failed to interrupt thread by triggering socket, errno=%d", sockerrno);
+			mutex_unlock(&agent->send_mutex);
+			mutex_unlock(&agent->mutex);
+			return -1;
+		}
 	}
 
-	if (agent_direct_send(agent, &local, NULL, 0, 0) < 0) {
-		JLOG_WARN("Failed to interrupt thread by triggering socket");
-		mutex_unlock(&agent->mutex);
-		return -1;
-	}
-
+	mutex_unlock(&agent->send_mutex);
 	mutex_unlock(&agent->mutex);
 	return 0;
 }
@@ -1401,10 +1400,12 @@ int agent_process_stun_binding(juice_agent_t *agent, const stun_message_t *msg,
 	}
 	case STUN_CLASS_RESP_ERROR: {
 		if (msg->error_code != STUN_ERROR_INTERNAL_VALIDATION_FAILED) {
-			if(msg->error_code == 487)
-				JLOG_DEBUG("Got STUN Binding error response, code=%u", (unsigned int)msg->error_code);
+			if (msg->error_code == 487)
+				JLOG_DEBUG("Got STUN Binding error response, code=%u",
+				           (unsigned int)msg->error_code);
 			else
-				JLOG_WARN("Got STUN Binding error response, code=%u", (unsigned int)msg->error_code);
+				JLOG_WARN("Got STUN Binding error response, code=%u",
+				          (unsigned int)msg->error_code);
 		}
 
 		if (entry->type == AGENT_STUN_ENTRY_TYPE_CHECK) {

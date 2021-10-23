@@ -170,7 +170,7 @@ socket_t udp_create_socket(const udp_socket_config_t *config) {
 
 error:
 	freeaddrinfo(ai_list);
-	if(sock != INVALID_SOCKET)
+	if (sock != INVALID_SOCKET)
 		closesocket(sock);
 
 	return INVALID_SOCKET;
@@ -214,6 +214,33 @@ int udp_sendto(socket_t sock, const char *data, size_t size, const addr_record_t
 	return sendto(sock, data, (socklen_t)size, 0, (const struct sockaddr *)&tmp.addr, tmp.len);
 #else
 	return sendto(sock, data, size, 0, (const struct sockaddr *)&dst->addr, dst->len);
+#endif
+}
+
+int udp_sendto_self(socket_t sock, const char *data, size_t size) {
+	addr_record_t local;
+	if (udp_get_local_addr(sock, AF_UNSPEC, &local) < 0)
+		return -1;
+
+	int ret;
+#ifndef __linux__
+	// We know local has the same address family as sock here
+	ret = sendto(sock, data, (socklen_t)size, 0, (const struct sockaddr *)&local.addr, local.len);
+#else
+	ret = sendto(sock, data, size, 0, (const struct sockaddr *)&local.addr, local.len);
+#endif
+	if(ret >= 0 || local.addr.ss_family != AF_INET6)
+		return ret;
+
+	// Fallback as IPv6 may be disabled on the loopback interface
+	if (udp_get_local_addr(sock, AF_INET, &local) < 0)
+		return -1;
+
+#ifndef __linux__
+	addr_map_inet6_v4mapped(&local.addr, &local.len);
+	return sendto(sock, data, (socklen_t)size, 0, (const struct sockaddr *)&local.addr, local.len);
+#else
+	return sendto(sock, data, size, 0, (const struct sockaddr *)&local.addr, local.len);
 #endif
 }
 
@@ -286,10 +313,14 @@ int udp_get_local_addr(socket_t sock, int family_hint, addr_record_t *record) {
 		return -1;
 
 	// If the socket is bound to a particular address, return it
-	if(!addr_is_any((struct sockaddr *)&record->addr))
-		return 0;
+	if (!addr_is_any((struct sockaddr *)&record->addr)) {
+		if(record->addr.ss_family == AF_INET && family_hint == AF_INET6)
+			addr_map_inet6_v4mapped(&record->addr, &record->len);
 
-	if(record->addr.ss_family == AF_INET6 && family_hint == AF_INET) {
+		return 0;
+	}
+
+	if (record->addr.ss_family == AF_INET6 && family_hint == AF_INET) {
 		// Generate an IPv4 instead (socket is listening to any IPv4 or IPv6)
 
 		uint16_t port = addr_get_port((struct sockaddr *)&record->addr);
@@ -321,6 +352,10 @@ int udp_get_local_addr(socket_t sock, int family_hint, addr_record_t *record) {
 		// Ignore
 		break;
 	}
+
+	if(record->addr.ss_family == AF_INET && family_hint == AF_INET6)
+		addr_map_inet6_v4mapped(&record->addr, &record->len);
+
 	return 0;
 }
 
