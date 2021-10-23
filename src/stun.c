@@ -442,7 +442,7 @@ int stun_write_value_mapped_address(void *buf, size_t size, const struct sockadd
 		value->family = STUN_ADDRESS_FAMILY_IPV4;
 		if (size < sizeof(struct stun_value_mapped_address) + 4)
 			return -1;
-		if (addrlen < sizeof(struct sockaddr_in))
+		if (addrlen < (socklen_t)sizeof(struct sockaddr_in))
 			return -1;
 		JLOG_VERBOSE("Writing IPv4 address");
 		const struct sockaddr_in *sin = (const struct sockaddr_in *)addr;
@@ -456,7 +456,7 @@ int stun_write_value_mapped_address(void *buf, size_t size, const struct sockadd
 		value->family = STUN_ADDRESS_FAMILY_IPV6;
 		if (size < sizeof(struct stun_value_mapped_address) + 16)
 			return -1;
-		if (addrlen < sizeof(struct sockaddr_in6))
+		if (addrlen < (socklen_t)sizeof(struct sockaddr_in6))
 			return -1;
 		JLOG_VERBOSE("Writing IPv6 address");
 		const struct sockaddr_in6 *sin6 = (const struct sockaddr_in6 *)addr;

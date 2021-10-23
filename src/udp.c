@@ -222,6 +222,8 @@ int udp_set_diffserv(socket_t sock, int ds) {
 	// IP_TOS has been intentionally broken on Windows in favor of a convoluted proprietary
 	// mechanism called qWave. Thank you Microsoft!
 	// TODO: Investigate if DSCP can be still set directly without administrator flow configuration.
+	(void)sock;
+	(void)ds;
 	JLOG_INFO("IP Differentiated Services are not supported on Windows");
 	return -1;
 #else
