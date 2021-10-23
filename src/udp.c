@@ -229,7 +229,7 @@ int udp_sendto_self(socket_t sock, const char *data, size_t size) {
 #else
 	ret = sendto(sock, data, size, 0, (const struct sockaddr *)&local.addr, local.len);
 #endif
-	if(ret >= 0 || local.addr.ss_family != AF_INET6)
+	if (ret >= 0 || local.addr.ss_family != AF_INET6)
 		return ret;
 
 	// Fallback as IPv6 may be disabled on the loopback interface
@@ -314,7 +314,7 @@ int udp_get_local_addr(socket_t sock, int family_hint, addr_record_t *record) {
 
 	// If the socket is bound to a particular address, return it
 	if (!addr_is_any((struct sockaddr *)&record->addr)) {
-		if(record->addr.ss_family == AF_INET && family_hint == AF_INET6)
+		if (record->addr.ss_family == AF_INET && family_hint == AF_INET6)
 			addr_map_inet6_v4mapped(&record->addr, &record->len);
 
 		return 0;
@@ -353,7 +353,7 @@ int udp_get_local_addr(socket_t sock, int family_hint, addr_record_t *record) {
 		break;
 	}
 
-	if(record->addr.ss_family == AF_INET && family_hint == AF_INET6)
+	if (record->addr.ss_family == AF_INET && family_hint == AF_INET6)
 		addr_map_inet6_v4mapped(&record->addr, &record->len);
 
 	return 0;
@@ -465,7 +465,9 @@ int udp_get_addrs(socket_t sock, addr_record_t *records, size_t count) {
 	for (int i = 0; i < list->iAddressCount; ++i) {
 		struct sockaddr *sa = list->Address[i].lpSockaddr;
 		socklen_t len = list->Address[i].iSockaddrLength;
-		if ((sa->sa_family == AF_INET || sa->sa_family == AF_INET6) && !addr_is_local(sa) &&
+		if ((sa->sa_family == AF_INET ||
+		     (sa->sa_family == AF_INET6 && bound.addr.ss_family == AF_INET6)) &&
+		    !addr_is_local(sa) &&
 		    !(has_temp_inet6 && sa->sa_family == AF_INET6 && !addr_is_temp_inet6(sa))) {
 			if (!has_duplicate_addr(sa, records, current - records)) {
 				++ret;
@@ -510,7 +512,10 @@ int udp_get_addrs(socket_t sock, addr_record_t *records, size_t count) {
 
 		struct sockaddr *sa = ifa->ifa_addr;
 		socklen_t len;
-		if (sa && (sa->sa_family == AF_INET || sa->sa_family == AF_INET6) && !addr_is_local(sa) &&
+		if (sa &&
+		    (sa->sa_family == AF_INET ||
+		     (sa->sa_family == AF_INET6 && bound.addr.ss_family == AF_INET6)) &&
+		    !addr_is_local(sa) &&
 		    !(has_temp_inet6 && sa->sa_family == AF_INET6 && !addr_is_temp_inet6(sa)) &&
 		    (len = addr_get_len(sa)) > 0) {
 			if (!has_duplicate_addr(sa, records, current - records)) {
@@ -557,42 +562,44 @@ int udp_get_addrs(socket_t sock, addr_record_t *records, size_t count) {
 		}
 	}
 
-	char hostname[HOST_NAME_MAX];
-	if (gethostname(hostname, HOST_NAME_MAX))
-		strcpy(hostname, "localhost");
+	if (bound.addr.ss_family == AF_INET6) {
+		char hostname[HOST_NAME_MAX];
+		if (gethostname(hostname, HOST_NAME_MAX))
+			strcpy(hostname, "localhost");
 
-	char service[8];
-	snprintf(service, 8, "%hu", port);
+		char service[8];
+		snprintf(service, 8, "%hu", port);
 
-	struct addrinfo *ai_list = NULL;
-	struct addrinfo hints;
-	memset(&hints, 0, sizeof(hints));
-	hints.ai_family = AF_INET6;
-	hints.ai_socktype = SOCK_DGRAM;
-	hints.ai_protocol = 0;
-	hints.ai_flags = AI_ADDRCONFIG | AI_NUMERICSERV;
-	if (getaddrinfo(hostname, service, &hints, &ai_list) == 0) {
-		bool has_temp_inet6 = false;
-		for (struct addrinfo *ai = ai_list; ai; ai = ai->ai_next) {
-			if (addr_is_temp_inet6(ai->ai_addr)) {
-				has_temp_inet6 = true;
-				break;
+		struct addrinfo *ai_list = NULL;
+		struct addrinfo hints;
+		memset(&hints, 0, sizeof(hints));
+		hints.ai_family = AF_INET6;
+		hints.ai_socktype = SOCK_DGRAM;
+		hints.ai_protocol = 0;
+		hints.ai_flags = AI_ADDRCONFIG | AI_NUMERICSERV;
+		if (getaddrinfo(hostname, service, &hints, &ai_list) == 0) {
+			bool has_temp_inet6 = false;
+			for (struct addrinfo *ai = ai_list; ai; ai = ai->ai_next) {
+				if (addr_is_temp_inet6(ai->ai_addr)) {
+					has_temp_inet6 = true;
+					break;
+				}
 			}
-		}
-		for (struct addrinfo *ai = ai_list; ai; ai = ai->ai_next) {
-			if (!addr_is_local(ai->ai_addr) &&
-			    !(has_temp_inet6 && !addr_is_temp_inet6(ai->ai_addr))) {
-				if (!has_duplicate_addr(ai->ai_addr, records, current - records)) {
-					++ret;
-					if (current != end) {
-						memcpy(&current->addr, ai->ai_addr, ai->ai_addrlen);
-						current->len = ai->ai_addrlen;
-						++current;
+			for (struct addrinfo *ai = ai_list; ai; ai = ai->ai_next) {
+				if (!addr_is_local(ai->ai_addr) &&
+				    !(has_temp_inet6 && !addr_is_temp_inet6(ai->ai_addr))) {
+					if (!has_duplicate_addr(ai->ai_addr, records, current - records)) {
+						++ret;
+						if (current != end) {
+							memcpy(&current->addr, ai->ai_addr, ai->ai_addrlen);
+							current->len = ai->ai_addrlen;
+							++current;
+						}
 					}
 				}
 			}
+			freeaddrinfo(ai_list);
 		}
-		freeaddrinfo(ai_list);
 	}
 #endif
 #endif
