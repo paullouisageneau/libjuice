@@ -73,11 +73,17 @@ bool addr_is_any(struct sockaddr *sa) {
 	}
 	case AF_INET6: {
 		const struct sockaddr_in6 *sin6 = (const struct sockaddr_in6 *)sa;
-		const uint8_t *b = (const uint8_t *)&sin6->sin6_addr;
-		for (int i = 0; i < 16; ++i)
-			if (b[i] != 0)
-				return false;
-
+		if (IN6_IS_ADDR_V4MAPPED(&sin6->sin6_addr)) {
+			const uint8_t *b = (const uint8_t *)&sin6->sin6_addr + 12;
+			for (int i = 0; i < 4; ++i)
+				if (b[i] != 0)
+					return false;
+		} else {
+			const uint8_t *b = (const uint8_t *)&sin6->sin6_addr;
+			for (int i = 0; i < 16; ++i)
+				if (b[i] != 0)
+					return false;
+		}
 		return true;
 	}
 	default:
