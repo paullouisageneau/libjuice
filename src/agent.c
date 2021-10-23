@@ -759,27 +759,19 @@ int agent_interrupt(juice_agent_t *agent) {
 		return -1;
 	}
 
-	int families[2] = {
-	    AF_UNSPEC,
-	    AF_INET // Fallback as IPv6 may be disabled on the loopback interface
-	};
-	for (int i = 0; i < 2; ++i) {
-		addr_record_t local;
-		if (udp_get_local_addr(agent->sock, families[i], &local) == 0) {
-			mutex_lock(&agent->send_mutex);
-			int ret = udp_sendto(agent->sock, NULL, 0, &local);
-			if (ret == 0 || sockerrno == SEAGAIN || sockerrno == SEWOULDBLOCK) {
-				mutex_unlock(&agent->send_mutex);
-				mutex_unlock(&agent->mutex);
-				return 0;
-			}
+	mutex_lock(&agent->send_mutex);
+	if (udp_sendto_self(agent->sock, NULL, 0) < 0) {
+		if (sockerrno != SEAGAIN && sockerrno != SEWOULDBLOCK) {
+			JLOG_WARN("Failed to interrupt thread by triggering socket, errno=%d", sockerrno);
 			mutex_unlock(&agent->send_mutex);
+			mutex_unlock(&agent->mutex);
+			return -1;
 		}
 	}
 
-	JLOG_WARN("Failed to interrupt thread by triggering socket, errno=%d", sockerrno);
+	mutex_unlock(&agent->send_mutex);
 	mutex_unlock(&agent->mutex);
-	return -1;
+	return 0;
 }
 
 void agent_change_state(juice_agent_t *agent, juice_state_t state) {
