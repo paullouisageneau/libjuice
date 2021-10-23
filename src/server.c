@@ -347,7 +347,7 @@ error:
 void server_run(juice_server_t *server) {
 	const nfds_t nfd = 1 + server->allocs_count;
 	struct pollfd *pfd = calloc(nfd, sizeof(struct pollfd));
-	if(!pfd) {
+	if (!pfd) {
 		JLOG_FATAL("alloc for poll descriptors failed");
 		return;
 	}
@@ -562,20 +562,24 @@ int server_interrupt(juice_server_t *server) {
 		return -1;
 	}
 
-	addr_record_t local;
-	if (udp_get_local_addr(server->sock, AF_INET, &local) < 0) {
-		mutex_unlock(&server->mutex);
-		return -1;
+	int families[2] = {
+	    AF_UNSPEC,
+	    AF_INET // Fallback as IPv6 may be disabled on the loopback interface
+	};
+	for (int i = 0; i < 2; ++i) {
+		addr_record_t local;
+		if (udp_get_local_addr(server->sock, families[i], &local) == 0) {
+			int ret = udp_sendto(server->sock, NULL, 0, &local);
+			if (ret == 0 || sockerrno == SEAGAIN || sockerrno == SEWOULDBLOCK) {
+				mutex_unlock(&server->mutex);
+				return 0;
+			}
+		}
 	}
 
-	if (server_send(server, &local, NULL, 0) < 0) {
-		JLOG_WARN("Failed to interrupt thread by triggering socket, errno=%d", sockerrno);
-		mutex_unlock(&server->mutex);
-		return -1;
-	}
-
+	JLOG_WARN("Failed to interrupt thread by triggering socket");
 	mutex_unlock(&server->mutex);
-	return 0;
+	return -1;
 }
 
 int server_bookkeeping(juice_server_t *server, timestamp_t *next_timestamp) {
