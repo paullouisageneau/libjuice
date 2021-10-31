@@ -29,7 +29,7 @@ timestamp_t current_timestamp() {
 	return (timestamp_t)GetTickCount();
 #else // POSIX
 	struct timespec ts;
-	if (clock_gettime(CLOCK_REALTIME, &ts))
+	if (clock_gettime(CLOCK_MONOTONIC, &ts))
 		return 0;
 	return (timestamp_t)ts.tv_sec * 1000 + (timestamp_t)ts.tv_nsec / 1000000;
 #endif
