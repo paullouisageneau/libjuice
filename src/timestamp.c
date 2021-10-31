@@ -22,6 +22,25 @@
 #include <windows.h>
 #else
 #include <time.h>
+
+// clock_gettime() is not implemented on older versions of OS X (< 10.12)
+#if defined(__APPLE__) && !defined(CLOCK_MONOTONIC)
+#include <sys/time.h>
+#define CLOCK_MONOTONIC 0
+int clock_gettime(int clk_id, struct timespec *t) {
+	(void)clk_id;
+
+	// gettimeofday() does not return monotonic time but it should be good enough.
+	struct timeval now;
+	if (gettimeofday(&now, NULL))
+		return -1;
+
+	t->tv_sec = now.tv_sec;
+	t->tv_nsec = now.tv_usec * 1000;
+	return 0;
+}
+#endif // defined(__APPLE__) && !defined(CLOCK_MONOTONIC)
+
 #endif
 
 timestamp_t current_timestamp() {
