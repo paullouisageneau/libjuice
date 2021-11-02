@@ -2,7 +2,7 @@ cmake_minimum_required (VERSION 3.7)
 project (libjuice
 	VERSION 0.9.3
 	LANGUAGES C)
-set(PROJECT_DESCRIPTION "JUICE is a UDP ICE library")
+set(PROJECT_DESCRIPTION "UDP Interactive Connectivity Establishment (ICE) library")
 
 option(USE_NETTLE "Use Nettle for hash functions" OFF)
 option(NO_SERVER "Disable server support" OFF)
