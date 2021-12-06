@@ -11,7 +11,7 @@ option(NO_EXPORT_HEADER "Disable export header" OFF)
 option(WARNINGS_AS_ERRORS "Treat warnings as errors" OFF)
 
 # Mitigations
-option(ENABLE_LOCALHOST_ADDRESS "List locahost addresses in candidates" OFF)
+option(ENABLE_LOCALHOST_ADDRESS "List localhost addresses in candidates" OFF)
 option(ENABLE_LOCAL_ADDRESS_TRANSLATION "Translate local addresses to localhost" OFF)
 
 set(C_STANDARD 11)
