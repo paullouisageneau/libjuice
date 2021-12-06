@@ -842,7 +842,7 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 
 			default:
 				if (entry->pair) {
-					JLOG_INFO("Candidate pair check failed");
+					JLOG_DEBUG("Candidate pair check failed");
 					entry->pair->state = ICE_CANDIDATE_PAIR_STATE_FAILED;
 				}
 				break;
