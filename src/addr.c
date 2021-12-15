@@ -60,7 +60,7 @@ int addr_set_port(struct sockaddr *sa, uint16_t port) {
 	}
 }
 
-bool addr_is_any(struct sockaddr *sa) {
+bool addr_is_any(const struct sockaddr *sa) {
 	switch (sa->sa_family) {
 	case AF_INET: {
 		const struct sockaddr_in *sin = (const struct sockaddr_in *)sa;
@@ -91,7 +91,7 @@ bool addr_is_any(struct sockaddr *sa) {
 	}
 }
 
-bool addr_is_local(struct sockaddr *sa) {
+bool addr_is_local(const struct sockaddr *sa) {
 	switch (sa->sa_family) {
 	case AF_INET: {
 		const struct sockaddr_in *sin = (const struct sockaddr_in *)sa;
@@ -125,7 +125,7 @@ bool addr_is_local(struct sockaddr *sa) {
 	}
 }
 
-bool addr_is_temp_inet6(struct sockaddr *sa) {
+bool addr_is_temp_inet6(const struct sockaddr *sa) {
 	if (sa->sa_family != AF_INET6)
 		return false;
 	if (addr_is_local(sa))

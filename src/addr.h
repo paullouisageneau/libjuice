@@ -32,9 +32,9 @@
 socklen_t addr_get_len(const struct sockaddr *sa);
 uint16_t addr_get_port(const struct sockaddr *sa);
 int addr_set_port(struct sockaddr *sa, uint16_t port);
-bool addr_is_any(struct sockaddr *sa);
-bool addr_is_local(struct sockaddr *sa);
-bool addr_is_temp_inet6(struct sockaddr *sa);
+bool addr_is_any(const struct sockaddr *sa);
+bool addr_is_local(const struct sockaddr *sa);
+bool addr_is_temp_inet6(const struct sockaddr *sa);
 bool addr_unmap_inet6_v4mapped(struct sockaddr *sa, socklen_t *len);
 bool addr_map_inet6_v4mapped(struct sockaddr_storage *ss, socklen_t *len);
 bool addr_is_equal(const struct sockaddr *a, const struct sockaddr *b, bool compare_ports);
