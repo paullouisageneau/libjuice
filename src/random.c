@@ -107,8 +107,6 @@ void juice_random(void *buf, size_t size) {
 	uint8_t *bytes = buf;
 	for (size_t i = 0; i < size; ++i)
 		bytes[i] = (uint8_t)((random_func() & 0x7f80) >> 7);
-#undef random_func
-#undef srandom_func
 
 	mutex_unlock(&rand_mutex);
 }
