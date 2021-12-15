@@ -30,7 +30,7 @@
 
 #include <windows.h>
 
-typedef HANDLE mutex_t;
+typedef CRITICAL_SECTION mutex_t;
 typedef HANDLE thread_t;
 typedef DWORD thread_return_t;
 #define THREAD_CALL __stdcall
@@ -40,26 +40,10 @@ typedef DWORD thread_return_t;
 #define MUTEX_PLAIN 0x0
 #define MUTEX_RECURSIVE 0x0 // mutexes are recursive on Windows
 
-static inline int mutex_init_impl(mutex_t *m) {
-	return ((*(m) = CreateMutex(NULL, FALSE, NULL)) != NULL ? 0 : (int)GetLastError());
-}
-
-static inline int mutex_lock_impl(volatile mutex_t *m) {
-	// Atomically initialize the mutex on first lock
-	if (*(m) == NULL) {
-		HANDLE cm = CreateMutex(NULL, FALSE, NULL);
-		if (cm == NULL)
-			return (int)GetLastError();
-		if (InterlockedCompareExchangePointer(m, cm, NULL) != NULL)
-			CloseHandle(cm);
-	}
-	return WaitForSingleObject(*m, INFINITE) != WAIT_FAILED ? 0 : (int)GetLastError();
-}
-
-#define mutex_init(m, flags) mutex_init_impl(m)
-#define mutex_lock(m) mutex_lock_impl(m)
-#define mutex_unlock(m) (void)ReleaseMutex(*(m))
-#define mutex_destroy(m) (void)CloseHandle(*(m))
+#define mutex_init(m, flags) InitializeCriticalSection(m)
+#define mutex_lock(m) EnterCriticalSection(m)
+#define mutex_unlock(m) LeaveCriticalSection(m)
+#define mutex_destroy(m) DeleteCriticalSection(m)
 
 static inline void thread_join_impl(thread_t t, thread_return_t *res) {
 	WaitForSingleObject(t, INFINITE);
@@ -109,13 +93,13 @@ static inline int mutex_init_impl(mutex_t *m, int flags) {
 
 #include <stdatomic.h>
 #define atomic(T) _Atomic(T)
-#define atomic_ptr(T) _Atomic(T*)
+#define atomic_ptr(T) _Atomic(T *)
 
 #else // no atomics
 
 // Since we don't need compare-and-swap, just assume store and load are atomic
 #define atomic(T) volatile T
-#define atomic_ptr(T) T* volatile
+#define atomic_ptr(T) T *volatile
 #define atomic_store(a, v) (void)(*(a) = (v))
 #define atomic_load(a) (*(a))
 #define ATOMIC_VAR_INIT(v) (v)
@@ -123,4 +107,3 @@ static inline int mutex_init_impl(mutex_t *m, int flags) {
 #endif // if atomics
 
 #endif // JUICE_THREAD_H
-
