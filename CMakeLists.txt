@@ -159,7 +159,7 @@ install(FILES ${CMAKE_BINARY_DIR}/LibJuiceConfigVersion.cmake
 if(NOT NO_EXPORT_HEADER AND CMAKE_VERSION VERSION_GREATER_EQUAL "3.12")
 	include(GenerateExportHeader)
 	generate_export_header(juice)
-	target_include_directories(juice PUBLIC $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}>)
+	target_include_directories(juice PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>)
 	target_compile_definitions(juice PUBLIC -DJUICE_HAS_EXPORT_HEADER)
 	set_target_properties(juice PROPERTIES C_VISIBILITY_PRESET hidden)
 	install(FILES ${PROJECT_BINARY_DIR}/juice_export.h DESTINATION include/juice)
