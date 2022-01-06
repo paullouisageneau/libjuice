@@ -1510,7 +1510,7 @@ int agent_send_stun_binding(juice_agent_t *agent, agent_stun_entry_t *entry, stu
 			// candidate type preference of peer-reflexive candidates.
 			int family = entry->record.addr.ss_family;
 			int index = entry->pair && entry->pair->local
-			                ? entry->pair->local - agent->local.candidates
+			                ? (int)(entry->pair->local - agent->local.candidates)
 			                : 0;
 			msg.priority =
 			    ice_compute_priority(ICE_CANDIDATE_TYPE_PEER_REFLEXIVE, family, 1, index);
