@@ -236,7 +236,8 @@ int agent_gather_candidates(juice_agent_t *agent) {
 	JLOG_VERBOSE("Adding %d local host candidates", records_count);
 	for (int i = 0; i < records_count; ++i) {
 		ice_candidate_t candidate;
-		if (ice_create_local_candidate(ICE_CANDIDATE_TYPE_HOST, 1, records + i, &candidate)) {
+		if (ice_create_local_candidate(ICE_CANDIDATE_TYPE_HOST, 1, agent->local.candidates_count,
+		                               records + i, &candidate)) {
 			JLOG_ERROR("Failed to create host candidate");
 			continue;
 		}
@@ -1508,7 +1509,11 @@ int agent_send_stun_binding(juice_agent_t *agent, agent_stun_entry_t *entry, stu
 			// computed by the algorithm in Section 5.1.2 for the local candidate, but with the
 			// candidate type preference of peer-reflexive candidates.
 			int family = entry->record.addr.ss_family;
-			msg.priority = ice_compute_priority(ICE_CANDIDATE_TYPE_PEER_REFLEXIVE, family, 1);
+			int index = entry->pair && entry->pair->local
+			                ? entry->pair->local - agent->local.candidates
+			                : 0;
+			msg.priority =
+			    ice_compute_priority(ICE_CANDIDATE_TYPE_PEER_REFLEXIVE, family, 1, index);
 
 			// RFC 8445 8.1.1. Nominating Pairs:
 			// Once the controlling agent has picked a valid pair for nomination, it repeats the
@@ -2042,7 +2047,8 @@ int agent_add_local_relayed_candidate(juice_agent_t *agent, const addr_record_t 
 		return 0;
 	}
 	ice_candidate_t candidate;
-	if (ice_create_local_candidate(ICE_CANDIDATE_TYPE_RELAYED, 1, record, &candidate)) {
+	if (ice_create_local_candidate(ICE_CANDIDATE_TYPE_RELAYED, 1, agent->local.candidates_count,
+	                               record, &candidate)) {
 		JLOG_ERROR("Failed to create relayed candidate");
 		return -1;
 	}
@@ -2085,7 +2091,7 @@ int agent_add_local_reflexive_candidate(juice_agent_t *agent, ice_candidate_type
 		return 0;
 	}
 	ice_candidate_t candidate;
-	if (ice_create_local_candidate(type, 1, record, &candidate)) {
+	if (ice_create_local_candidate(type, 1, agent->local.candidates_count, record, &candidate)) {
 		JLOG_ERROR("Failed to create reflexive candidate");
 		return -1;
 	}
@@ -2127,7 +2133,7 @@ int agent_add_remote_reflexive_candidate(juice_agent_t *agent, ice_candidate_typ
 		return 0;
 	}
 	ice_candidate_t candidate;
-	if (ice_create_local_candidate(type, 1, record, &candidate)) {
+	if (ice_create_local_candidate(type, 1, agent->local.candidates_count, record, &candidate)) {
 		JLOG_ERROR("Failed to create reflexive candidate");
 		return -1;
 	}
