@@ -388,6 +388,43 @@ static int has_duplicate_addr(struct sockaddr *addr, const addr_record_t *record
 	return false;
 }
 
+#if !defined(_WIN32) && defined(NO_IFADDRS)
+// Helper function to get the IPv6 address of the default interface
+static int get_local_default_inet6(uint16_t port, struct sockaddr_in6 *result) {
+	const char *dummy_host = "2001:db8::1"; // dummy public unreachable address
+	const uint16_t dummy_port = 9;          // discard port
+
+	struct sockaddr_in6 sin6;
+	memset(&sin6, 0, sizeof(sin6));
+	sin6.sin6_family = AF_INET6;
+	sin6.sin6_port = htons(dummy_port);
+	if (inet_pton(AF_INET6, dummy_host, &sin6.sin6_addr) != 1)
+		return -1;
+
+	socket_t sock = socket(AF_INET6, SOCK_DGRAM, IPPROTO_UDP);
+	if (sock == INVALID_SOCKET)
+		return -1;
+
+	if (connect(sock, (const struct sockaddr *)&sin6, sizeof(sin6)))
+		goto error;
+
+	socklen_t result_len = sizeof(*result);
+	if (getsockname(sock, (struct sockaddr *)result, &result_len))
+		goto error;
+
+	if (result_len != sizeof(*result))
+		goto error;
+
+	addr_set_port((struct sockaddr *)result, port);
+	closesocket(sock);
+	return 0;
+
+error:
+	closesocket(sock);
+	return -1;
+}
+#endif
+
 int udp_get_addrs(socket_t sock, addr_record_t *records, size_t count) {
 	addr_record_t bound;
 	if (udp_get_bound_addr(sock, &bound) < 0) {
@@ -543,34 +580,14 @@ int udp_get_addrs(socket_t sock, addr_record_t *records, size_t count) {
 	}
 
 	if (!ifconf_has_inet6 && bound.addr.ss_family == AF_INET6) {
-		char hostname[HOST_NAME_MAX];
-		if (gethostname(hostname, HOST_NAME_MAX))
-			strcpy(hostname, "localhost");
-
-		char service[8];
-		snprintf(service, 8, "%hu", port);
-
-		struct addrinfo *ai_list = NULL;
-		struct addrinfo hints;
-		memset(&hints, 0, sizeof(hints));
-		hints.ai_family = AF_INET6;
-		hints.ai_socktype = SOCK_DGRAM;
-		hints.ai_protocol = 0;
-		hints.ai_flags = AI_ADDRCONFIG | AI_NUMERICSERV;
-		if (getaddrinfo(hostname, service, &hints, &ai_list) == 0) {
-			for (struct addrinfo *ai = ai_list; ai; ai = ai->ai_next) {
-				if (!addr_is_local(ai->ai_addr)) {
-					if (!has_duplicate_addr(ai->ai_addr, records, current - records)) {
-						++ret;
-						if (current != end) {
-							memcpy(&current->addr, ai->ai_addr, ai->ai_addrlen);
-							current->len = ai->ai_addrlen;
-							++current;
-						}
-					}
-				}
+		struct sockaddr_in6 sin6;
+		if (get_local_default_inet6(port, &sin6) == 0) {
+			++ret;
+			if (current != end) {
+				memcpy(&current->addr, &sin6, sizeof(sin6));
+				current->len = sizeof(sin6);
+				++current;
 			}
-			freeaddrinfo(ai_list);
 		}
 	}
 #endif
