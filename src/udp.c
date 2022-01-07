@@ -582,11 +582,13 @@ int udp_get_addrs(socket_t sock, addr_record_t *records, size_t count) {
 	if (!ifconf_has_inet6 && bound.addr.ss_family == AF_INET6) {
 		struct sockaddr_in6 sin6;
 		if (get_local_default_inet6(port, &sin6) == 0) {
-			++ret;
-			if (current != end) {
-				memcpy(&current->addr, &sin6, sizeof(sin6));
-				current->len = sizeof(sin6);
-				++current;
+			if (!addr_is_local((const struct sockaddr *)&sin6)) {
+				++ret;
+				if (current != end) {
+					memcpy(&current->addr, &sin6, sizeof(sin6));
+					current->len = sizeof(sin6);
+					++current;
+				}
 			}
 		}
 	}
