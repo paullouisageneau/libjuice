@@ -125,16 +125,6 @@ bool addr_is_local(const struct sockaddr *sa) {
 	}
 }
 
-bool addr_is_temp_inet6(const struct sockaddr *sa) {
-	if (sa->sa_family != AF_INET6)
-		return false;
-	if (addr_is_local(sa))
-		return false;
-	const struct sockaddr_in6 *sin6 = (const struct sockaddr_in6 *)sa;
-	const uint8_t *b = (const uint8_t *)&sin6->sin6_addr;
-	return (b[8] & 0x02) ? false : true;
-}
-
 bool addr_unmap_inet6_v4mapped(struct sockaddr *sa, socklen_t *len) {
 	if (sa->sa_family != AF_INET6)
 		return false;
