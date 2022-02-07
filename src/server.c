@@ -232,6 +232,12 @@ void server_do_destroy(juice_server_t *server) {
 	closesocket(server->sock);
 	mutex_destroy(&server->mutex);
 
+	server_turn_alloc_t *end = server->allocs + server->allocs_count;
+	for (server_turn_alloc_t *alloc = server->allocs; alloc < end; ++alloc) {
+		delete_allocation(alloc);
+	}
+	free((void *)server->allocs);
+
 	juice_credentials_list_t *node = server->credentials;
 	while (node) {
 		juice_credentials_list_t *prev = node;
