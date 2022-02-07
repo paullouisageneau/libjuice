@@ -241,6 +241,12 @@ void server_do_destroy(juice_server_t *server) {
 		free(prev);
 	}
 
+	server_turn_alloc_t *end = server->allocs + server->allocs_count;
+	for (server_turn_alloc_t *alloc = server->allocs; alloc < end; ++alloc) {
+		turn_destroy_map(&alloc->map);
+	}
+	free((void *)server->allocs);
+
 	free((void *)server->config.realm);
 	free(server);
 
