@@ -247,6 +247,8 @@ void server_do_destroy(juice_server_t *server) {
 		free(prev);
 	}
 
+	free((void *)server->config.bind_address);
+	free((void *)server->config.external_address);
 	free((void *)server->config.realm);
 	free(server);
 
