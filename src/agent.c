@@ -803,8 +803,9 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 				if (JLOG_DEBUG_ENABLED) {
 					char record_str[ADDR_MAX_STRING_LEN];
 					addr_record_to_string(&entry->record, record_str, ADDR_MAX_STRING_LEN);
-					JLOG_DEBUG("STUN entry %d: Sending request to %s (%d retransmissions left)", i,
-					           record_str, entry->retransmissions);
+					JLOG_DEBUG("STUN entry %d: Sending request to %s (%d retransmission%s left)", i,
+					           record_str, entry->retransmissions,
+					           entry->retransmissions >= 2 ? "s" : "");
 				}
 				int ret;
 				switch (entry->type) {
@@ -908,6 +909,10 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 	for (int i = 0; i < agent->candidate_pairs_count; ++i) {
 		ice_candidate_pair_t *pair = *(agent->ordered_pairs + i);
 		if (pair->nominated) {
+			// RFC 8445 8.1.1. Nominating Pairs:
+			// If more than one candidate pair is nominated by the controlling agent, and if the
+			// controlled agent accepts multiple nominations requests, the agents MUST produce the
+			// selected pairs and use the pairs with the highest priority.
 			if (!nominated_pair) {
 				nominated_pair = pair;
 				selected_pair = pair;
@@ -917,8 +922,8 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 				selected_pair = pair;
 		} else if (pair->state == ICE_CANDIDATE_PAIR_STATE_PENDING) {
 			if (agent->mode == AGENT_MODE_CONTROLLING && selected_pair) {
-				// A higher-priority pair will be used, we can stop checking
-				// Entries will be synchronized after the current loop
+				// A higher-priority pair will be used, we can stop checking.
+				// Entries will be synchronized after the current loop.
 				JLOG_VERBOSE("Cancelling check for lower-priority pair");
 				pair->state = ICE_CANDIDATE_PAIR_STATE_FROZEN;
 			} else {
@@ -960,7 +965,8 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 			// Limit retransmissions of still pending entries
 			for (int i = 0; i < agent->entries_count; ++i) {
 				agent_stun_entry_t *entry = agent->entries + i;
-				if (entry->state == AGENT_STUN_ENTRY_STATE_PENDING && entry->retransmissions > 1)
+				if (entry->pair != selected_pair &&
+				    entry->state == AGENT_STUN_ENTRY_STATE_PENDING && entry->retransmissions > 1)
 					entry->retransmissions = 1;
 			}
 		}
@@ -1012,7 +1018,12 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 			// Connected
 			agent_change_state(agent, JUICE_STATE_CONNECTED);
 
-			if (agent->mode == AGENT_MODE_CONTROLLING && selected_pair &&
+			// RFC 8445 8.1.1. Nominating Pairs:
+			// Once the controlling agent has successfully nominated a candidate pair, the agent
+			// MUST NOT nominate another pair for same component of the data stream within the ICE
+			// session.
+			// For this reason, we wait until no pair is pending so the selected pair won't change.
+			if (agent->mode == AGENT_MODE_CONTROLLING && pending_count == 0 && selected_pair &&
 			    !selected_pair->nomination_requested) {
 				// Nominate selected
 				JLOG_DEBUG("Requesting pair nomination (controlling)");
