@@ -260,7 +260,7 @@ int ice_generate_sdp(const ice_description_t *description, char *buffer, size_t 
 
 	// Round 0: description
 	// Round i with i>0 and i<count+1: candidate i-1
-	// Round count + 1: ice-options:trickle/end-of-candidates line
+	// Round count + 1: end-of-candidates and ice-options lines
 	for (int i = 0; i < description->candidates_count + 2; ++i) {
 		int ret;
 		if (i == 0) {
@@ -276,10 +276,12 @@ int ice_generate_sdp(const ice_description_t *description, char *buffer, size_t 
 				continue;
 			ret = snprintf(begin, end - begin, "%s\r\n", tmp);
 		} else { // i == description->candidates_count + 1
+			// RFC 8445 10. ICE Option: An agent compliant to this specification MUST inform the
+			// peer about the compliance using the 'ice2' option.
 			if (description->finished)
-				ret = snprintf(begin, end - begin, "a=end-of-candidates\r\n");
+				ret = snprintf(begin, end - begin, "a=end-of-candidates\r\na=ice-options:ice2\r\n");
 			else
-				ret = snprintf(begin, end - begin, "a=ice-options:trickle\r\n");
+				ret = snprintf(begin, end - begin, "a=ice-options:ice2,trickle\r\n");
 		}
 		if (ret < 0)
 			return -1;
