@@ -803,8 +803,9 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 				if (JLOG_DEBUG_ENABLED) {
 					char record_str[ADDR_MAX_STRING_LEN];
 					addr_record_to_string(&entry->record, record_str, ADDR_MAX_STRING_LEN);
-					JLOG_DEBUG("STUN entry %d: Sending request to %s (%d retransmissions left)", i,
-					           record_str, entry->retransmissions);
+					JLOG_DEBUG("STUN entry %d: Sending request to %s (%d retransmission%s left)", i,
+					           record_str, entry->retransmissions,
+					           entry->retransmissions >= 2 ? "s" : "");
 				}
 				int ret;
 				switch (entry->type) {
