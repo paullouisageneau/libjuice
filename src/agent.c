@@ -960,7 +960,8 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 			// Limit retransmissions of still pending entries
 			for (int i = 0; i < agent->entries_count; ++i) {
 				agent_stun_entry_t *entry = agent->entries + i;
-				if (entry->state == AGENT_STUN_ENTRY_STATE_PENDING && entry->retransmissions > 1)
+				if (entry->pair != selected_pair &&
+				    entry->state == AGENT_STUN_ENTRY_STATE_PENDING && entry->retransmissions > 1)
 					entry->retransmissions = 1;
 			}
 		}
@@ -1012,7 +1013,7 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 			// Connected
 			agent_change_state(agent, JUICE_STATE_CONNECTED);
 
-			if (agent->mode == AGENT_MODE_CONTROLLING && selected_pair &&
+			if (agent->mode == AGENT_MODE_CONTROLLING && pending_count == 0 && selected_pair &&
 			    !selected_pair->nomination_requested) {
 				// Nominate selected
 				JLOG_DEBUG("Requesting pair nomination (controlling)");
