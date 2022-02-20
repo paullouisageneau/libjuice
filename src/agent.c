@@ -77,19 +77,16 @@ juice_agent_t *agent_create(const juice_config_t *config) {
 
 	juice_agent_t *agent = calloc(1, sizeof(juice_agent_t));
 	if (!agent) {
-		JLOG_FATAL("alloc for agent failed");
+		JLOG_FATAL("Memory allocation for agent failed");
 		return NULL;
 	}
-
-	mutex_init(&agent->mutex, MUTEX_RECURSIVE);
-	mutex_init(&agent->send_mutex, 0);
 
 	agent->config = *config;
 
 	if (agent->config.stun_server_host) {
 		agent->config.stun_server_host = alloc_string_copy(agent->config.stun_server_host);
 		if (!agent->config.stun_server_host) {
-			JLOG_FATAL("alloc for STUN server host failed");
+			JLOG_FATAL("Memory allocation for STUN server host failed");
 			goto error;
 		}
 	}
@@ -98,7 +95,7 @@ juice_agent_t *agent_create(const juice_config_t *config) {
 		size_t turn_servers_size = agent->config.turn_servers_count * sizeof(juice_turn_server_t);
 		agent->config.turn_servers = alloc_copy(agent->config.turn_servers, turn_servers_size);
 		if (!agent->config.turn_servers) {
-			JLOG_FATAL("alloc for TURN server credentials array failed");
+			JLOG_FATAL("Memory allocation for TURN server credentials array failed");
 			goto error;
 		}
 
@@ -108,7 +105,7 @@ juice_agent_t *agent_create(const juice_config_t *config) {
 			turn_server->username = alloc_string_copy(turn_server->username);
 			turn_server->password = alloc_string_copy(turn_server->password);
 			if (!turn_server->host || !turn_server->username || !turn_server->password) {
-				JLOG_FATAL("alloc for TURN server credentials array failed");
+				JLOG_FATAL("Memory allocation for TURN server credentials array failed");
 				goto error;
 			}
 		}
@@ -117,16 +114,17 @@ juice_agent_t *agent_create(const juice_config_t *config) {
 	if (agent->config.bind_address) {
 		agent->config.bind_address = alloc_string_copy(agent->config.bind_address);
 		if (!agent->config.bind_address) {
-			JLOG_FATAL("alloc for bind address failed");
+			JLOG_FATAL("Memory allocation for bind address failed");
 			goto error;
 		}
 	}
 
 	agent->state = JUICE_STATE_DISCONNECTED;
 	agent->mode = AGENT_MODE_UNKNOWN;
-	agent->sock = INVALID_SOCKET;
-	agent->send_ds = 0;
 	agent->selected_entry = ATOMIC_VAR_INIT(NULL);
+
+	agent->conn_index = -1;
+	agent->conn_impl = NULL;
 
 	ice_create_local_description(&agent->local);
 
@@ -149,11 +147,8 @@ error:
 
 void agent_do_destroy(juice_agent_t *agent) {
 	JLOG_DEBUG("Destroying agent");
-	if (agent->sock != INVALID_SOCKET)
-		closesocket(agent->sock);
 
-	mutex_destroy(&agent->mutex);
-	mutex_destroy(&agent->send_mutex);
+	conn_destroy(agent);
 
 	// Free credentials in entries
 	for (int i = 0; i < agent->entries_count; ++i) {
@@ -183,30 +178,14 @@ void agent_do_destroy(juice_agent_t *agent) {
 }
 
 void agent_destroy(juice_agent_t *agent) {
-	mutex_lock(&agent->mutex);
-
-	if (agent->thread_started) {
-		JLOG_DEBUG("Waiting for agent thread");
-		agent->thread_stopped = true;
-		mutex_unlock(&agent->mutex);
-		agent_interrupt(agent);
-		thread_join(agent->thread, NULL);
-	} else {
-		mutex_unlock(&agent->mutex);
-	}
+	// TODO
 	agent_do_destroy(agent);
 }
 
-thread_return_t THREAD_CALL agent_thread_entry(void *arg) {
-	agent_run((juice_agent_t *)arg);
-	return (thread_return_t)0;
-}
-
 int agent_gather_candidates(juice_agent_t *agent) {
-	mutex_lock(&agent->mutex);
-	if (agent->sock != INVALID_SOCKET) {
+	JLOG_VERBOSE("Gathering candidates");
+	if (agent->conn_impl) {
 		JLOG_WARN("Candidates gathering already started");
-		mutex_unlock(&agent->mutex);
 		return 0;
 	}
 
@@ -215,16 +194,14 @@ int agent_gather_candidates(juice_agent_t *agent) {
 	socket_config.bind_address = agent->config.bind_address;
 	socket_config.port_begin = agent->config.local_port_range_begin;
 	socket_config.port_end = agent->config.local_port_range_end;
-	agent->sock = udp_create_socket(&socket_config);
-	if (agent->sock == INVALID_SOCKET) {
-		JLOG_FATAL("UDP socket creation for agent failed");
-		mutex_unlock(&agent->mutex);
+
+	if (conn_create(agent, &socket_config)) {
+		JLOG_FATAL("Connection creation for agent failed");
 		return -1;
 	}
-	agent_change_state(agent, JUICE_STATE_GATHERING);
 
 	addr_record_t records[ICE_MAX_CANDIDATES_COUNT - 1];
-	int records_count = udp_get_addrs(agent->sock, records, ICE_MAX_CANDIDATES_COUNT - 1);
+	int records_count = conn_get_addrs(agent, records, ICE_MAX_CANDIDATES_COUNT - 1);
 	if (records_count < 0) {
 		JLOG_ERROR("Failed to gather local host candidates");
 		records_count = 0;
@@ -232,6 +209,9 @@ int agent_gather_candidates(juice_agent_t *agent) {
 		JLOG_WARN("No local host candidates gathered");
 	} else if (records_count > ICE_MAX_CANDIDATES_COUNT - 1)
 		records_count = ICE_MAX_CANDIDATES_COUNT - 1;
+
+	conn_lock(agent);
+	agent_change_state(agent, JUICE_STATE_GATHERING);
 
 	JLOG_VERBOSE("Adding %d local host candidates", records_count);
 	for (int i = 0; i < records_count; ++i) {
@@ -273,22 +253,124 @@ int agent_gather_candidates(juice_agent_t *agent) {
 		JLOG_DEBUG("Assuming controlling mode");
 		agent->mode = AGENT_MODE_CONTROLLING;
 	}
-	int ret = thread_init(&agent->thread, agent_thread_entry, agent);
-	if (ret) {
-		JLOG_FATAL("thread_create for agent failed, error=%d", ret);
-		mutex_unlock(&agent->mutex);
-		return -1;
+
+	agent_change_state(agent, JUICE_STATE_CONNECTING);
+
+	// TURN server resolution
+	if (agent->config.turn_servers_count > 0) {
+		int count = 0;
+		for (int i = 0; i < agent->config.turn_servers_count; ++i) {
+			if (count >= MAX_RELAY_ENTRIES_COUNT)
+				break;
+
+			juice_turn_server_t *turn_server = agent->config.turn_servers + i;
+			if (!turn_server->port)
+				turn_server->port = 3478; // default TURN port
+
+			char service[8];
+			snprintf(service, 8, "%hu", turn_server->port);
+
+			addr_record_t records[DEFAULT_MAX_RECORDS_COUNT];
+			int records_count =
+			    addr_resolve(turn_server->host, service, records, DEFAULT_MAX_RECORDS_COUNT);
+			if (records_count > 0) {
+				if (records_count > DEFAULT_MAX_RECORDS_COUNT)
+					records_count = DEFAULT_MAX_RECORDS_COUNT;
+
+				JLOG_INFO("Using TURN server %s:%s", turn_server->host, service);
+
+				addr_record_t *record = NULL;
+				for (int j = 0; j < records_count; ++j) {
+					int family = records[j].addr.ss_family;
+					// Prefer IPv4 for TURN
+					if (family == AF_INET) {
+						record = records + j;
+						break;
+					}
+					if (family == AF_INET6 && !record)
+						record = records + j;
+				}
+				if (record) {
+					JLOG_VERBOSE("Registering STUN entry %d for relay request",
+					             agent->entries_count);
+					agent_stun_entry_t *entry = agent->entries + agent->entries_count;
+					entry->type = AGENT_STUN_ENTRY_TYPE_RELAY;
+					entry->state = AGENT_STUN_ENTRY_STATE_PENDING;
+					entry->pair = NULL;
+					entry->record = *record;
+					entry->turn_redirections = 0;
+					entry->turn = calloc(1, sizeof(agent_turn_state_t));
+					if (!entry->turn) {
+						JLOG_ERROR("Memory allocation for TURN state failed");
+						break;
+					}
+					if (turn_init_map(&entry->turn->map, AGENT_TURN_MAP_SIZE) < 0) {
+						free(entry->turn);
+						break;
+					}
+					snprintf(entry->turn->credentials.username, STUN_MAX_USERNAME_LEN, "%s",
+					         turn_server->username);
+					entry->turn->password = turn_server->password;
+					juice_random(entry->transaction_id, STUN_TRANSACTION_ID_SIZE);
+					++agent->entries_count;
+
+					agent_arm_transmission(agent, entry, STUN_PACING_TIME * i);
+
+					++count;
+				}
+			} else {
+				JLOG_ERROR("TURN address resolution failed");
+			}
+		}
 	}
-	agent->thread_started = true;
-	mutex_unlock(&agent->mutex);
+
+	// STUN server resolution
+	// The entry is added after so the TURN server address will be matched in priority
+	if (agent->config.stun_server_host) {
+		if (!agent->config.stun_server_port)
+			agent->config.stun_server_port = 3478; // default STUN port
+
+		char service[8];
+		snprintf(service, 8, "%hu", agent->config.stun_server_port);
+		addr_record_t records[MAX_STUN_SERVER_RECORDS_COUNT];
+		int records_count = addr_resolve(agent->config.stun_server_host, service, records,
+		                                 MAX_STUN_SERVER_RECORDS_COUNT);
+		if (records_count > 0) {
+			if (records_count > MAX_STUN_SERVER_RECORDS_COUNT)
+				records_count = MAX_STUN_SERVER_RECORDS_COUNT;
+
+			JLOG_INFO("Using STUN server %s:%s", agent->config.stun_server_host, service);
+
+			for (int i = 0; i < records_count; ++i) {
+				if (i >= MAX_SERVER_ENTRIES_COUNT)
+					break;
+				JLOG_VERBOSE("Registering STUN entry %d for server request", agent->entries_count);
+				agent_stun_entry_t *entry = agent->entries + agent->entries_count;
+				entry->type = AGENT_STUN_ENTRY_TYPE_SERVER;
+				entry->state = AGENT_STUN_ENTRY_STATE_PENDING;
+				entry->pair = NULL;
+				entry->record = records[i];
+				juice_random(entry->transaction_id, STUN_TRANSACTION_ID_SIZE);
+				++agent->entries_count;
+
+				agent_arm_transmission(agent, entry, STUN_PACING_TIME * i);
+			}
+		} else {
+			JLOG_ERROR("STUN server address resolution failed");
+		}
+	}
+
+	agent_update_gathering_done(agent);
+	conn_unlock(agent);
+	conn_interrupt(agent); // TODO: would not be necessary if created in locked state
 	return 0;
 }
 
 int agent_get_local_description(juice_agent_t *agent, char *buffer, size_t size) {
-	mutex_lock(&agent->mutex);
+	conn_lock(agent);
 	if (ice_generate_sdp(&agent->local, buffer, size) < 0) {
 		JLOG_ERROR("Failed to generate local SDP description");
-		mutex_unlock(&agent->mutex);
+		conn_unlock(agent);
 		return -1;
 	}
 	JLOG_VERBOSE("Generated local SDP description: %s", buffer);
@@ -297,29 +379,29 @@ int agent_get_local_description(juice_agent_t *agent, char *buffer, size_t size)
 		JLOG_DEBUG("Assuming controlling mode");
 		agent->mode = AGENT_MODE_CONTROLLING;
 	}
-	mutex_unlock(&agent->mutex);
+	conn_unlock(agent);
 	return 0;
 }
 
 int agent_set_remote_description(juice_agent_t *agent, const char *sdp) {
-	mutex_lock(&agent->mutex);
+	conn_lock(agent);
 	JLOG_VERBOSE("Setting remote SDP description: %s", sdp);
 	int ret = ice_parse_sdp(sdp, &agent->remote);
 	if (ret < 0) {
 		if (ret == ICE_PARSE_ERROR)
 			JLOG_ERROR("Failed to parse remote SDP description");
 
-		mutex_unlock(&agent->mutex);
+		conn_unlock(agent);
 		return -1;
 	}
 	if (!*agent->remote.ice_ufrag) {
 		JLOG_ERROR("Missing ICE user fragment in remote description");
-		mutex_unlock(&agent->mutex);
+		conn_unlock(agent);
 		return -1;
 	}
 	if (!*agent->remote.ice_pwd) {
 		JLOG_ERROR("Missing ICE password in remote description");
-		mutex_unlock(&agent->mutex);
+		conn_unlock(agent);
 		return -1;
 	}
 	// There is only one component, therefore we can unfreeze already existing pairs now
@@ -337,13 +419,14 @@ int agent_set_remote_description(juice_agent_t *agent, const char *sdp) {
 		JLOG_DEBUG("Assuming controlled mode");
 		agent->mode = AGENT_MODE_CONTROLLED;
 	}
-	mutex_unlock(&agent->mutex);
-	agent_interrupt(agent);
+
+	conn_unlock(agent);
+	conn_interrupt(agent);
 	return 0;
 }
 
 int agent_add_remote_candidate(juice_agent_t *agent, const char *sdp) {
-	mutex_lock(&agent->mutex);
+	conn_lock(agent);
 	JLOG_VERBOSE("Adding remote candidate: %s", sdp);
 	ice_candidate_t candidate;
 	int ret = ice_parse_candidate_sdp(sdp, &candidate);
@@ -353,26 +436,27 @@ int agent_add_remote_candidate(juice_agent_t *agent, const char *sdp) {
 		else if (ret == ICE_PARSE_ERROR)
 			JLOG_ERROR("Failed to parse remote SDP candidate: %s", sdp);
 
-		mutex_unlock(&agent->mutex);
+		conn_unlock(agent);
 		return -1;
 	}
 	if (ice_add_candidate(&candidate, &agent->remote)) {
 		JLOG_ERROR("Failed to add candidate to remote description");
-		mutex_unlock(&agent->mutex);
+		conn_unlock(agent);
 		return -1;
 	}
 	ice_candidate_t *remote = agent->remote.candidates + agent->remote.candidates_count - 1;
 	ret = agent_add_candidate_pairs_for_remote(agent, remote);
-	mutex_unlock(&agent->mutex);
-	agent_interrupt(agent);
+
+	conn_unlock(agent);
+	conn_interrupt(agent);
 	return ret;
 }
 
 int agent_set_remote_gathering_done(juice_agent_t *agent) {
-	mutex_lock(&agent->mutex);
+	conn_lock(agent);
 	agent->remote.finished = true;
 	agent->fail_timestamp = 0; // So the bookkeeping will recompute it and fail
-	mutex_unlock(&agent->mutex);
+	conn_unlock(agent);
 	return 0;
 }
 
@@ -388,10 +472,10 @@ int agent_send(juice_agent_t *agent, const char *data, size_t size, int ds) {
 
 	if (selected_entry->relay_entry) {
 		// The datagram should be sent through the relay, use a channel to minimize overhead
-		mutex_lock(&agent->mutex); // We have to lock the mutex
+		conn_lock(agent); // We have to lock
 		int ret = agent_channel_send(agent, selected_entry->relay_entry, &selected_entry->record,
 		                             data, size, ds);
-		mutex_unlock(&agent->mutex);
+		conn_unlock(agent);
 		return ret;
 	}
 
@@ -400,27 +484,7 @@ int agent_send(juice_agent_t *agent, const char *data, size_t size, int ds) {
 
 int agent_direct_send(juice_agent_t *agent, const addr_record_t *dst, const char *data, size_t size,
                       int ds) {
-	mutex_lock(&agent->send_mutex);
-
-	if (agent->send_ds >= 0 && agent->send_ds != ds) {
-		JLOG_VERBOSE("Setting Differentiated Services field to 0x%X", ds);
-		if (udp_set_diffserv(agent->sock, ds) == 0)
-			agent->send_ds = ds;
-		else
-			agent->send_ds = -1; // disable for next time
-	}
-
-	JLOG_VERBOSE("Sending datagram, size=%d", size);
-
-	int ret = udp_sendto(agent->sock, data, size, dst);
-	if (ret < 0) {
-		if (sockerrno == SEAGAIN || sockerrno == SEWOULDBLOCK)
-			JLOG_INFO("Send failed, buffer is full");
-		else
-			JLOG_WARN("Send failed, errno=%d", sockerrno);
-	}
-	mutex_unlock(&agent->send_mutex);
-	return ret;
+	return conn_send(agent, dst, data, size, ds);
 }
 
 int agent_relay_send(juice_agent_t *agent, agent_stun_entry_t *entry, const addr_record_t *dst,
@@ -484,18 +548,18 @@ int agent_channel_send(juice_agent_t *agent, agent_stun_entry_t *entry, const ad
 }
 
 juice_state_t agent_get_state(juice_agent_t *agent) {
-	mutex_lock(&agent->mutex);
+	conn_lock(agent);
 	juice_state_t state = agent->state;
-	mutex_unlock(&agent->mutex);
+	conn_unlock(agent);
 	return state;
 }
 
 int agent_get_selected_candidate_pair(juice_agent_t *agent, ice_candidate_t *local,
                                       ice_candidate_t *remote) {
-	mutex_lock(&agent->mutex);
+	conn_lock(agent);
 	ice_candidate_pair_t *pair = agent->selected_pair;
 	if (!pair) {
-		mutex_unlock(&agent->mutex);
+		conn_unlock(agent);
 		return -1;
 	}
 
@@ -504,189 +568,21 @@ int agent_get_selected_candidate_pair(juice_agent_t *agent, ice_candidate_t *loc
 	if (remote)
 		*remote = *pair->remote;
 
-	mutex_unlock(&agent->mutex);
+	conn_unlock(agent);
 	return 0;
 }
 
-void agent_run(juice_agent_t *agent) {
-	mutex_lock(&agent->mutex);
-	agent_change_state(agent, JUICE_STATE_CONNECTING);
-
-	// TURN server resolution
-	if (agent->config.turn_servers_count > 0) {
-		int count = 0;
-		for (int i = 0; i < agent->config.turn_servers_count; ++i) {
-			if (count >= MAX_RELAY_ENTRIES_COUNT)
-				break;
-
-			juice_turn_server_t *turn_server = agent->config.turn_servers + i;
-			if (!turn_server->port)
-				turn_server->port = 3478; // default TURN port
-
-			char service[8];
-			snprintf(service, 8, "%hu", turn_server->port);
-
-			addr_record_t records[DEFAULT_MAX_RECORDS_COUNT];
-			int records_count =
-			    addr_resolve(turn_server->host, service, records, DEFAULT_MAX_RECORDS_COUNT);
-			if (records_count > 0) {
-				if (records_count > DEFAULT_MAX_RECORDS_COUNT)
-					records_count = DEFAULT_MAX_RECORDS_COUNT;
-
-				JLOG_INFO("Using TURN server %s:%s", turn_server->host, service);
-
-				addr_record_t *record = NULL;
-				for (int j = 0; j < records_count; ++j) {
-					int family = records[j].addr.ss_family;
-					// Prefer IPv4 for TURN
-					if (family == AF_INET) {
-						record = records + j;
-						break;
-					}
-					if (family == AF_INET6 && !record)
-						record = records + j;
-				}
-				if (record) {
-					JLOG_VERBOSE("Registering STUN entry %d for relay request",
-					             agent->entries_count);
-					agent_stun_entry_t *entry = agent->entries + agent->entries_count;
-					entry->type = AGENT_STUN_ENTRY_TYPE_RELAY;
-					entry->state = AGENT_STUN_ENTRY_STATE_PENDING;
-					entry->pair = NULL;
-					entry->record = *record;
-					entry->turn_redirections = 0;
-					entry->turn = calloc(1, sizeof(agent_turn_state_t));
-					if (!entry->turn) {
-						JLOG_ERROR("calloc for TURN state failed");
-						break;
-					}
-					if (turn_init_map(&entry->turn->map, AGENT_TURN_MAP_SIZE) < 0) {
-						free(entry->turn);
-						break;
-					}
-					snprintf(entry->turn->credentials.username, STUN_MAX_USERNAME_LEN, "%s",
-					         turn_server->username);
-					entry->turn->password = turn_server->password;
-					juice_random(entry->transaction_id, STUN_TRANSACTION_ID_SIZE);
-					++agent->entries_count;
-
-					agent_arm_transmission(agent, entry, STUN_PACING_TIME * i);
-
-					++count;
-				}
-			} else {
-				JLOG_ERROR("TURN address resolution failed");
-			}
-		}
-	}
-
-	// STUN server resolution
-	// The entry is added after so the TURN server address will be matched in priority
-	if (agent->config.stun_server_host) {
-		if (!agent->config.stun_server_port)
-			agent->config.stun_server_port = 3478; // default STUN port
-
-		char service[8];
-		snprintf(service, 8, "%hu", agent->config.stun_server_port);
-		addr_record_t records[MAX_STUN_SERVER_RECORDS_COUNT];
-		int records_count = addr_resolve(agent->config.stun_server_host, service, records,
-		                                 MAX_STUN_SERVER_RECORDS_COUNT);
-		if (records_count > 0) {
-			if (records_count > MAX_STUN_SERVER_RECORDS_COUNT)
-				records_count = MAX_STUN_SERVER_RECORDS_COUNT;
-
-			JLOG_INFO("Using STUN server %s:%s", agent->config.stun_server_host, service);
-
-			for (int i = 0; i < records_count; ++i) {
-				if (i >= MAX_SERVER_ENTRIES_COUNT)
-					break;
-				JLOG_VERBOSE("Registering STUN entry %d for server request", agent->entries_count);
-				agent_stun_entry_t *entry = agent->entries + agent->entries_count;
-				entry->type = AGENT_STUN_ENTRY_TYPE_SERVER;
-				entry->state = AGENT_STUN_ENTRY_STATE_PENDING;
-				entry->pair = NULL;
-				entry->record = records[i];
-				juice_random(entry->transaction_id, STUN_TRANSACTION_ID_SIZE);
-				++agent->entries_count;
-
-				agent_arm_transmission(agent, entry, STUN_PACING_TIME * i);
-			}
-		} else {
-			JLOG_ERROR("STUN server address resolution failed");
-		}
-	}
-
-	agent_update_gathering_done(agent);
-
-	// Main loop
-	timestamp_t next_timestamp;
-	while (agent_bookkeeping(agent, &next_timestamp) == 0) {
-		timediff_t timediff = next_timestamp - current_timestamp();
-		if (timediff < 0)
-			timediff = 0;
-
-		struct pollfd pfd[1];
-		pfd[0].fd = agent->sock;
-		pfd[0].events = POLLIN;
-
-		JLOG_VERBOSE("Entering poll for %d ms", (int)timediff);
-		mutex_unlock(&agent->mutex);
-		int ret = poll(pfd, 1, (int)timediff);
-		mutex_lock(&agent->mutex);
-		JLOG_VERBOSE("Leaving poll");
-		if (ret < 0) {
-			if (sockerrno == SEINTR || sockerrno == SEAGAIN) {
-				JLOG_VERBOSE("poll interrupted");
-				continue;
-			} else {
-				JLOG_FATAL("poll failed, errno=%d", sockerrno);
-				break;
-			}
-		}
-
-		if (agent->thread_stopped) {
-			JLOG_VERBOSE("Agent destruction requested");
-			break;
-		}
-
-		if (pfd[0].revents & POLLNVAL || pfd[0].revents & POLLERR) {
-			JLOG_FATAL("Error when polling socket");
-			break;
-		}
-
-		if (pfd[0].revents & POLLIN) {
-			if (agent_recv(agent) < 0)
-				break;
-		}
-	}
-	JLOG_DEBUG("Leaving agent thread");
-	agent_change_state(agent, JUICE_STATE_DISCONNECTED);
-	mutex_unlock(&agent->mutex);
+int agent_conn_update(juice_agent_t *agent, timestamp_t *next_timestamp) {
+	return agent_bookkeeping(agent, next_timestamp);
 }
 
-int agent_recv(juice_agent_t *agent) {
-	JLOG_VERBOSE("Receiving datagrams");
-	while (true) {
-		char buffer[BUFFER_SIZE];
-		addr_record_t record;
-		int len = udp_recvfrom(agent->sock, buffer, BUFFER_SIZE, &record);
-		if (len < 0) {
-			if (sockerrno == SEAGAIN || sockerrno == SEWOULDBLOCK) {
-				JLOG_VERBOSE("No more datagrams to receive");
-				break;
-			}
-			JLOG_ERROR("recvfrom failed, errno=%d", sockerrno);
-			return -1;
-		}
-		if (len == 0) {
-			// Empty datagram (used to interrupt)
-			continue;
-		}
+int agent_conn_recv(juice_agent_t *agent, char *buf, size_t len, const addr_record_t *src) {
+	agent_input(agent, buf, len, src, NULL);
+	return 0; // ignore errors
+}
 
-		addr_unmap_inet6_v4mapped((struct sockaddr *)&record.addr, &record.len);
-		agent_input(agent, buffer, len, &record, NULL);
-	}
-
+int agent_conn_fail(juice_agent_t *agent) {
+	agent_change_state(agent, JUICE_STATE_FAILED);
 	return 0;
 }
 
@@ -752,39 +648,9 @@ int agent_input(juice_agent_t *agent, char *buf, size_t len, const addr_record_t
 	return -1;
 }
 
-int agent_interrupt(juice_agent_t *agent) {
-	JLOG_VERBOSE("Interrupting agent thread");
-	mutex_lock(&agent->mutex);
-	if (agent->sock == INVALID_SOCKET) {
-		mutex_unlock(&agent->mutex);
-		return -1;
-	}
-
-	mutex_lock(&agent->send_mutex);
-	if (udp_sendto_self(agent->sock, NULL, 0) < 0) {
-		if (sockerrno != SEAGAIN && sockerrno != SEWOULDBLOCK) {
-			JLOG_WARN("Failed to interrupt thread by triggering socket, errno=%d", sockerrno);
-			mutex_unlock(&agent->send_mutex);
-			mutex_unlock(&agent->mutex);
-			return -1;
-		}
-	}
-
-	mutex_unlock(&agent->send_mutex);
-	mutex_unlock(&agent->mutex);
-	return 0;
-}
-
-void agent_change_state(juice_agent_t *agent, juice_state_t state) {
-	if (state != agent->state) {
-		JLOG_INFO("Changing state to %s", juice_state_to_string(state));
-		agent->state = state;
-		if (agent->config.cb_state_changed)
-			agent->config.cb_state_changed(agent, state, agent->config.user_ptr);
-	}
-}
-
 int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
+	JLOG_VERBOSE("Bookkeeping...");
+
 	timestamp_t now = current_timestamp();
 	*next_timestamp = now + 10000; // We need at least to rearm keepalives
 
@@ -1058,6 +924,15 @@ finally:
 	return 0;
 }
 
+void agent_change_state(juice_agent_t *agent, juice_state_t state) {
+	if (state != agent->state) {
+		JLOG_INFO("Changing state to %s", juice_state_to_string(state));
+		agent->state = state;
+		if (agent->config.cb_state_changed)
+			agent->config.cb_state_changed(agent, state, agent->config.user_ptr);
+	}
+}
+
 int agent_verify_stun_binding(juice_agent_t *agent, void *buf, size_t size,
                               const stun_message_t *msg) {
 	if (msg->msg_method != STUN_METHOD_BINDING)
@@ -1081,16 +956,8 @@ int agent_verify_stun_binding(juice_agent_t *agent, void *buf, size_t size,
 			return -1;
 		}
 		*separator = '\0';
-		const char *first_ufrag = username;
-		const char *second_ufrag = separator + 1;
-		const char *local_ufrag, *remote_ufrag;
-		if (STUN_IS_RESPONSE(msg->msg_class)) {
-			local_ufrag = second_ufrag;
-			remote_ufrag = first_ufrag;
-		} else {
-			local_ufrag = first_ufrag;
-			remote_ufrag = second_ufrag;
-		}
+		const char *local_ufrag = username;
+		const char *remote_ufrag = separator + 1;
 		if (strcmp(local_ufrag, agent->local.ice_ufrag) != 0) {
 			JLOG_WARN("STUN local ufrag check failed, expected=\"%s\", actual=\"%s\"",
 			          agent->local.ice_ufrag, local_ufrag);

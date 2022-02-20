@@ -20,9 +20,9 @@
 #define JUICE_AGENT_H
 
 #include "addr.h"
+#include "conn.h"
 #include "ice.h"
 #include "juice.h"
-#include "socket.h"
 #include "stun.h"
 #include "thread.h"
 #include "timestamp.h"
@@ -118,9 +118,6 @@ struct juice_agent {
 	juice_config_t config;
 	juice_state_t state;
 	agent_mode_t mode;
-	socket_t sock;
-	thread_t thread;
-	mutex_t mutex;
 
 	ice_description_t local;
 	ice_description_t remote;
@@ -137,11 +134,9 @@ struct juice_agent {
 	uint64_t ice_tiebreaker;
 	timestamp_t fail_timestamp;
 	bool gathering_done;
-	bool thread_started;
-	bool thread_stopped;
 
-	mutex_t send_mutex;
-	int send_ds;
+	int conn_index;
+	void *conn_impl;
 };
 
 juice_agent_t *agent_create(const juice_config_t *config);
@@ -164,13 +159,14 @@ juice_state_t agent_get_state(juice_agent_t *agent);
 int agent_get_selected_candidate_pair(juice_agent_t *agent, ice_candidate_t *local,
                                       ice_candidate_t *remote);
 
-void agent_run(juice_agent_t *agent);
-int agent_recv(juice_agent_t *agent);
+int agent_conn_recv(juice_agent_t *agent, char *buf, size_t len, const addr_record_t *src);
+int agent_conn_update(juice_agent_t *agent, timestamp_t *next_timestamp);
+int agent_conn_fail(juice_agent_t *agent);
+
 int agent_input(juice_agent_t *agent, char *buf, size_t len, const addr_record_t *src,
                 const addr_record_t *relayed); // relayed may be NULL
-int agent_interrupt(juice_agent_t *agent);
-void agent_change_state(juice_agent_t *agent, juice_state_t state);
 int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp);
+void agent_change_state(juice_agent_t *agent, juice_state_t state);
 int agent_verify_stun_binding(juice_agent_t *agent, void *buf, size_t size,
                               const stun_message_t *msg);
 int agent_verify_credentials(juice_agent_t *agent, const agent_stun_entry_t *entry, void *buf,

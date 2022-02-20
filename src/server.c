@@ -95,7 +95,7 @@ static void delete_allocation(server_turn_alloc_t *alloc) {
 	alloc->credentials = NULL;
 }
 
-thread_return_t THREAD_CALL server_thread_entry(void *arg) {
+static thread_return_t THREAD_CALL server_thread_entry(void *arg) {
 	server_run((juice_server_t *)arg);
 	return (thread_return_t)0;
 }
@@ -261,7 +261,7 @@ void server_do_destroy(juice_server_t *server) {
 void server_destroy(juice_server_t *server) {
 	mutex_lock(&server->mutex);
 
-	JLOG_DEBUG("Waiting for server thread");
+	JLOG_VERBOSE("Waiting for server thread");
 	server->thread_stopped = true;
 	mutex_unlock(&server->mutex);
 	server_interrupt(server);
@@ -356,7 +356,7 @@ void server_run(juice_server_t *server) {
 	const nfds_t nfd = 1 + server->allocs_count;
 	struct pollfd *pfd = calloc(nfd, sizeof(struct pollfd));
 	if (!pfd) {
-		JLOG_FATAL("alloc for poll descriptors failed");
+		JLOG_FATAL("Memory allocation for poll descriptors failed");
 		return;
 	}
 

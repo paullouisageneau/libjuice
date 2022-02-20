@@ -53,7 +53,7 @@ extern "C" {
 typedef struct juice_agent juice_agent_t;
 
 typedef enum juice_state {
-	JUICE_STATE_DISCONNECTED,
+	JUICE_STATE_DISCONNECTED = 0,
 	JUICE_STATE_GATHERING,
 	JUICE_STATE_CONNECTING,
 	JUICE_STATE_CONNECTED,
@@ -148,10 +148,20 @@ JUICE_EXPORT int juice_server_add_credentials(juice_server_t *server,
                                               const juice_server_credentials_t *credentials,
                                               unsigned long lifetime_ms);
 
+// Connection concurrency mode
+
+typedef enum juice_concurrency_mode {
+	JUICE_CONCURRENCY_MODE_POLL = 0,
+	JUICE_CONCURRENCY_MODE_THREAD,
+	JUICE_CONCURRENCY_MODE_MUX,
+} juice_concurrency_mode_t;
+
+JUICE_EXPORT void juice_set_concurrency_mode(juice_concurrency_mode_t mode);
+
 // Logging
 
-typedef enum {
-	JUICE_LOG_LEVEL_VERBOSE,
+typedef enum juice_log_level {
+	JUICE_LOG_LEVEL_VERBOSE = 0,
 	JUICE_LOG_LEVEL_DEBUG,
 	JUICE_LOG_LEVEL_INFO,
 	JUICE_LOG_LEVEL_WARN,
