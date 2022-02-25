@@ -20,12 +20,13 @@
 #include "agent.h"
 #include "conn_poll.h"
 #include "conn_thread.h"
+#include "conn_mux.h"
 #include "log.h"
 
 #include <assert.h>
 #include <string.h>
 
-#define INITIAL_ENTRIES_SIZE 2
+#define INITIAL_REGISTRY_SIZE 2
 
 static conn_registry_t *registry = NULL;
 static mutex_t init_mutex = MUTEX_INITIALIZER;
@@ -36,13 +37,13 @@ typedef struct conn_mode_entry  {
 	void (*cleanup_func)(conn_registry_t *registry);
 } conn_mode_entry_t;
 
-#define MODE_ENTRIES_SIZE 2
+#define MODE_ENTRIES_SIZE 3
 
 static const conn_mode_entry_t mode_entries[MODE_ENTRIES_SIZE] = {
 	{conn_poll_registry_init, conn_poll_registry_cleanup},
+	{conn_mux_registry_init, conn_mux_registry_cleanup },
 	{conn_thread_registry_init, conn_thread_registry_cleanup }
 };
-
 
 JUICE_EXPORT void juice_set_concurrency_mode(juice_concurrency_mode_t mode) {
 	mutex_lock(&init_mutex);
@@ -52,6 +53,13 @@ JUICE_EXPORT void juice_set_concurrency_mode(juice_concurrency_mode_t mode) {
 		JLOG_ERROR("Invalid concurrency mode");
 	}
 	mutex_unlock(&init_mutex);
+}
+
+JUICE_EXPORT juice_concurrency_mode_t juice_get_concurrency_mode(void) {
+	mutex_lock(&init_mutex);
+	juice_concurrency_mode_t result = concurrency_mode;
+	mutex_unlock(&init_mutex);
+	return result;
 }
 
 int conn_create(juice_agent_t *agent, udp_socket_config_t *config) {
@@ -67,13 +75,13 @@ int conn_create(juice_agent_t *agent, udp_socket_config_t *config) {
 			mutex_unlock(&init_mutex);
 			return -1;
 		}
-		registry->agents = calloc(INITIAL_ENTRIES_SIZE, sizeof(juice_agent_t *));
+		registry->agents = calloc(INITIAL_REGISTRY_SIZE, sizeof(juice_agent_t *));
 		if (!registry->agents) {
 			JLOG_FATAL("Memory allocation failed for connections array");
 			mutex_unlock(&init_mutex);
 			return -1;
 		}
-		registry->agents_size = INITIAL_ENTRIES_SIZE;
+		registry->agents_size = INITIAL_REGISTRY_SIZE;
 		registry->agents_count = 0;
 
 		mutex_init(&registry->mutex, MUTEX_RECURSIVE);

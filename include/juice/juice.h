@@ -151,12 +151,13 @@ JUICE_EXPORT int juice_server_add_credentials(juice_server_t *server,
 // Connection concurrency mode
 
 typedef enum juice_concurrency_mode {
-	JUICE_CONCURRENCY_MODE_POLL = 0,
-	JUICE_CONCURRENCY_MODE_THREAD,
-	JUICE_CONCURRENCY_MODE_MUX,
+	JUICE_CONCURRENCY_MODE_POLL = 0, // Connections share a single thread
+	JUICE_CONCURRENCY_MODE_MUX,      // Connections are multiplexed on a single UDP socket
+	JUICE_CONCURRENCY_MODE_THREAD,   // Each connection runs in its own thread
 } juice_concurrency_mode_t;
 
 JUICE_EXPORT void juice_set_concurrency_mode(juice_concurrency_mode_t mode);
+JUICE_EXPORT juice_concurrency_mode_t juice_get_concurrency_mode(void);
 
 // Logging
 

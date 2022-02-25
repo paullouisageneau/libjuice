@@ -213,6 +213,8 @@ void agent_update_gathering_done(juice_agent_t *agent);
 void agent_update_candidate_pairs(juice_agent_t *agent);
 void agent_update_ordered_pairs(juice_agent_t *agent);
 
+agent_stun_entry_t *agent_find_entry_from_transaction_id(juice_agent_t *agent,
+                                                         const uint8_t *transaction_id);
 agent_stun_entry_t *
 agent_find_entry_from_record(juice_agent_t *agent, const addr_record_t *record,
                              const addr_record_t *relayed); // relayed may be NULL

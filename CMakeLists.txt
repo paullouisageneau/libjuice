@@ -34,6 +34,7 @@ set(LIBJUICE_SOURCES
 	${CMAKE_CURRENT_SOURCE_DIR}/src/conn.c
 	${CMAKE_CURRENT_SOURCE_DIR}/src/conn_poll.c
 	${CMAKE_CURRENT_SOURCE_DIR}/src/conn_thread.c
+	${CMAKE_CURRENT_SOURCE_DIR}/src/conn_mux.c
 	${CMAKE_CURRENT_SOURCE_DIR}/src/base64.c
 	${CMAKE_CURRENT_SOURCE_DIR}/src/hash.c
 	${CMAKE_CURRENT_SOURCE_DIR}/src/hmac.c

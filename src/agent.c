@@ -257,7 +257,12 @@ int agent_gather_candidates(juice_agent_t *agent) {
 	agent_change_state(agent, JUICE_STATE_CONNECTING);
 
 	// TURN server resolution
-	if (agent->config.turn_servers_count > 0) {
+	juice_concurrency_mode_t mode = juice_get_concurrency_mode();
+	if (mode == JUICE_CONCURRENCY_MODE_MUX) {
+		if (agent->config.turn_servers_count > 0)
+			JLOG_WARN("TURN servers are not supported in mux mode");
+
+	} else if (agent->config.turn_servers_count > 0) {
 		int count = 0;
 		for (int i = 0; i < agent->config.turn_servers_count; ++i) {
 			if (count >= MAX_RELAY_ENTRIES_COUNT)
@@ -1044,22 +1049,7 @@ int agent_dispatch_stun(juice_agent_t *agent, void *buf, size_t size, stun_messa
 	agent_stun_entry_t *entry = NULL;
 	if (STUN_IS_RESPONSE(msg->msg_class)) {
 		JLOG_VERBOSE("STUN message is a response, looking for transaction ID");
-		for (int i = 0; i < agent->entries_count; ++i) {
-			if (memcmp(msg->transaction_id, agent->entries[i].transaction_id,
-			           STUN_TRANSACTION_ID_SIZE) == 0) {
-				JLOG_VERBOSE("STUN entry %d matching incoming transaction ID", i);
-				entry = &agent->entries[i];
-				break;
-			}
-			if (agent->entries[i].turn) {
-				if (turn_retrieve_transaction_id(&agent->entries[i].turn->map, msg->transaction_id,
-				                                 NULL)) {
-					JLOG_VERBOSE("STUN entry %d matching incoming transaction ID (TURN)", i);
-					entry = &agent->entries[i];
-					break;
-				}
-			}
-		}
+		entry = agent_find_entry_from_transaction_id(agent, msg->transaction_id);
 		if (!entry) {
 			JLOG_WARN("No STUN entry matching transaction ID, ignoring");
 			return -1;
@@ -2234,6 +2224,24 @@ static inline bool pair_is_relayed(const ice_candidate_pair_t *pair) {
 
 static inline bool entry_is_relayed(const agent_stun_entry_t *entry) {
 	return entry->pair && pair_is_relayed(entry->pair);
+}
+
+agent_stun_entry_t *agent_find_entry_from_transaction_id(juice_agent_t *agent,
+                                                         const uint8_t *transaction_id) {
+	for (int i = 0; i < agent->entries_count; ++i) {
+		agent_stun_entry_t *entry = agent->entries + i;
+		if (memcmp(transaction_id, entry->transaction_id, STUN_TRANSACTION_ID_SIZE) == 0) {
+			JLOG_VERBOSE("STUN entry %d matching incoming transaction ID", i);
+			return entry;
+		}
+		if (entry->turn) {
+			if (turn_retrieve_transaction_id(&entry->turn->map, transaction_id, NULL)) {
+				JLOG_VERBOSE("STUN entry %d matching incoming transaction ID (TURN)", i);
+				return entry;
+			}
+		}
+	}
+	return NULL;
 }
 
 agent_stun_entry_t *agent_find_entry_from_record(juice_agent_t *agent, const addr_record_t *record,
