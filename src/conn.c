@@ -72,7 +72,7 @@ int conn_create(juice_agent_t *agent, udp_socket_config_t *config) {
 			mutex_unlock(&init_mutex);
 			return -1;
 		}
-		registry->agents = calloc(INITIAL_REGISTRY_SIZE, sizeof(juice_agent_t *));
+		registry->agents = malloc(INITIAL_REGISTRY_SIZE * sizeof(juice_agent_t *));
 		if (!registry->agents) {
 			JLOG_FATAL("Memory allocation failed for connections array");
 			mutex_unlock(&init_mutex);
@@ -80,6 +80,7 @@ int conn_create(juice_agent_t *agent, udp_socket_config_t *config) {
 		}
 		registry->agents_size = INITIAL_REGISTRY_SIZE;
 		registry->agents_count = 0;
+		memset(registry->agents, 0, INITIAL_REGISTRY_SIZE * sizeof(juice_agent_t *));
 
 		mutex_init(&registry->mutex, MUTEX_RECURSIVE);
 		mutex_lock(&registry->mutex);
@@ -117,7 +118,7 @@ int conn_create(juice_agent_t *agent, udp_socket_config_t *config) {
 
 		registry->agents = new_agents;
 		registry->agents_size = new_size;
-		memset(registry->agents + i, 0, (new_size - i) * sizeof(juice_agent_t));
+		memset(registry->agents + i, 0, (new_size - i) * sizeof(juice_agent_t *));
 	}
 
 	registry->agents[i] = agent;
