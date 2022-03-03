@@ -26,7 +26,7 @@
 #include <assert.h>
 #include <string.h>
 
-#define INITIAL_REGISTRY_SIZE 2
+#define INITIAL_REGISTRY_SIZE 16
 
 static atomic(juice_concurrency_mode_t) concurrency_mode = ATOMIC_VAR_INIT(JUICE_CONCURRENCY_MODE_DEFAULT);
 

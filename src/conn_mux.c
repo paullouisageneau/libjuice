@@ -28,7 +28,7 @@
 #include <string.h>
 
 #define BUFFER_SIZE 4096
-#define INITIAL_MAP_SIZE 2
+#define INITIAL_MAP_SIZE 16
 
 typedef enum map_entry_type {
 	MAP_ENTRY_TYPE_EMPTY = 0,
