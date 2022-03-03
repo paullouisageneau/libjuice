@@ -30,7 +30,7 @@
 
 static conn_registry_t *registry = NULL;
 static mutex_t init_mutex = MUTEX_INITIALIZER;
-static juice_concurrency_mode_t concurrency_mode = JUICE_CONCURRENCY_MODE_POLL;
+static juice_concurrency_mode_t concurrency_mode = JUICE_CONCURRENCY_MODE_DEFAULT;
 
 typedef struct conn_mode_entry  {
 	int (*init_func)(conn_registry_t *registry, udp_socket_config_t *config);
