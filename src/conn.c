@@ -28,9 +28,10 @@
 
 #define INITIAL_REGISTRY_SIZE 2
 
+static atomic(juice_concurrency_mode_t) concurrency_mode = ATOMIC_VAR_INIT(JUICE_CONCURRENCY_MODE_DEFAULT);
+
 static conn_registry_t *registry = NULL;
 static mutex_t init_mutex = MUTEX_INITIALIZER;
-static juice_concurrency_mode_t concurrency_mode = JUICE_CONCURRENCY_MODE_DEFAULT;
 
 typedef struct conn_mode_entry  {
 	int (*init_func)(conn_registry_t *registry, udp_socket_config_t *config);
@@ -46,20 +47,16 @@ static const conn_mode_entry_t mode_entries[MODE_ENTRIES_SIZE] = {
 };
 
 JUICE_EXPORT void juice_set_concurrency_mode(juice_concurrency_mode_t mode) {
-	mutex_lock(&init_mutex);
-	if(mode >= 0 && mode < MODE_ENTRIES_SIZE) {
-		concurrency_mode = mode;
-	} else {
+	if(mode < 0 && mode >= MODE_ENTRIES_SIZE) {
 		JLOG_ERROR("Invalid concurrency mode");
+		return;
 	}
-	mutex_unlock(&init_mutex);
+
+	atomic_store(&concurrency_mode, mode);
 }
 
 JUICE_EXPORT juice_concurrency_mode_t juice_get_concurrency_mode(void) {
-	mutex_lock(&init_mutex);
-	juice_concurrency_mode_t result = concurrency_mode;
-	mutex_unlock(&init_mutex);
-	return result;
+	return atomic_load(&concurrency_mode);
 }
 
 int conn_create(juice_agent_t *agent, udp_socket_config_t *config) {
