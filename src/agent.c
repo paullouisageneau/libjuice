@@ -257,7 +257,7 @@ int agent_gather_candidates(juice_agent_t *agent) {
 	agent_change_state(agent, JUICE_STATE_CONNECTING);
 
 	// TURN server resolution
-	juice_concurrency_mode_t mode = juice_get_concurrency_mode();
+	juice_concurrency_mode_t mode = agent->config.concurrency_mode;
 	if (mode == JUICE_CONCURRENCY_MODE_MUX) {
 		if (agent->config.turn_servers_count > 0)
 			JLOG_WARN("TURN servers are not supported in mux mode");

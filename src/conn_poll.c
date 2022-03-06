@@ -30,6 +30,12 @@
 
 typedef struct registry_impl {
 	thread_t thread;
+#ifdef _WIN32
+	socket_t interrupt_sock;
+#else
+	int interrupt_pipe_out;
+	int interrupt_pipe_in;
+#endif
 } registry_impl_t;
 
 typedef enum conn_state { CONN_STATE_NEW = 0, CONN_STATE_READY, CONN_STATE_FINISHED } conn_state_t;
@@ -61,28 +67,55 @@ static thread_return_t THREAD_CALL conn_thread_entry(void *arg) {
 
 int conn_poll_registry_init(conn_registry_t *registry, udp_socket_config_t *config) {
 	(void)config;
-
-	registry->init_func = conn_poll_init;
-	registry->cleanup_func = conn_poll_cleanup;
-	registry->interrupt_func = conn_poll_interrupt;
-	registry->send_func = conn_poll_send;
-	registry->get_addrs_func = conn_poll_get_addrs;
-
 	registry_impl_t *registry_impl = calloc(1, sizeof(registry_impl_t));
 	if (!registry_impl) {
 		JLOG_FATAL("Memory allocation failed for connections registry impl");
+		return -1;
 	}
+
+#ifdef _WIN32
+	udp_socket_config_t interrupt_config;
+	memset(&interrupt_config, 0, sizeof(interrupt_config));
+	interrupt_config.bind_address = "localhost";
+	registry_impl->interrupt_sock = udp_create_socket(&interrupt_config);
+	if (registry_impl->interrupt_sock == INVALID_SOCKET) {
+		JLOG_FATAL("Dummy socket creation failed");
+		free(registry_impl);
+		return -1;
+	}
+#else
+	int pipefds[2];
+	if (pipe(pipefds)) {
+		JLOG_FATAL("Pipe creation failed");
+		free(registry_impl);
+		return -1;
+	}
+
+	fcntl(pipefds[0], F_SETFL, O_NONBLOCK);
+	fcntl(pipefds[1], F_SETFL, O_NONBLOCK);
+	registry_impl->interrupt_pipe_out = pipefds[1]; // read
+	registry_impl->interrupt_pipe_in = pipefds[0];  // write
+#endif
+
 	registry->impl = registry_impl;
 
 	JLOG_VERBOSE("Starting connections thread");
 	int ret = thread_init(&registry_impl->thread, conn_thread_entry, registry);
 	if (ret) {
 		JLOG_FATAL("thread_create for connections failed, error=%d", ret);
-		free(registry_impl);
-		return -1;
+		goto error;
 	}
 
 	return 0;
+
+error:
+#ifndef _WIN32
+	close(registry_impl->interrupt_pipe_out);
+	close(registry_impl->interrupt_pipe_in);
+#endif
+	free(registry_impl);
+	registry->impl = NULL;
+	return -1;
 }
 
 void conn_poll_registry_cleanup(conn_registry_t *registry) {
@@ -91,6 +124,12 @@ void conn_poll_registry_cleanup(conn_registry_t *registry) {
 	JLOG_VERBOSE("Waiting for connections thread");
 	thread_join(registry_impl->thread, NULL);
 
+#ifdef _WIN32
+	closesocket(registry_impl->interrupt_sock);
+#else
+	close(registry_impl->interrupt_pipe_out);
+	close(registry_impl->interrupt_pipe_in);
+#endif
 	free(registry->impl);
 	registry->impl = NULL;
 }
@@ -100,22 +139,34 @@ int conn_poll_prepare(conn_registry_t *registry, pfds_record_t *pfds, timestamp_
 	*next_timestamp = now + 60000;
 
 	mutex_lock(&registry->mutex);
-	if (pfds->size != (nfds_t)registry->agents_size) {
-		struct pollfd *new_pfds =
-		    realloc(pfds->pfds, sizeof(struct pollfd) * registry->agents_size);
+	nfds_t size = (nfds_t)(1 + registry->agents_size);
+	if (pfds->size != size) {
+		struct pollfd *new_pfds = realloc(pfds->pfds, sizeof(struct pollfd) * size);
 		if (!new_pfds) {
-			JLOG_ERROR("Memory allocation for poll file descriptors failed");
+			JLOG_FATAL("Memory allocation for poll file descriptors failed");
 			goto error;
 		}
 		pfds->pfds = new_pfds;
-		pfds->size = (nfds_t)registry->agents_size;
+		pfds->size = size;
 	}
 
-	for (nfds_t i = 0; i < pfds->size; ++i) {
+	registry_impl_t *registry_impl = registry->impl;
+	struct pollfd *interrupt_pfd = pfds->pfds;
+#ifdef _WIN32
+	interrupt_pfd->fd = registry_impl->interrupt_sock;
+#else
+	interrupt_pfd->fd = registry_impl->interrupt_pipe_in;
+#endif
+	interrupt_pfd->events = POLLIN;
+
+	for (nfds_t i = 1; i < pfds->size; ++i) {
 		struct pollfd *pfd = pfds->pfds + i;
-		juice_agent_t *agent = registry->agents[i];
-		if (!agent)
+		juice_agent_t *agent = registry->agents[i - 1];
+		if (!agent) {
+			pfd->fd = INVALID_SOCKET;
+			pfd->events = 0;
 			continue;
+		}
 
 		conn_impl_t *conn_impl = agent->conn_impl;
 		if (!conn_impl ||
@@ -148,7 +199,7 @@ int conn_poll_recv(socket_t sock, char *buffer, size_t size, addr_record_t *src)
 	JLOG_VERBOSE("Receiving datagram");
 	int len;
 	while ((len = udp_recvfrom(sock, buffer, size, src)) == 0) {
-		// Empty datagram (used to interrupt)
+		// Empty datagram, ignore
 	}
 
 	if (len < 0) {
@@ -165,13 +216,29 @@ int conn_poll_recv(socket_t sock, char *buffer, size_t size, addr_record_t *src)
 }
 
 int conn_poll_process(conn_registry_t *registry, pfds_record_t *pfds) {
-	for (nfds_t i = 0; i < pfds->size; ++i) {
+	struct pollfd *interrupt_pfd = pfds->pfds;
+	if (interrupt_pfd->revents & POLLIN) {
+#ifdef _WIN32
+		char dummy;
+		addr_record_t src;
+		while (udp_recvfrom(interrupt_pfd->fd, &dummy, 1, &src) >= 0) {
+			// Ignore
+		}
+#else
+		char dummy;
+		while (read(interrupt_pfd->fd, &dummy, 1) > 0) {
+			// Ignore
+		}
+#endif
+	}
+
+	for (nfds_t i = 1; i < pfds->size; ++i) {
 		struct pollfd *pfd = pfds->pfds + i;
 		if (pfd->fd == INVALID_SOCKET)
 			continue;
 
 		mutex_lock(&registry->mutex);
-		juice_agent_t *agent = registry->agents[i];
+		juice_agent_t *agent = registry->agents[i - 1];
 		if (!agent)
 			goto end;
 
@@ -293,6 +360,46 @@ void conn_poll_cleanup(juice_agent_t *agent) {
 	agent->conn_impl = NULL;
 }
 
+void conn_poll_lock(juice_agent_t *agent) {
+	conn_impl_t *conn_impl = agent->conn_impl;
+	conn_registry_t *registry = conn_impl->registry;
+	mutex_lock(&registry->mutex);
+}
+
+void conn_poll_unlock(juice_agent_t *agent) {
+	conn_impl_t *conn_impl = agent->conn_impl;
+	conn_registry_t *registry = conn_impl->registry;
+	mutex_unlock(&registry->mutex);
+}
+
+int conn_poll_interrupt(juice_agent_t *agent) {
+	conn_impl_t *conn_impl = agent->conn_impl;
+	conn_registry_t *registry = conn_impl->registry;
+	registry_impl_t *registry_impl = registry->impl;
+
+	mutex_lock(&registry->mutex);
+	conn_impl->next_timestamp = current_timestamp();
+	mutex_unlock(&registry->mutex);
+
+	JLOG_VERBOSE("Interrupting connections thread");
+
+#ifdef _WIN32
+	if (udp_sendto_self(registry_impl->interrupt_sock, NULL, 0) < 0) {
+		if (sockerrno != SEAGAIN && sockerrno != SEWOULDBLOCK) {
+			JLOG_WARN("Failed to interrupt poll by triggering socket, errno=%d", sockerrno);
+		}
+		return -1;
+	}
+#else
+	char dummy = 0;
+	if (write(registry_impl->interrupt_pipe_out, &dummy, 1) < 0 && errno != EAGAIN &&
+	    errno != EWOULDBLOCK) {
+		JLOG_WARN("Failed to interrupt poll by writing to pipe, errno=%d", errno);
+	}
+#endif
+	return 0;
+}
+
 int conn_poll_send(juice_agent_t *agent, const addr_record_t *dst, const char *data, size_t size,
                    int ds) {
 	conn_impl_t *conn_impl = agent->conn_impl;
@@ -325,38 +432,4 @@ int conn_poll_get_addrs(juice_agent_t *agent, addr_record_t *records, size_t siz
 	conn_impl_t *conn_impl = agent->conn_impl;
 
 	return udp_get_addrs(conn_impl->sock, records, size);
-}
-
-int conn_poll_interrupt(juice_agent_t *agent) {
-	conn_impl_t *conn_impl = agent->conn_impl;
-	conn_registry_t *registry = conn_impl->registry;
-
-	mutex_lock(&registry->mutex);
-	conn_impl->next_timestamp = current_timestamp();
-
-	for (int i = 0; i < registry->agents_size; ++i) {
-		juice_agent_t *agent = registry->agents[i];
-		if (!agent)
-			continue;
-
-		conn_impl_t *conn_impl = agent->conn_impl;
-		if (!conn_impl || conn_impl->state != CONN_STATE_READY)
-			continue;
-
-		mutex_lock(&conn_impl->send_mutex);
-		if (udp_sendto_self(conn_impl->sock, NULL, 0) < 0) {
-			if (sockerrno != SEAGAIN && sockerrno != SEWOULDBLOCK) {
-				JLOG_WARN("Failed to interrupt poll by triggering socket, errno=%d", sockerrno);
-			}
-			mutex_unlock(&conn_impl->send_mutex);
-			continue;
-		}
-
-		mutex_unlock(&conn_impl->send_mutex);
-		mutex_unlock(&registry->mutex);
-		return 0;
-	}
-
-	mutex_unlock(&registry->mutex);
-	return -1;
 }

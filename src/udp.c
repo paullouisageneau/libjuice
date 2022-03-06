@@ -115,8 +115,8 @@ socket_t udp_create_socket(const udp_socket_config_t *config) {
 	setsockopt(sock, SOL_SOCKET, SO_RCVBUF, (const char *)&buffer_size, sizeof(buffer_size));
 	setsockopt(sock, SOL_SOCKET, SO_SNDBUF, (const char *)&buffer_size, sizeof(buffer_size));
 
-	ctl_t blocking = 1;
-	if (ioctlsocket(sock, FIONBIO, &blocking)) {
+	ctl_t nbio = 1;
+	if (ioctlsocket(sock, FIONBIO, &nbio)) {
 		JLOG_ERROR("Setting non-blocking mode on UDP socket failed, errno=%d", sockerrno);
 		goto error;
 	}

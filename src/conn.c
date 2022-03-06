@@ -18,9 +18,9 @@
 
 #include "conn.h"
 #include "agent.h"
+#include "conn_mux.h"
 #include "conn_poll.h"
 #include "conn_thread.h"
-#include "conn_mux.h"
 #include "log.h"
 
 #include <assert.h>
@@ -28,54 +28,61 @@
 
 #define INITIAL_REGISTRY_SIZE 16
 
-static atomic(juice_concurrency_mode_t) concurrency_mode = ATOMIC_VAR_INIT(JUICE_CONCURRENCY_MODE_DEFAULT);
+typedef struct conn_mode_entry {
+	int (*registry_init_func)(conn_registry_t *registry, udp_socket_config_t *config);
+	void (*registry_cleanup_func)(conn_registry_t *registry);
 
-static conn_registry_t *registry = NULL;
-static mutex_t init_mutex = MUTEX_INITIALIZER;
+	int (*init_func)(juice_agent_t *agent, struct conn_registry *registry,
+	                 udp_socket_config_t *config);
+	void (*cleanup_func)(juice_agent_t *agent);
+	void (*lock_func)(juice_agent_t *agent);
+	void (*unlock_func)(juice_agent_t *agent);
+	int (*interrupt_func)(juice_agent_t *agent);
+	int (*send_func)(juice_agent_t *agent, const addr_record_t *dst, const char *data, size_t size,
+	                 int ds);
+	int (*get_addrs_func)(juice_agent_t *agent, addr_record_t *records, size_t size);
 
-typedef struct conn_mode_entry  {
-	int (*init_func)(conn_registry_t *registry, udp_socket_config_t *config);
-	void (*cleanup_func)(conn_registry_t *registry);
+	mutex_t mutex;
+	conn_registry_t *registry;
 } conn_mode_entry_t;
 
 #define MODE_ENTRIES_SIZE 3
 
-static const conn_mode_entry_t mode_entries[MODE_ENTRIES_SIZE] = {
-	{conn_poll_registry_init, conn_poll_registry_cleanup},
-	{conn_mux_registry_init, conn_mux_registry_cleanup },
-	{conn_thread_registry_init, conn_thread_registry_cleanup }
-};
+static conn_mode_entry_t mode_entries[MODE_ENTRIES_SIZE] = {
+    {conn_poll_registry_init, conn_poll_registry_cleanup, conn_poll_init, conn_poll_cleanup,
+     conn_poll_lock, conn_poll_unlock, conn_poll_interrupt, conn_poll_send, conn_poll_get_addrs,
+     MUTEX_INITIALIZER, NULL},
+    {conn_mux_registry_init, conn_mux_registry_cleanup, conn_mux_init, conn_mux_cleanup,
+     conn_mux_lock, conn_mux_unlock, conn_mux_interrupt, conn_mux_send, conn_mux_get_addrs,
+     MUTEX_INITIALIZER, NULL},
+    {conn_thread_registry_init, conn_thread_registry_cleanup, conn_thread_init, conn_thread_cleanup,
+     conn_thread_lock, conn_thread_unlock, conn_thread_interrupt, conn_thread_send,
+     conn_thread_get_addrs, MUTEX_INITIALIZER, NULL}};
 
-JUICE_EXPORT void juice_set_concurrency_mode(juice_concurrency_mode_t mode) {
-	if(mode < 0 && mode >= MODE_ENTRIES_SIZE) {
-		JLOG_ERROR("Invalid concurrency mode");
-		return;
-	}
-
-	atomic_store(&concurrency_mode, mode);
-}
-
-JUICE_EXPORT juice_concurrency_mode_t juice_get_concurrency_mode(void) {
-	return atomic_load(&concurrency_mode);
+static conn_mode_entry_t *get_mode_entry(juice_agent_t *agent) {
+	juice_concurrency_mode_t mode = agent->config.concurrency_mode;
+	assert(mode >= 0 && mode < MODE_ENTRIES_SIZE);
+	return mode_entries + (int)mode;
 }
 
 int conn_create(juice_agent_t *agent, udp_socket_config_t *config) {
-	mutex_lock(&init_mutex);
 	JLOG_DEBUG("Creating connection");
-
+	conn_mode_entry_t *entry = get_mode_entry(agent);
+	mutex_lock(&entry->mutex);
+	conn_registry_t *registry = entry->registry;
 	if (!registry) {
 		JLOG_DEBUG("Creating connections registry");
 
 		registry = calloc(1, sizeof(conn_registry_t));
 		if (!registry) {
 			JLOG_FATAL("Memory allocation failed for connections registry");
-			mutex_unlock(&init_mutex);
+			mutex_unlock(&entry->mutex);
 			return -1;
 		}
 		registry->agents = malloc(INITIAL_REGISTRY_SIZE * sizeof(juice_agent_t *));
 		if (!registry->agents) {
 			JLOG_FATAL("Memory allocation failed for connections array");
-			mutex_unlock(&init_mutex);
+			mutex_unlock(&entry->mutex);
 			return -1;
 		}
 		registry->agents_size = INITIAL_REGISTRY_SIZE;
@@ -85,17 +92,18 @@ int conn_create(juice_agent_t *agent, udp_socket_config_t *config) {
 		mutex_init(&registry->mutex, MUTEX_RECURSIVE);
 		mutex_lock(&registry->mutex);
 
-		registry->mode = concurrency_mode;
-		if (mode_entries[registry->mode].init_func(registry, config)) {
+		if (entry->registry_init_func(registry, config)) {
 			mutex_unlock(&registry->mutex);
-			mutex_unlock(&init_mutex);
+			mutex_unlock(&entry->mutex);
 			return -1;
 		}
+
+		entry->registry = registry;
 
 	} else {
 		mutex_lock(&registry->mutex);
 	}
-	mutex_unlock(&init_mutex);
+	mutex_unlock(&entry->mutex);
 
 	int i = 0;
 	while (i < registry->agents_size) {
@@ -124,7 +132,7 @@ int conn_create(juice_agent_t *agent, udp_socket_config_t *config) {
 	registry->agents[i] = agent;
 	agent->conn_index = i;
 
-	if (registry->init_func(agent, registry, config)) {
+	if (entry->init_func(agent, registry, config)) {
 		mutex_unlock(&registry->mutex);
 		return -1;
 	}
@@ -137,12 +145,14 @@ int conn_create(juice_agent_t *agent, udp_socket_config_t *config) {
 }
 
 void conn_destroy(juice_agent_t *agent) {
-	assert(registry);
-	mutex_lock(&init_mutex);
-	mutex_lock(&registry->mutex);
 	JLOG_DEBUG("Destroying connection");
+	conn_mode_entry_t *entry = get_mode_entry(agent);
+	mutex_lock(&entry->mutex);
+	conn_registry_t *registry = entry->registry;
+	assert(registry);
+	mutex_lock(&registry->mutex);
 
-	registry->cleanup_func(agent);
+	entry->cleanup_func(agent);
 
 	int i = agent->conn_index;
 	assert(i >= 0 && i < registry->agents_size);
@@ -155,12 +165,12 @@ void conn_destroy(juice_agent_t *agent) {
 		JLOG_DEBUG("No connection left, destroying connections registry");
 		mutex_unlock(&registry->mutex);
 
-		mode_entries[registry->mode].cleanup_func(registry);
+		entry->registry_cleanup_func(registry);
 		free(registry->agents);
 		free(registry);
-		registry = NULL;
+		entry->registry = NULL;
 
-		mutex_unlock(&init_mutex);
+		mutex_unlock(&entry->mutex);
 		return;
 	}
 
@@ -168,31 +178,28 @@ void conn_destroy(juice_agent_t *agent) {
 	             registry->agents_count >= 2 ? "s" : "");
 
 	mutex_unlock(&registry->mutex);
-	mutex_unlock(&init_mutex);
+	mutex_unlock(&entry->mutex);
 }
 
 void conn_lock(juice_agent_t *agent) {
 	if (!agent->conn_impl)
 		return;
 
-	assert(registry);
-	mutex_lock(&registry->mutex);
+	get_mode_entry(agent)->lock_func(agent);
 }
 
 void conn_unlock(juice_agent_t *agent) {
 	if (!agent->conn_impl)
 		return;
 
-	assert(registry);
-	mutex_unlock(&registry->mutex);
+	get_mode_entry(agent)->unlock_func(agent);
 }
 
 int conn_interrupt(juice_agent_t *agent) {
 	if (!agent->conn_impl)
 		return -1;
 
-	assert(registry);
-	return registry->interrupt_func(agent);
+	return get_mode_entry(agent)->interrupt_func(agent);
 }
 
 int conn_send(juice_agent_t *agent, const addr_record_t *dst, const char *data, size_t size,
@@ -200,14 +207,12 @@ int conn_send(juice_agent_t *agent, const addr_record_t *dst, const char *data, 
 	if (!agent->conn_impl)
 		return -1;
 
-	assert(registry);
-	return registry->send_func(agent, dst, data, size, ds);
+	return get_mode_entry(agent)->send_func(agent, dst, data, size, ds);
 }
 
 int conn_get_addrs(juice_agent_t *agent, addr_record_t *records, size_t size) {
 	if (!agent->conn_impl)
 		return -1;
 
-	assert(registry);
-	return registry->get_addrs_func(agent, records, size);
+	return get_mode_entry(agent)->get_addrs_func(agent, records, size);
 }

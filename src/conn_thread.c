@@ -51,15 +51,7 @@ static thread_return_t THREAD_CALL conn_thread_entry(void *arg) {
 
 int conn_thread_registry_init(conn_registry_t *registry, udp_socket_config_t *config) {
 	(void)config;
-
-	registry->init_func = conn_thread_init;
-	registry->cleanup_func = conn_thread_cleanup;
-	registry->interrupt_func = conn_thread_interrupt;
-	registry->send_func = conn_thread_send;
-	registry->get_addrs_func = conn_thread_get_addrs;
-
 	registry->impl = NULL; // Unused
-
 	return 0;
 }
 
@@ -236,6 +228,38 @@ void conn_thread_cleanup(juice_agent_t *agent) {
 	agent->conn_impl = NULL;
 }
 
+void conn_thread_lock(juice_agent_t *agent) {
+	conn_impl_t *conn_impl = agent->conn_impl;
+	mutex_lock(&conn_impl->mutex);
+}
+
+void conn_thread_unlock(juice_agent_t *agent) {
+	conn_impl_t *conn_impl = agent->conn_impl;
+	mutex_unlock(&conn_impl->mutex);
+}
+
+int conn_thread_interrupt(juice_agent_t *agent) {
+	conn_impl_t *conn_impl = agent->conn_impl;
+
+	mutex_lock(&conn_impl->mutex);
+	conn_impl->next_timestamp = current_timestamp();
+	mutex_unlock(&conn_impl->mutex);
+
+	JLOG_VERBOSE("Interrupting connection thread");
+
+	mutex_lock(&conn_impl->send_mutex);
+	if (udp_sendto_self(conn_impl->sock, NULL, 0) < 0) {
+		if (sockerrno != SEAGAIN && sockerrno != SEWOULDBLOCK) {
+			JLOG_WARN("Failed to interrupt poll by triggering socket, errno=%d", sockerrno);
+		}
+		mutex_unlock(&conn_impl->send_mutex);
+		return -1;
+	}
+
+	mutex_unlock(&conn_impl->send_mutex);
+	return 0;
+}
+
 int conn_thread_send(juice_agent_t *agent, const addr_record_t *dst, const char *data, size_t size,
                      int ds) {
 	conn_impl_t *conn_impl = agent->conn_impl;
@@ -270,22 +294,3 @@ int conn_thread_get_addrs(juice_agent_t *agent, addr_record_t *records, size_t s
 	return udp_get_addrs(conn_impl->sock, records, size);
 }
 
-int conn_thread_interrupt(juice_agent_t *agent) {
-	conn_impl_t *conn_impl = agent->conn_impl;
-
-	mutex_lock(&conn_impl->mutex);
-	conn_impl->next_timestamp = current_timestamp();
-	mutex_unlock(&conn_impl->mutex);
-
-	mutex_lock(&conn_impl->send_mutex);
-	if (udp_sendto_self(conn_impl->sock, NULL, 0) < 0) {
-		if (sockerrno != SEAGAIN && sockerrno != SEWOULDBLOCK) {
-			JLOG_WARN("Failed to interrupt poll by triggering socket, errno=%d", sockerrno);
-		}
-		mutex_unlock(&conn_impl->send_mutex);
-		return -1;
-	}
-
-	mutex_unlock(&conn_impl->send_mutex);
-	return 0;
-}

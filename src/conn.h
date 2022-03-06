@@ -31,19 +31,11 @@
 typedef struct juice_agent juice_agent_t;
 
 typedef struct conn_registry {
-	juice_concurrency_mode_t mode;
 	void *impl;
 	mutex_t mutex;
 	juice_agent_t **agents;
 	int agents_size;
 	int agents_count;
-
-	int (*init_func)(juice_agent_t *agent, struct conn_registry *registry, udp_socket_config_t *config);
-	void (*cleanup_func)(juice_agent_t *agent);
-	int (*interrupt_func)(juice_agent_t *agent);
-	int (*send_func)(juice_agent_t *agent, const addr_record_t *dst, const char *data, size_t size,
-	                 int ds);
-	int (*get_addrs_func)(juice_agent_t *agent, addr_record_t *records, size_t size);
 } conn_registry_t;
 
 int conn_create(juice_agent_t *agent, udp_socket_config_t *config);

@@ -105,7 +105,7 @@ static int insert_map_entry(registry_impl_t *impl, const addr_record_t *record,
 		return insert_map_entry(impl, record, agent);
 	}
 
-	if(entry->type == MAP_ENTRY_TYPE_EMPTY)
+	if (entry->type == MAP_ENTRY_TYPE_EMPTY)
 		++impl->map_count;
 
 	entry->type = MAP_ENTRY_TYPE_FULL;
@@ -176,13 +176,6 @@ static thread_return_t THREAD_CALL conn_mux_entry(void *arg) {
 
 int conn_mux_registry_init(conn_registry_t *registry, udp_socket_config_t *config) {
 	(void)config;
-
-	registry->init_func = conn_mux_init;
-	registry->cleanup_func = conn_mux_cleanup;
-	registry->interrupt_func = conn_mux_interrupt;
-	registry->send_func = conn_mux_send;
-	registry->get_addrs_func = conn_mux_get_addrs;
-
 	registry_impl_t *registry_impl = calloc(1, sizeof(registry_impl_t));
 	if (!registry_impl) {
 		JLOG_FATAL("Memory allocation failed for connections registry impl");
@@ -213,15 +206,18 @@ int conn_mux_registry_init(conn_registry_t *registry, udp_socket_config_t *confi
 	int ret = thread_init(&registry_impl->thread, conn_mux_entry, registry);
 	if (ret) {
 		JLOG_FATAL("thread_create for connections failed, error=%d", ret);
-		mutex_destroy(&registry_impl->send_mutex);
-		closesocket(registry_impl->sock);
-		free(registry_impl->map);
-		free(registry_impl);
-		registry->impl = NULL;
-		return -1;
+		goto error;
 	}
 
 	return 0;
+
+error:
+	mutex_destroy(&registry_impl->send_mutex);
+	closesocket(registry_impl->sock);
+	free(registry_impl->map);
+	free(registry_impl);
+	registry->impl = NULL;
+	return -1;
 }
 
 void conn_mux_registry_cleanup(conn_registry_t *registry) {
@@ -280,7 +276,8 @@ static juice_agent_t *lookup_agent(conn_registry_t *registry, char *buf, size_t 
 		return NULL;
 	}
 
-	if (msg.msg_class == STUN_CLASS_REQUEST && msg.msg_method == STUN_METHOD_BINDING && msg.has_integrity) {
+	if (msg.msg_class == STUN_CLASS_REQUEST && msg.msg_method == STUN_METHOD_BINDING &&
+	    msg.has_integrity) {
 		// Binding request from peer
 		char username[STUN_MAX_USERNAME_LEN];
 		strcpy(username, msg.credentials.username);
@@ -302,7 +299,7 @@ static juice_agent_t *lookup_agent(conn_registry_t *registry, char *buf, size_t 
 		}
 
 	} else {
-		if(!STUN_IS_RESPONSE(msg.msg_class)) {
+		if (!STUN_IS_RESPONSE(msg.msg_class)) {
 			JLOG_INFO("Got unexpected STUN message from unknown source address");
 			return NULL;
 		}
@@ -467,6 +464,41 @@ void conn_mux_cleanup(juice_agent_t *agent) {
 	agent->conn_impl = NULL;
 }
 
+void conn_mux_lock(juice_agent_t *agent) {
+	conn_impl_t *conn_impl = agent->conn_impl;
+	conn_registry_t *registry = conn_impl->registry;
+	mutex_lock(&registry->mutex);
+}
+
+void conn_mux_unlock(juice_agent_t *agent) {
+	conn_impl_t *conn_impl = agent->conn_impl;
+	conn_registry_t *registry = conn_impl->registry;
+	mutex_unlock(&registry->mutex);
+}
+
+int conn_mux_interrupt(juice_agent_t *agent) {
+	conn_impl_t *conn_impl = agent->conn_impl;
+	conn_registry_t *registry = conn_impl->registry;
+
+	mutex_lock(&registry->mutex);
+	conn_impl->next_timestamp = current_timestamp();
+	mutex_unlock(&registry->mutex);
+
+	JLOG_VERBOSE("Interrupting connections thread");
+
+	registry_impl_t *registry_impl = registry->impl;
+	mutex_lock(&registry_impl->send_mutex);
+	if (udp_sendto_self(registry_impl->sock, NULL, 0) < 0) {
+		if (sockerrno != SEAGAIN && sockerrno != SEWOULDBLOCK) {
+			JLOG_WARN("Failed to interrupt poll by triggering socket, errno=%d", sockerrno);
+		}
+		mutex_unlock(&registry_impl->send_mutex);
+		return -1;
+	}
+	mutex_unlock(&registry_impl->send_mutex);
+	return 0;
+}
+
 int conn_mux_send(juice_agent_t *agent, const addr_record_t *dst, const char *data, size_t size,
                   int ds) {
 	conn_impl_t *conn_impl = agent->conn_impl;
@@ -501,25 +533,4 @@ int conn_mux_get_addrs(juice_agent_t *agent, addr_record_t *records, size_t size
 	registry_impl_t *registry_impl = conn_impl->registry->impl;
 
 	return udp_get_addrs(registry_impl->sock, records, size);
-}
-
-int conn_mux_interrupt(juice_agent_t *agent) {
-	conn_impl_t *conn_impl = agent->conn_impl;
-	conn_registry_t *registry = conn_impl->registry;
-
-	mutex_lock(&registry->mutex);
-	conn_impl->next_timestamp = current_timestamp();
-	mutex_unlock(&registry->mutex);
-
-	registry_impl_t *registry_impl = registry->impl;
-	mutex_lock(&registry_impl->send_mutex);
-	if (udp_sendto_self(registry_impl->sock, NULL, 0) < 0) {
-		if (sockerrno != SEAGAIN && sockerrno != SEWOULDBLOCK) {
-			JLOG_WARN("Failed to interrupt poll by triggering socket, errno=%d", sockerrno);
-		}
-		mutex_unlock(&registry_impl->send_mutex);
-		return -1;
-	}
-	mutex_unlock(&registry_impl->send_mutex);
-	return 0;
 }

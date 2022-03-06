@@ -74,7 +74,15 @@ typedef struct juice_turn_server {
 	uint16_t port;
 } juice_turn_server_t;
 
+typedef enum juice_concurrency_mode {
+	JUICE_CONCURRENCY_MODE_POLL = 0, // Connections share a single thread
+	JUICE_CONCURRENCY_MODE_MUX,      // Connections are multiplexed on a single UDP socket
+	JUICE_CONCURRENCY_MODE_THREAD,   // Each connection runs in its own thread
+} juice_concurrency_mode_t;
+
 typedef struct juice_config {
+	juice_concurrency_mode_t concurrency_mode;
+
 	const char *stun_server_host;
 	uint16_t stun_server_port;
 
@@ -147,19 +155,6 @@ JUICE_EXPORT uint16_t juice_server_get_port(juice_server_t *server);
 JUICE_EXPORT int juice_server_add_credentials(juice_server_t *server,
                                               const juice_server_credentials_t *credentials,
                                               unsigned long lifetime_ms);
-
-// Connection concurrency mode
-
-typedef enum juice_concurrency_mode {
-	JUICE_CONCURRENCY_MODE_POLL = 0, // Connections share a single thread
-	JUICE_CONCURRENCY_MODE_MUX,      // Connections are multiplexed on a single UDP socket
-	JUICE_CONCURRENCY_MODE_THREAD,   // Each connection runs in its own thread
-} juice_concurrency_mode_t;
-
-#define JUICE_CONCURRENCY_MODE_DEFAULT JUICE_CONCURRENCY_MODE_POLL
-
-JUICE_EXPORT void juice_set_concurrency_mode(juice_concurrency_mode_t mode);
-JUICE_EXPORT juice_concurrency_mode_t juice_get_concurrency_mode(void);
 
 // Logging
 
