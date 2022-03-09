@@ -63,7 +63,7 @@ int turn_wrap_channel_data(char *buffer, size_t size, const char *data, size_t d
 // TURN state map
 
 typedef enum turn_entry_type {
-	TURN_ENTRY_TYPE_EMPTY,
+	TURN_ENTRY_TYPE_EMPTY = 0,
 	TURN_ENTRY_TYPE_DELETED,
 	TURN_ENTRY_TYPE_PERMISSION,
 	TURN_ENTRY_TYPE_CHANNEL
