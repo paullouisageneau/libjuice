@@ -99,7 +99,7 @@ int conn_poll_registry_init(conn_registry_t *registry, udp_socket_config_t *conf
 
 	registry->impl = registry_impl;
 
-	JLOG_VERBOSE("Starting connections thread");
+	JLOG_DEBUG("Starting connections thread");
 	int ret = thread_init(&registry_impl->thread, conn_thread_entry, registry);
 	if (ret) {
 		JLOG_FATAL("thread_create for connections failed, error=%d", ret);
@@ -261,7 +261,7 @@ int conn_poll_process(conn_registry_t *registry, pfds_record_t *pfds) {
 			while (left-- &&
 			       (ret = conn_poll_recv(conn_impl->sock, buffer, BUFFER_SIZE, &src)) > 0) {
 				if (agent_conn_recv(agent, buffer, (size_t)ret, &src) != 0) {
-					JLOG_WARN("Agent recv failed");
+					JLOG_WARN("Agent receive failed");
 					conn_impl->state = CONN_STATE_FINISHED;
 					break;
 				}

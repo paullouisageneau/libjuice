@@ -202,7 +202,7 @@ int conn_mux_registry_init(conn_registry_t *registry, udp_socket_config_t *confi
 	mutex_init(&registry_impl->send_mutex, 0);
 	registry->impl = registry_impl;
 
-	JLOG_VERBOSE("Starting connections thread");
+	JLOG_DEBUG("Starting connections thread");
 	int ret = thread_init(&registry_impl->thread, conn_mux_entry, registry);
 	if (ret) {
 		JLOG_FATAL("thread_create for connections failed, error=%d", ret);
@@ -258,17 +258,22 @@ int conn_mux_prepare(conn_registry_t *registry, struct pollfd *pfd, timestamp_t 
 
 static juice_agent_t *lookup_agent(conn_registry_t *registry, char *buf, size_t len,
                                    const addr_record_t *src) {
-	registry_impl_t *registry_impl = registry->impl;
+	JLOG_VERBOSE("Looking up agent from address");
 
+	registry_impl_t *registry_impl = registry->impl;
 	map_entry_t *entry = find_map_entry(registry_impl, src, false);
 	juice_agent_t *agent = entry && entry->type == MAP_ENTRY_TYPE_FULL ? entry->agent : NULL;
-	if (agent)
+	if (agent) {
+		JLOG_DEBUG("Found agent from address");
 		return agent;
+	}
 
 	if (!is_stun_datagram(buf, len)) {
 		JLOG_INFO("Got non-STUN message from unknown source address");
 		return NULL;
 	}
+
+	JLOG_VERBOSE("Looking up agent from STUN message content");
 
 	stun_message_t msg;
 	if (stun_read(buf, len, &msg) < 0) {
@@ -292,6 +297,7 @@ static juice_agent_t *lookup_agent(conn_registry_t *registry, char *buf, size_t 
 			agent = registry->agents[i];
 			if (is_ready(agent)) {
 				if (strcmp(local_ufrag, agent->local.ice_ufrag) == 0) {
+					JLOG_DEBUG("Found agent from ICE ufrag");
 					insert_map_entry(registry_impl, src, agent);
 					return agent;
 				}
@@ -308,6 +314,7 @@ static juice_agent_t *lookup_agent(conn_registry_t *registry, char *buf, size_t 
 			agent = registry->agents[i];
 			if (is_ready(agent)) {
 				if (agent_find_entry_from_transaction_id(agent, msg.transaction_id)) {
+					JLOG_DEBUG("Found agent from transaction ID");
 					return agent;
 				}
 			}
@@ -332,16 +339,21 @@ int conn_mux_process(conn_registry_t *registry, struct pollfd *pfd) {
 		addr_record_t src;
 		int ret;
 		while ((ret = conn_mux_recv(registry, buffer, BUFFER_SIZE, &src)) > 0) {
+			if (JLOG_DEBUG_ENABLED) {
+				char src_str[ADDR_MAX_STRING_LEN];
+				addr_record_to_string(&src, src_str, ADDR_MAX_STRING_LEN);
+				JLOG_DEBUG("Demultiplexing incoming datagram from %s", src_str);
+			}
+
 			juice_agent_t *agent = lookup_agent(registry, buffer, (size_t)ret, &src);
 			if (!agent || !is_ready(agent)) {
-				JLOG_WARN("Agent not found, dropping");
+				JLOG_WARN("Agent not found for incoming datagram, dropping");
 				continue;
 			}
 
-			JLOG_VERBOSE("Found agent");
 			conn_impl_t *conn_impl = agent->conn_impl;
 			if (agent_conn_recv(agent, buffer, (size_t)ret, &src) != 0) {
-				JLOG_WARN("Agent recv failed");
+				JLOG_WARN("Agent receive failed");
 				conn_impl->finished = true;
 				continue;
 			}

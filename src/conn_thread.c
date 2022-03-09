@@ -98,7 +98,7 @@ int conn_thread_process(juice_agent_t *agent, struct pollfd *pfd) {
 		int ret;
 		while ((ret = conn_thread_recv(conn_impl->sock, buffer, BUFFER_SIZE, &src)) > 0) {
 			if (agent_conn_recv(agent, buffer, (size_t)ret, &src) != 0) {
-				JLOG_WARN("Agent recv failed");
+				JLOG_WARN("Agent receive failed");
 				mutex_unlock(&conn_impl->mutex);
 				return -1;
 			}
@@ -197,7 +197,7 @@ int conn_thread_init(juice_agent_t *agent, conn_registry_t *registry, udp_socket
 
 	agent->conn_impl = conn_impl;
 
-	JLOG_VERBOSE("Starting connection thread");
+	JLOG_DEBUG("Starting connection thread");
 	int ret = thread_init(&conn_impl->thread, conn_thread_entry, agent);
 	if (ret) {
 		JLOG_FATAL("thread_create for connection failed, error=%d", ret);
