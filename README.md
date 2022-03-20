@@ -18,11 +18,16 @@ For a STUN/TURN server application based on libjuice, see [Violet](https://githu
 
 ## Compatibility
 
-The library implements a simplified but fully compatible ICE agent ([RFC8445](https://tools.ietf.org/html/rfc8445), [RFC8489](https://tools.ietf.org/html/rfc8489) for STUN, and [RFC8656](https://tools.ietf.org/html/rfc8656) for TURN) with an interface based on SDP ([RFC4566](https://tools.ietf.org/html/rfc4566)). It supports both IPv4 and IPv6.
+The library implements a simplified but fully compatible ICE agent ([RFC5245](https://tools.ietf.org/html/rfc5245) then [RFC8445](https://tools.ietf.org/html/rfc8445)) featuring:
+- STUN protocol ([RFC5389](https://tools.ietf.org/html/rfc5389) then [RFC8489](https://tools.ietf.org/html/rfc8489))
+- TURN relaying ([RFC5766](https://tools.ietf.org/html/rfc5766) then [RFC8656](https://tools.ietf.org/html/rfc8656))
+- SDP-based interface ([RFC8839](https://tools.ietf.org/html/rfc8839))
+- IPv4 and IPv6 dual-stack support
+- Optional multiplexing on a single UDP port
 
 The limitations compared to a fully-featured ICE agent are:
-- Only UDP is supported as transport protocol. Other protocols are ignored.
-- Only one component is supported. This is sufficient for WebRTC Data Channels or multiplexed RTP/RTCP ([RFC5731](https://tools.ietf.org/html/rfc5761)).
+- Only UDP is supported as transport protocol and other protocols are ignored.
+- Only one component is supported, which is sufficient for WebRTC Data Channels and multiplexed RTP+RTCP.
 - Candidates are gathered without binding to each network interface, which behaves identically to the full implementation on most client systems.
 
 It also implements a lightweight STUN/TURN server ([RFC8489](https://tools.ietf.org/html/rfc8489) and [RFC8656](https://tools.ietf.org/html/rfc8656)). The server can be disabled at compile-time with the `NO_SERVER` flag.
