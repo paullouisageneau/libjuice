@@ -43,9 +43,8 @@
 // use a value smaller than 15 seconds.
 #define STUN_KEEPALIVE_PERIOD 15000 // msecs
 
-// TURN refresh period
-#define TURN_LIFETIME 600000                        // msecs, 10 min
-#define TURN_REFRESH_PERIOD (TURN_LIFETIME - 60000) // msecs, lifetime - 1 min
+// TURN lifetime
+#define TURN_LIFETIME 600000 // msecs, 10 min
 
 // ICE trickling timeout
 #define ICE_FAIL_TIMEOUT 30000 // msecs
@@ -110,6 +109,7 @@ typedef struct agent_stun_entry {
 	agent_turn_state_t *turn;
 	unsigned int turn_redirections;
 	struct agent_stun_entry *relay_entry;
+	timestamp_t next_refresh;
 
 	atomic(bool) armed;
 } agent_stun_entry_t;

@@ -279,6 +279,7 @@ int agent_gather_candidates(juice_agent_t *agent) {
 		mutex_unlock(&agent->mutex);
 		return -1;
 	}
+
 	agent->thread_started = true;
 	mutex_unlock(&agent->mutex);
 	return 0;
@@ -864,10 +865,21 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 			int ret;
 			switch (entry->type) {
 			case AGENT_STUN_ENTRY_TYPE_RELAY:
-				// RFC 8445 5.1.1.4. Keeping Candidates Alive:
-				// Refreshes for allocations are done using the Refresh transaction, as described in
-				// [RFC5766]
-				ret = agent_send_turn_allocate_request(agent, entry, STUN_METHOD_REFRESH);
+				if (entry->next_refresh <= now) {
+					// RFC 8656 8. Refreshing an Allocation:
+					// If a client wishes to continue using an allocation, then the client MUST
+					// refresh it before it expires.
+					ret = agent_send_turn_allocate_request(agent, entry, STUN_METHOD_REFRESH);
+				} else {
+					// RFC 8656 23. IAB Considerations
+					// TURN is "brittle" in that it requires the NAT bindings between the client and
+					// the server to be maintained unchanged for the lifetime of the allocation.
+					// This is typically done using keep-alives. If this is not done, then the
+					// client will lose its allocation and can no longer exchange data with its
+					// peers.
+					ret =
+					    agent_send_stun_binding(agent, entry, STUN_CLASS_REQUEST, 0, NULL, NULL);
+				}
 				break;
 			case AGENT_STUN_ENTRY_TYPE_SERVER:
 				// RFC 8445 5.1.1.4. Keeping Candidates Alive:
@@ -888,10 +900,17 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 			if (ret < 0)
 				JLOG_WARN("Sending keepalive failed");
 
-			agent_arm_transmission(agent, entry,
-			                       entry->type == AGENT_STUN_ENTRY_TYPE_RELAY && ret >= 0
-			                           ? TURN_REFRESH_PERIOD
-			                           : STUN_KEEPALIVE_PERIOD);
+			timediff_t delay = STUN_KEEPALIVE_PERIOD;
+			if (entry->type == AGENT_STUN_ENTRY_TYPE_RELAY) {
+				timediff_t refresh_delay = entry->next_refresh - now;
+				if (refresh_delay < 0)
+					refresh_delay = 0;
+
+				if (delay > refresh_delay)
+					delay = refresh_delay;
+			}
+
+			agent_arm_transmission(agent, entry, delay);
 
 		} else {
 			// Entry does not transmit, unset next transmission
@@ -997,7 +1016,7 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 			// refresh the corresponding TURN session regularly
 			if (relay_entry && relay_entry->state != AGENT_STUN_ENTRY_STATE_SUCCEEDED_KEEPALIVE) {
 				relay_entry->state = AGENT_STUN_ENTRY_STATE_SUCCEEDED_KEEPALIVE;
-				agent_arm_transmission(agent, relay_entry, TURN_REFRESH_PERIOD);
+				agent_arm_transmission(agent, relay_entry, STUN_KEEPALIVE_PERIOD);
 			}
 
 			// Disable keepalives for other entries
@@ -1349,7 +1368,7 @@ int agent_process_stun_binding(juice_agent_t *agent, const stun_message_t *msg,
 			if (JLOG_INFO_ENABLED && entry->type != AGENT_STUN_ENTRY_TYPE_CHECK) {
 				char mapped_str[ADDR_MAX_STRING_LEN];
 				addr_record_to_string(&msg->mapped, mapped_str, ADDR_MAX_STRING_LEN);
-				JLOG_INFO("Got STUN mapped address %s from server", mapped_str);
+				JLOG_DEBUG("Got STUN mapped address %s from server", mapped_str);
 			}
 
 			ice_candidate_type_t type = (entry->type == AGENT_STUN_ENTRY_TYPE_CHECK)
@@ -1359,6 +1378,7 @@ int agent_process_stun_binding(juice_agent_t *agent, const stun_message_t *msg,
 				JLOG_WARN("Failed to add local peer reflexive candidate from STUN mapped address");
 			}
 		}
+
 		if (entry->type == AGENT_STUN_ENTRY_TYPE_CHECK) {
 			// 7.2.5.2.1. Non-Symmetric Transport Addresses:
 			// The ICE agent MUST check that the source and destination transport addresses in the
@@ -1589,63 +1609,87 @@ int agent_process_turn_allocate(juice_agent_t *agent, const stun_message_t *msg,
 		JLOG_DEBUG("Received TURN %s success response",
 		           msg->msg_method == STUN_METHOD_ALLOCATE ? "Allocate" : "Refresh");
 
-		if (msg->msg_method == STUN_METHOD_REFRESH) {
-			JLOG_DEBUG("TURN refresh successful");
-			// There is nothing to do other than rearm
-			if (entry->state == AGENT_STUN_ENTRY_STATE_SUCCEEDED_KEEPALIVE) {
-				juice_random(entry->transaction_id, STUN_TRANSACTION_ID_SIZE);
-				agent_arm_transmission(agent, entry, TURN_REFRESH_PERIOD);
+		if (msg->msg_method == STUN_METHOD_ALLOCATE) {
+			JLOG_DEBUG("TURN allocate successful");
+
+			if (msg->mapped.len) {
+				JLOG_VERBOSE("Response has mapped address");
+
+				if (JLOG_INFO_ENABLED) {
+					char mapped_str[ADDR_MAX_STRING_LEN];
+					addr_record_to_string(&msg->mapped, mapped_str, ADDR_MAX_STRING_LEN);
+					JLOG_DEBUG("Got STUN mapped address %s from TURN server", mapped_str);
+				}
+
+				if (agent_add_local_reflexive_candidate(agent, ICE_CANDIDATE_TYPE_SERVER_REFLEXIVE,
+				                                        &msg->mapped)) {
+					JLOG_WARN(
+					    "Failed to add local peer reflexive candidate from TURN mapped address");
+				}
 			}
-			break;
-		}
 
-		if (entry->state != AGENT_STUN_ENTRY_STATE_SUCCEEDED_KEEPALIVE) {
-			entry->state = AGENT_STUN_ENTRY_STATE_SUCCEEDED;
-			entry->next_transmission = 0;
-		}
+			if (!msg->relayed.len) {
+				JLOG_ERROR("Expected relayed address in TURN Allocate response");
+				entry->state = AGENT_STUN_ENTRY_STATE_FAILED;
+				return -1;
+			}
 
-		if (!agent->selected_pair || !agent->selected_pair->nominated) {
-			// We want to send refresh requests now
-			entry->state = AGENT_STUN_ENTRY_STATE_SUCCEEDED_KEEPALIVE;
-			juice_random(entry->transaction_id, STUN_TRANSACTION_ID_SIZE);
-			agent_arm_transmission(agent, entry, TURN_REFRESH_PERIOD);
-		}
+			if (!msg->lifetime) {
+				JLOG_ERROR("Expected valid lifetime in TURN Allocate response");
+				entry->state = AGENT_STUN_ENTRY_STATE_FAILED;
+				return -1;
+			}
 
-		if (msg->mapped.len) {
-			JLOG_VERBOSE("Response has mapped address");
+			if (entry->state != AGENT_STUN_ENTRY_STATE_SUCCEEDED_KEEPALIVE) {
+				entry->state = AGENT_STUN_ENTRY_STATE_SUCCEEDED;
+				entry->next_transmission = 0;
+			}
+
+			if (!agent->selected_pair || !agent->selected_pair->nominated) {
+				// We want to send refresh requests now
+				entry->state = AGENT_STUN_ENTRY_STATE_SUCCEEDED_KEEPALIVE;
+				juice_random(entry->transaction_id, STUN_TRANSACTION_ID_SIZE);
+				agent_arm_transmission(agent, entry, STUN_KEEPALIVE_PERIOD);
+			}
+
+			entry->relayed = msg->relayed;
+			if (agent_add_local_relayed_candidate(agent, &msg->relayed)) {
+				JLOG_WARN("Failed to add local relayed candidate from TURN relayed address");
+				return -1;
+			}
 
 			if (JLOG_INFO_ENABLED) {
-				char mapped_str[ADDR_MAX_STRING_LEN];
-				addr_record_to_string(&msg->mapped, mapped_str, ADDR_MAX_STRING_LEN);
-				JLOG_INFO("Got STUN mapped address %s from TURN server", mapped_str);
+				char relayed_str[ADDR_MAX_STRING_LEN];
+				addr_record_to_string(&entry->relayed, relayed_str, ADDR_MAX_STRING_LEN);
+				JLOG_INFO("Allocated TURN relayed address %s", relayed_str);
 			}
 
-			if (agent_add_local_reflexive_candidate(agent, ICE_CANDIDATE_TYPE_SERVER_REFLEXIVE,
-			                                        &msg->mapped)) {
-				JLOG_WARN("Failed to add local peer reflexive candidate from TURN mapped address");
+			agent_update_gathering_done(agent);
+
+		} else {
+			JLOG_DEBUG("TURN refresh successful");
+
+			// Rearm
+			if (entry->state == AGENT_STUN_ENTRY_STATE_SUCCEEDED_KEEPALIVE) {
+				juice_random(entry->transaction_id, STUN_TRANSACTION_ID_SIZE);
+				agent_arm_transmission(agent, entry, STUN_KEEPALIVE_PERIOD);
 			}
 		}
 
-		if (!msg->relayed.len) {
-			JLOG_ERROR("Expected relayed address in TURN %s response",
-			           msg->msg_method == STUN_METHOD_ALLOCATE ? "Allocate" : "Refresh");
-			entry->state = AGENT_STUN_ENTRY_STATE_FAILED;
-			return -1;
-		}
+		// RFC 8656 8. Refreshing an Allocation:
+		// If a client wishes to continue using an allocation, then the client MUST refresh it
+		// before it expires. It is suggested that the client refresh the allocation roughly 1
+		// minute before it expires.
+		if (msg->lifetime) {
+			timediff_t refresh_period = msg->lifetime * 1000 - 60000; // 1 minute
+			if (refresh_period < 0)
+				refresh_period = 0;
 
-		entry->relayed = msg->relayed;
-		if (agent_add_local_relayed_candidate(agent, &msg->relayed)) {
-			JLOG_WARN("Failed to add local relayed candidate from TURN relayed address");
-			return -1;
-		}
+			JLOG_DEBUG("TURN allocation lifetime is %d secs, refreshing in %d secs",
+			           (int)msg->lifetime, (int)(refresh_period / 1000));
 
-		if (JLOG_INFO_ENABLED) {
-			char relayed_str[ADDR_MAX_STRING_LEN];
-			addr_record_to_string(&entry->relayed, relayed_str, ADDR_MAX_STRING_LEN);
-			JLOG_INFO("Allocated TURN relayed address %s", relayed_str);
+			entry->next_refresh = current_timestamp() + refresh_period;
 		}
-
-		agent_update_gathering_done(agent);
 		break;
 	}
 	case STUN_CLASS_RESP_ERROR: {
@@ -1785,6 +1829,7 @@ int agent_send_turn_allocate_request(juice_agent_t *agent, const agent_stun_entr
 		JLOG_WARN("STUN message send failed");
 		return -1;
 	}
+
 	return 0;
 }
 
