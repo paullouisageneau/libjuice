@@ -140,7 +140,6 @@ struct juice_agent {
 };
 
 juice_agent_t *agent_create(const juice_config_t *config);
-void agent_do_destroy(juice_agent_t *agent);
 void agent_destroy(juice_agent_t *agent);
 
 int agent_gather_candidates(juice_agent_t *agent);

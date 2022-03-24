@@ -141,11 +141,11 @@ juice_agent_t *agent_create(const juice_config_t *config) {
 	return agent;
 
 error:
-	agent_do_destroy(agent);
+	agent_destroy(agent);
 	return NULL;
 }
 
-void agent_do_destroy(juice_agent_t *agent) {
+void agent_destroy(juice_agent_t *agent) {
 	JLOG_DEBUG("Destroying agent");
 
 	conn_destroy(agent);
@@ -174,12 +174,8 @@ void agent_do_destroy(juice_agent_t *agent) {
 #ifdef _WIN32
 	WSACleanup();
 #endif
-	JLOG_VERBOSE("Destroyed agent");
-}
 
-void agent_destroy(juice_agent_t *agent) {
-	// TODO
-	agent_do_destroy(agent);
+	JLOG_VERBOSE("Destroyed agent");
 }
 
 int agent_gather_candidates(juice_agent_t *agent) {
@@ -367,7 +363,7 @@ int agent_gather_candidates(juice_agent_t *agent) {
 
 	agent_update_gathering_done(agent);
 	conn_unlock(agent);
-	conn_interrupt(agent); // TODO: would not be necessary if created in locked state
+	conn_interrupt(agent);
 	return 0;
 }
 
@@ -1227,6 +1223,7 @@ int agent_process_stun_binding(juice_agent_t *agent, const stun_message_t *msg,
 				JLOG_WARN("Failed to add local peer reflexive candidate from STUN mapped address");
 			}
 		}
+
 		if (entry->type == AGENT_STUN_ENTRY_TYPE_CHECK) {
 			// 7.2.5.2.1. Non-Symmetric Transport Addresses:
 			// The ICE agent MUST check that the source and destination transport addresses in the
