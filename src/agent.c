@@ -1464,6 +1464,14 @@ int agent_process_turn_allocate(juice_agent_t *agent, const stun_message_t *msg,
 			break;
 		}
 
+		JLOG_DEBUG("TURN allocate successful");
+
+		if (!msg->relayed.len) {
+			JLOG_ERROR("Expected relayed address in TURN Allocate response");
+			entry->state = AGENT_STUN_ENTRY_STATE_FAILED;
+			return -1;
+		}
+
 		if (entry->state != AGENT_STUN_ENTRY_STATE_SUCCEEDED_KEEPALIVE) {
 			entry->state = AGENT_STUN_ENTRY_STATE_SUCCEEDED;
 			entry->next_transmission = 0;
@@ -1489,13 +1497,6 @@ int agent_process_turn_allocate(juice_agent_t *agent, const stun_message_t *msg,
 			                                        &msg->mapped)) {
 				JLOG_WARN("Failed to add local peer reflexive candidate from TURN mapped address");
 			}
-		}
-
-		if (!msg->relayed.len) {
-			JLOG_ERROR("Expected relayed address in TURN %s response",
-			           msg->msg_method == STUN_METHOD_ALLOCATE ? "Allocate" : "Refresh");
-			entry->state = AGENT_STUN_ENTRY_STATE_FAILED;
-			return -1;
 		}
 
 		entry->relayed = msg->relayed;
