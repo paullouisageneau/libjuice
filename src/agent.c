@@ -889,7 +889,8 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 				JLOG_WARN("Sending keepalive failed");
 
 			agent_arm_transmission(agent, entry,
-			                       entry->type == AGENT_STUN_ENTRY_TYPE_RELAY && ret >= 0
+			                       ret >= 0 && entry->type == AGENT_STUN_ENTRY_TYPE_RELAY &&
+			                               agent->remote.candidates_count > 0
 			                           ? TURN_REFRESH_PERIOD
 			                           : STUN_KEEPALIVE_PERIOD);
 
@@ -1594,7 +1595,9 @@ int agent_process_turn_allocate(juice_agent_t *agent, const stun_message_t *msg,
 			// There is nothing to do other than rearm
 			if (entry->state == AGENT_STUN_ENTRY_STATE_SUCCEEDED_KEEPALIVE) {
 				juice_random(entry->transaction_id, STUN_TRANSACTION_ID_SIZE);
-				agent_arm_transmission(agent, entry, TURN_REFRESH_PERIOD);
+				agent_arm_transmission(agent, entry,
+				                       agent->remote.candidates_count > 0 ? TURN_REFRESH_PERIOD
+				                                                          : STUN_KEEPALIVE_PERIOD);
 			}
 			break;
 		}
@@ -1608,7 +1611,9 @@ int agent_process_turn_allocate(juice_agent_t *agent, const stun_message_t *msg,
 			// We want to send refresh requests now
 			entry->state = AGENT_STUN_ENTRY_STATE_SUCCEEDED_KEEPALIVE;
 			juice_random(entry->transaction_id, STUN_TRANSACTION_ID_SIZE);
-			agent_arm_transmission(agent, entry, TURN_REFRESH_PERIOD);
+			agent_arm_transmission(agent, entry,
+			                       agent->remote.candidates_count > 0 ? TURN_REFRESH_PERIOD
+			                                                          : STUN_KEEPALIVE_PERIOD);
 		}
 
 		if (msg->mapped.len) {
