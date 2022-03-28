@@ -552,7 +552,7 @@ int stun_read(void *data, size_t size, stun_message_t *msg) {
 	// 438 (Stale Nonce), the client MUST test if the NONCE attribute value starts with the "nonce
 	// cookie". If so and the "nonce cookie" has the STUN Security Feature "Password algorithms"
 	// bit set to 1 but no PASSWORD-ALGORITHMS attribute is present, then the client MUST NOT retry
-	// the request with a new transaction. See https://tools.ietf.org/html/rfc8489#section-9.2.5
+	// the request with a new transaction. See https://datatracker.ietf.org/doc/html/rfc8489#section-9.2.5
 	if (msg->msg_class == STUN_CLASS_RESP_ERROR &&
 	    (msg->error_code == 401 || msg->error_code == 438) &&
 	    security_bits & STUN_SECURITY_PASSWORD_ALGORITHMS_BIT &&
@@ -570,7 +570,7 @@ int stun_read(void *data, size_t size, stun_message_t *msg) {
 	// present, (2) PASSWORD-ALGORITHMS  matches the value sent in the response that sent
 	// this NONCE, and (3) PASSWORD-ALGORITHM matches one of the entries in
 	// PASSWORD-ALGORITHMS, the server MUST generate an error response with an error code of
-	// 400 (Bad Request). See https://tools.ietf.org/html/rfc8489#section-9.2.4
+	// 400 (Bad Request). See https://datatracker.ietf.org/doc/html/rfc8489#section-9.2.4
 	if (!STUN_IS_RESPONSE(msg->msg_class)) {
 		if (credentials->password_algorithms_value_size == 0 &&
 		    credentials->password_algorithm == STUN_PASSWORD_ALGORITHM_UNSET) {
@@ -768,7 +768,7 @@ int stun_read_attr(const void *data, size_t size, stun_message_t *msg, uint8_t *
 		JLOG_VERBOSE("Got nonce: %s", msg->credentials.nonce);
 
 		// If the nonce of a response starts with the nonce cookie, decode the Security Feature bits
-		// See https://tools.ietf.org/html/rfc8489#section-9.2
+		// See https://datatracker.ietf.org/doc/html/rfc8489#section-9.2
 		if (STUN_IS_RESPONSE(msg->msg_class) &&
 		    strlen(msg->credentials.nonce) > STUN_NONCE_COOKIE_LEN + 4 &&
 		    strncmp(msg->credentials.nonce, STUN_NONCE_COOKIE, STUN_NONCE_COOKIE_LEN) == 0) {
@@ -1150,7 +1150,7 @@ void stun_prepend_nonce_cookie(char *nonce) {
 	// RFC 8489: To indicate that it supports this specification, a server MUST prepend the
 	// NONCE attribute value with the character string composed of "obMatJos2" concatenated with
 	// the (4-character) base64 [RFC4648] encoding of the 24-bit STUN Security Features See
-	// https://tools.ietf.org/html/rfc8489#section-9.2
+	// https://datatracker.ietf.org/doc/html/rfc8489#section-9.2
 	char copy[STUN_MAX_NONCE_LEN];
 	strcpy(copy, nonce);
 

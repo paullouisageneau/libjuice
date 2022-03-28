@@ -31,7 +31,7 @@
 #pragma pack(push, 1)
 /*
  * STUN message header (20 bytes)
- * See https://tools.ietf.org/html/rfc8489#section-5
+ * See https://datatracker.ietf.org/doc/html/rfc8489#section-5
  *
  *  0                   1                   2                   3
  *  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
@@ -81,7 +81,7 @@ typedef enum stun_method {
 	STUN_METHOD_BINDING = 0x0001,
 
 	// Methods for TURN
-	// See https://tools.ietf.org/html/rfc8656#section-17
+	// See https://datatracker.ietf.org/doc/html/rfc8656#section-17
 	STUN_METHOD_ALLOCATE = 0x003,
 	STUN_METHOD_REFRESH = 0x004,
 	STUN_METHOD_SEND = 0x006,
@@ -135,7 +135,7 @@ typedef enum stun_attr_type {
 	STUN_ATTR_ICE_CONTROLLING = 0x802A,
 
 	// Attributes for TURN
-	// See https://tools.ietf.org/html/rfc8656#section-18
+	// See https://datatracker.ietf.org/doc/html/rfc8656#section-18
 	STUN_ATTR_CHANNEL_NUMBER = 0x000C,
 	STUN_ATTR_LIFETIME = 0x000D,
 	STUN_ATTR_XOR_PEER_ADDRESS = 0x0012,
@@ -288,14 +288,14 @@ typedef enum stun_password_algorithm {
 
 #define STUN_MAX_PASSWORD_LEN STUN_MAX_USERNAME_LEN
 
-// Nonce cookie prefix as specified in https://tools.ietf.org/html/rfc8489#section-9.2
+// Nonce cookie prefix as specified in https://datatracker.ietf.org/doc/html/rfc8489#section-9.2
 #define STUN_NONCE_COOKIE "obMatJos2"
 #define STUN_NONCE_COOKIE_LEN 9
 
 // USERHASH is a SHA256 digest
 #define USERHASH_SIZE HASH_SHA256_SIZE
 
-// STUN Security Feature bits as defined in https://tools.ietf.org/html/rfc8489#section-18.1
+// STUN Security Feature bits as defined in https://datatracker.ietf.org/doc/html/rfc8489#section-18.1
 // See errata about bit order: https://www.rfc-editor.org/errata_search.php?rfc=8489
 // Bits are assigned starting from the least significant side of the bit set, so Bit 0 is the rightmost bit, and Bit 23 is the leftmost bit.
 // Bit 0: Password algorithms
