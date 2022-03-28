@@ -30,7 +30,7 @@
 
 #define CLAMP(x, low, high) (((x) > (high)) ? (high) : (((x) < (low)) ? (low) : (x)))
 
-// See RFC4566 for SDP format: https://datatracker.ietf.org/doc/html/rfc4566
+// See RFC4566 for SDP format: https://www.rfc-editor.org/rfc/rfc4566.html
 
 static const char *skip_prefix(const char *str, const char *prefix) {
 	size_t len = strlen(prefix);
@@ -338,7 +338,7 @@ int ice_create_candidate_pair(ice_candidate_t *local, ice_candidate_t *remote, b
 
 int ice_update_candidate_pair(ice_candidate_pair_t *pair, bool is_controlling) {
 	// Compute pair priority according to RFC 8445, extended to support generic pairs missing local
-	// or remote See https://datatracker.ietf.org/doc/html/rfc8445#section-6.1.2.3
+	// or remote See https://www.rfc-editor.org/rfc/rfc8445.html#section-6.1.2.3
 	if (!pair->local && !pair->remote)
 		return 0;
 	uint64_t local_priority =
@@ -371,7 +371,7 @@ int ice_candidates_count(const ice_description_t *description, ice_candidate_typ
 
 uint32_t ice_compute_priority(ice_candidate_type_t type, int family, int component, int index) {
 	// Compute candidate priority according to RFC 8445
-	// See https://datatracker.ietf.org/doc/html/rfc8445#section-5.1.2.1
+	// See https://www.rfc-editor.org/rfc/rfc8445.html#section-5.1.2.1
 	uint32_t p = 0;
 
 	switch (type) {
