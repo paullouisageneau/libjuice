@@ -230,9 +230,9 @@ int turn_init_map(turn_map_t *map, int size) {
 	map->channels_count = 0;
 	map->transaction_ids_count = 0;
 
-	map->map = calloc(sizeof(turn_entry_t), map->map_size);
-	map->ordered_channels = calloc(sizeof(turn_entry_t *), map->map_size);
-	map->ordered_transaction_ids = calloc(sizeof(turn_entry_t *), map->map_size);
+	map->map = calloc(map->map_size, sizeof(turn_entry_t));
+	map->ordered_channels = calloc(map->map_size, sizeof(turn_entry_t *));
+	map->ordered_transaction_ids = calloc(map->map_size, sizeof(turn_entry_t *));
 
 	if (!map->map || !map->ordered_channels || !map->ordered_transaction_ids) {
 		JLOG_ERROR("Failed to allocate TURN map of size %d", size);
@@ -298,7 +298,7 @@ bool turn_bind_channel(turn_map_t *map, const addr_record_t *record, const uint8
 	}
 
 	memmove(map->ordered_channels + pos + 1, map->ordered_channels + pos,
-	        (map->channels_count - pos) * sizeof(turn_entry_t));
+	        (map->channels_count - pos) * sizeof(turn_entry_t *));
 	map->ordered_channels[pos] = entry;
 	map->channels_count++;
 
