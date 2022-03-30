@@ -495,7 +495,7 @@ int agent_relay_send(juice_agent_t *agent, agent_stun_entry_t *entry, const addr
 		return -1;
 	}
 
-	JLOG_VERBOSE("Sending datagram via relay, size=%d", size);
+	JLOG_VERBOSE("Sending datagram via TURN Send Indication, size=%d", size);
 
 	// Send CreatePermission if necessary
 	if (!turn_has_permission(&entry->turn->map, dst))
@@ -535,7 +535,7 @@ int agent_channel_send(juice_agent_t *agent, agent_stun_entry_t *entry, const ad
 		if (agent_send_turn_channel_bind_request(agent, entry, record, ds, &channel) < 0)
 			return -1;
 
-	JLOG_VERBOSE("Sending datagram via channel 0x%hX, size=%d", channel, size);
+	JLOG_VERBOSE("Sending datagram via TURN ChannelData, channel=0x%hX, size=%d", channel, size);
 
 	// Send the data wrapped as ChannelData
 	char buffer[BUFFER_SIZE];
@@ -1420,7 +1420,13 @@ int agent_send_stun_binding(juice_agent_t *agent, agent_stun_entry_t *entry, stu
 	if (entry->relay_entry) {
 		// The datagram must be sent through the relay
 		JLOG_DEBUG("Sending STUN message via relay");
-		if (agent_relay_send(agent, entry->relay_entry, &entry->record, buffer, size, 0) < 0) {
+		int ret;
+		if (agent->state == JUICE_STATE_COMPLETED)
+			ret = agent_channel_send(agent, entry->relay_entry, &entry->record, buffer, size, 0);
+		else
+			ret = agent_relay_send(agent, entry->relay_entry, &entry->record, buffer, size, 0);
+
+		if (ret < 0) {
 			JLOG_WARN("STUN message send via relay failed");
 			return -1;
 		}
