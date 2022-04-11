@@ -30,6 +30,10 @@
 
 typedef struct juice_agent juice_agent_t;
 
+// Generic connection interface for agents
+// This interface abstracts sockets and polling to allow for different concurrency modes.
+// See include/juice/juice.h for implemented concurrency modes
+
 typedef struct conn_registry {
 	void *impl;
 	mutex_t mutex;
