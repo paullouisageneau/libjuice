@@ -49,17 +49,6 @@ static thread_return_t THREAD_CALL conn_thread_entry(void *arg) {
 	return (thread_return_t)0;
 }
 
-int conn_thread_registry_init(conn_registry_t *registry, udp_socket_config_t *config) {
-	(void)config;
-	registry->impl = NULL; // Unused
-	return 0;
-}
-
-void conn_thread_registry_cleanup(conn_registry_t *registry) {
-	(void)registry;
-	// Nothing to do
-}
-
 int conn_thread_prepare(juice_agent_t *agent, struct pollfd *pfd, timestamp_t *next_timestamp) {
 	conn_impl_t *conn_impl = agent->conn_impl;
 	mutex_lock(&conn_impl->mutex);

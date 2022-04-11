@@ -55,9 +55,8 @@ static conn_mode_entry_t mode_entries[MODE_ENTRIES_SIZE] = {
     {conn_mux_registry_init, conn_mux_registry_cleanup, conn_mux_init, conn_mux_cleanup,
      conn_mux_lock, conn_mux_unlock, conn_mux_interrupt, conn_mux_send, conn_mux_get_addrs,
      MUTEX_INITIALIZER, NULL},
-    {conn_thread_registry_init, conn_thread_registry_cleanup, conn_thread_init, conn_thread_cleanup,
-     conn_thread_lock, conn_thread_unlock, conn_thread_interrupt, conn_thread_send,
-     conn_thread_get_addrs, MUTEX_INITIALIZER, NULL}};
+    {NULL, NULL, conn_thread_init, conn_thread_cleanup, conn_thread_lock, conn_thread_unlock,
+     conn_thread_interrupt, conn_thread_send, conn_thread_get_addrs, MUTEX_INITIALIZER, NULL}};
 
 static conn_mode_entry_t *get_mode_entry(juice_agent_t *agent) {
 	juice_concurrency_mode_t mode = agent->config.concurrency_mode;
@@ -65,26 +64,28 @@ static conn_mode_entry_t *get_mode_entry(juice_agent_t *agent) {
 	return mode_entries + (int)mode;
 }
 
-int conn_create(juice_agent_t *agent, udp_socket_config_t *config) {
-	JLOG_DEBUG("Creating connection");
-	conn_mode_entry_t *entry = get_mode_entry(agent);
-	mutex_lock(&entry->mutex);
+static conn_registry_t *acquire_registry(conn_mode_entry_t *entry, udp_socket_config_t *config) {
+	// entry must be locked
 	conn_registry_t *registry = entry->registry;
 	if (!registry) {
+		if (!entry->registry_init_func)
+			return NULL;
+
 		JLOG_DEBUG("Creating connections registry");
 
 		registry = calloc(1, sizeof(conn_registry_t));
 		if (!registry) {
 			JLOG_FATAL("Memory allocation failed for connections registry");
-			mutex_unlock(&entry->mutex);
-			return -1;
+			return NULL;
 		}
+
 		registry->agents = malloc(INITIAL_REGISTRY_SIZE * sizeof(juice_agent_t *));
 		if (!registry->agents) {
 			JLOG_FATAL("Memory allocation failed for connections array");
-			mutex_unlock(&entry->mutex);
-			return -1;
+			free(registry);
+			return NULL;
 		}
+
 		registry->agents_size = INITIAL_REGISTRY_SIZE;
 		registry->agents_count = 0;
 		memset(registry->agents, 0, INITIAL_REGISTRY_SIZE * sizeof(juice_agent_t *));
@@ -94,8 +95,9 @@ int conn_create(juice_agent_t *agent, udp_socket_config_t *config) {
 
 		if (entry->registry_init_func(registry, config)) {
 			mutex_unlock(&registry->mutex);
-			mutex_unlock(&entry->mutex);
-			return -1;
+			free(registry->agents);
+			free(registry);
+			return NULL;
 		}
 
 		entry->registry = registry;
@@ -103,74 +105,29 @@ int conn_create(juice_agent_t *agent, udp_socket_config_t *config) {
 	} else {
 		mutex_lock(&registry->mutex);
 	}
-	mutex_unlock(&entry->mutex);
 
-	int i = 0;
-	while (i < registry->agents_size) {
-		if (!registry->agents[i])
-			break;
-
-		++i;
-	}
-
-	if (i == registry->agents_size) {
-		int new_size = registry->agents_size * 2;
-		JLOG_DEBUG("Reallocating connections array, new_size=%d", new_size);
-
-		juice_agent_t **new_agents = realloc(registry->agents, new_size * sizeof(juice_agent_t *));
-		if (!new_agents) {
-			JLOG_FATAL("Memory reallocation failed for connections array");
-			mutex_unlock(&registry->mutex);
-			return -1;
-		}
-
-		registry->agents = new_agents;
-		registry->agents_size = new_size;
-		memset(registry->agents + i, 0, (new_size - i) * sizeof(juice_agent_t *));
-	}
-
-	registry->agents[i] = agent;
-	agent->conn_index = i;
-
-	if (entry->init_func(agent, registry, config)) {
-		mutex_unlock(&registry->mutex);
-		return -1;
-	}
-
-	++registry->agents_count;
-
-	mutex_unlock(&registry->mutex);
-	conn_interrupt(agent);
-	return 0;
+	// registry is locked
+	return registry;
 }
 
-void conn_destroy(juice_agent_t *agent) {
-	JLOG_DEBUG("Destroying connection");
-	conn_mode_entry_t *entry = get_mode_entry(agent);
-	mutex_lock(&entry->mutex);
+static void release_registry(conn_mode_entry_t *entry) {
+	// entry must be locked
 	conn_registry_t *registry = entry->registry;
-	assert(registry);
-	mutex_lock(&registry->mutex);
+	if (!registry)
+		return;
 
-	entry->cleanup_func(agent);
+	// registry must be locked
 
-	int i = agent->conn_index;
-	assert(i >= 0 && i < registry->agents_size);
-	assert(registry->agents[i] == agent);
-	registry->agents[i] = NULL;
-	agent->conn_index = -1;
-
-	assert(registry->agents_count > 0);
-	if (--registry->agents_count == 0) {
+	if (registry->agents_count == 0) {
 		JLOG_DEBUG("No connection left, destroying connections registry");
 		mutex_unlock(&registry->mutex);
 
-		entry->registry_cleanup_func(registry);
+		if (entry->registry_cleanup_func)
+			entry->registry_cleanup_func(registry);
+
 		free(registry->agents);
 		free(registry);
 		entry->registry = NULL;
-
-		mutex_unlock(&entry->mutex);
 		return;
 	}
 
@@ -178,6 +135,89 @@ void conn_destroy(juice_agent_t *agent) {
 	             registry->agents_count >= 2 ? "s" : "");
 
 	mutex_unlock(&registry->mutex);
+}
+
+int conn_create(juice_agent_t *agent, udp_socket_config_t *config) {
+	conn_mode_entry_t *entry = get_mode_entry(agent);
+	mutex_lock(&entry->mutex);
+	conn_registry_t *registry = acquire_registry(entry, config); // locks the registry if created
+	mutex_unlock(&entry->mutex);
+
+	JLOG_DEBUG("Creating connection");
+	if (registry) {
+		int i = 0;
+		while (i < registry->agents_size && registry->agents[i])
+			++i;
+
+		if (i == registry->agents_size) {
+			int new_size = registry->agents_size * 2;
+			JLOG_DEBUG("Reallocating connections array, new_size=%d", new_size);
+
+			juice_agent_t **new_agents =
+			    realloc(registry->agents, new_size * sizeof(juice_agent_t *));
+			if (!new_agents) {
+				JLOG_FATAL("Memory reallocation failed for connections array");
+				mutex_unlock(&registry->mutex);
+				return -1;
+			}
+
+			registry->agents = new_agents;
+			registry->agents_size = new_size;
+			memset(registry->agents + i, 0, (new_size - i) * sizeof(juice_agent_t *));
+		}
+
+		if (get_mode_entry(agent)->init_func(agent, registry, config)) {
+			mutex_unlock(&registry->mutex);
+			return -1;
+		}
+
+		registry->agents[i] = agent;
+		agent->conn_index = i;
+		++registry->agents_count;
+
+		mutex_unlock(&registry->mutex);
+
+	} else {
+		if (get_mode_entry(agent)->init_func(agent, NULL, config)) {
+			mutex_unlock(&registry->mutex);
+			return -1;
+		}
+
+		agent->conn_index = -1;
+	}
+
+	conn_interrupt(agent);
+	return 0;
+}
+
+void conn_destroy(juice_agent_t *agent) {
+	conn_mode_entry_t *entry = get_mode_entry(agent);
+	mutex_lock(&entry->mutex);
+
+	JLOG_DEBUG("Destroying connection");
+	conn_registry_t *registry = entry->registry;
+	if (registry) {
+		mutex_lock(&registry->mutex);
+
+		entry->cleanup_func(agent);
+
+		if (agent->conn_index >= 0) {
+			int i = agent->conn_index;
+			assert(registry->agents[i] == agent);
+			registry->agents[i] = NULL;
+			agent->conn_index = -1;
+		}
+
+		assert(registry->agents_count > 0);
+		--registry->agents_count;
+
+		release_registry(entry); // unlocks the registry
+
+	} else {
+		entry->cleanup_func(agent);
+		assert(agent->conn_index < 0);
+	}
+
 	mutex_unlock(&entry->mutex);
 }
 
