@@ -24,6 +24,8 @@ int test_crc32(void);
 int test_base64(void);
 int test_stun(void);
 int test_connectivity(void);
+int test_thread(void);
+int test_mux(void);
 int test_notrickle(void);
 int test_gathering(void);
 int test_turn(void);
@@ -70,6 +72,18 @@ int main(int argc, char **argv) {
 	printf("\nRunning TURN connectivity test...\n");
 	if (test_turn()) {
 		fprintf(stderr, "TURN connectivity test failed\n");
+		return -1;
+	}
+
+	printf("\nRunning thread-mode connectivity test...\n");
+	if (test_thread()) {
+		fprintf(stderr, "Thread-mode connectivity test failed\n");
+		return -1;
+	}
+
+	printf("\nRunning mux-mode connectivity test...\n");
+	if (test_mux()) {
+		fprintf(stderr, "Mux-mode connectivity test failed\n");
 		return -1;
 	}
 
