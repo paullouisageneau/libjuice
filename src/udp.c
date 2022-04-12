@@ -22,6 +22,7 @@
 #include "random.h"
 #include "thread.h" // for mutexes
 
+#include <assert.h>
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
@@ -69,21 +70,30 @@ socket_t udp_create_socket(const udp_socket_config_t *config) {
 		return INVALID_SOCKET;
 	}
 
-	// Prefer IPv6
-	struct addrinfo *ai;
-	if ((ai = find_family(ai_list, AF_INET6)) == NULL &&
-	    (ai = find_family(ai_list, AF_INET)) == NULL) {
-		JLOG_ERROR("getaddrinfo for binding address failed: no suitable "
-		           "address family");
+	// Create socket
+	struct addrinfo *ai = NULL;
+	const int families[2] = {AF_INET6, AF_INET}; // Prefer IPv6
+	const char *names[2] = {"IPv6", "IPv4"};
+	for (int i = 0; i < 2; ++i) {
+		ai = find_family(ai_list, families[i]);
+		if (!ai)
+			continue;
+
+		sock = socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
+		if (sock == INVALID_SOCKET) {
+			JLOG_WARN("UDP socket creation for %s family failed, errno=%d", names[i], sockerrno);
+			continue;
+		}
+
+		break;
+	}
+
+	if (sock == INVALID_SOCKET) {
+		JLOG_ERROR("UDP socket creation failed: no suitable address family");
 		goto error;
 	}
 
-	// Create socket
-	sock = socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
-	if (sock == INVALID_SOCKET) {
-		JLOG_ERROR("UDP socket creation failed, errno=%d", sockerrno);
-		goto error;
-	}
+	assert(ai != NULL);
 
 	// Listen on both IPv6 and IPv4
 	const sockopt_t disabled = 0;
@@ -124,6 +134,8 @@ socket_t udp_create_socket(const udp_socket_config_t *config) {
 	// Bind it
 	if (config->port_begin == 0 && config->port_end == 0) {
 		if (bind(sock, ai->ai_addr, (socklen_t)ai->ai_addrlen) == 0) {
+			JLOG_DEBUG("UDP socket bound to %s:%hu",
+			           config->bind_address ? config->bind_address : "any", udp_get_port(sock));
 			freeaddrinfo(ai_list);
 			return sock;
 		}
