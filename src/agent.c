@@ -185,6 +185,19 @@ void agent_destroy(juice_agent_t *agent) {
 	JLOG_VERBOSE("Destroyed agent");
 }
 
+static bool has_nonnumeric_server_hostnames(const juice_config_t *config) {
+	if (config->stun_server_host && !addr_is_numeric_hostname(config->stun_server_host))
+		return true;
+
+	for (int i = 0; i < config->turn_servers_count; ++i) {
+		juice_turn_server_t *turn_server = config->turn_servers + i;
+		if (turn_server->host && !addr_is_numeric_hostname(turn_server->host))
+			return true;
+	}
+
+	return false;
+}
+
 static thread_return_t THREAD_CALL resolver_thread_entry(void *arg) {
 	agent_resolve_servers((juice_agent_t *)arg);
 	return (thread_return_t)0;
@@ -266,7 +279,7 @@ int agent_gather_candidates(juice_agent_t *agent) {
 	conn_unlock(agent);
 	conn_interrupt(agent);
 
-	if (agent->config.stun_server_host || agent->config.turn_servers_count > 0) {
+	if (has_nonnumeric_server_hostnames(&agent->config)) {
 		// Resolve server hostnames in a separate thread as it may block
 		JLOG_DEBUG("Starting resolver thread for servers");
 		int ret = thread_init(&agent->resolver_thread, resolver_thread_entry, agent);
@@ -277,7 +290,9 @@ int agent_gather_candidates(juice_agent_t *agent) {
 		}
 		agent->resolver_thread_started = true;
 	} else {
-		agent_update_gathering_done(agent);
+		JLOG_DEBUG("Resolving servers synchronously");
+		if (agent_resolve_servers(agent) < 0)
+			return -1;
 	}
 
 	return 0;
@@ -299,12 +314,14 @@ int agent_resolve_servers(juice_agent_t *agent) {
 				break;
 
 			juice_turn_server_t *turn_server = agent->config.turn_servers + i;
+			if (!turn_server->host)
+				continue;
+
 			if (!turn_server->port)
 				turn_server->port = 3478; // default TURN port
 
 			char service[8];
 			snprintf(service, 8, "%hu", turn_server->port);
-
 			addr_record_t records[DEFAULT_MAX_RECORDS_COUNT];
 			int records_count =
 			    addr_resolve(turn_server->host, service, records, DEFAULT_MAX_RECORDS_COUNT);
