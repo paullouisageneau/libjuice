@@ -1338,7 +1338,7 @@ int agent_process_stun_binding(juice_agent_t *agent, const stun_message_t *msg,
 					// attribute in the request, the agent MUST switch to the controlled role. Once
 					// the agent has switched its role, the agent MUST [...] set the candidate pair
 					// state to Waiting [and] change the tiebreaker value.
-					JLOG_WARN("ICE role conflit");
+					JLOG_WARN("ICE role conflict");
 					JLOG_DEBUG("Switching roles to %s as requested",
 					           entry->mode == AGENT_MODE_CONTROLLING ? "controlled"
 					                                                 : "controlling");
