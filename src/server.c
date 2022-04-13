@@ -215,7 +215,7 @@ juice_server_t *server_create(const juice_server_config_t *config) {
 
 	int ret = thread_init(&server->thread, server_thread_entry, server);
 	if (ret) {
-		JLOG_FATAL("thread_create for server failed, error=%d", ret);
+		JLOG_FATAL("Thread creation failed, error=%d", ret);
 		goto error;
 	}
 

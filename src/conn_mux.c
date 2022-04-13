@@ -205,7 +205,7 @@ int conn_mux_registry_init(conn_registry_t *registry, udp_socket_config_t *confi
 	JLOG_DEBUG("Starting connections thread");
 	int ret = thread_init(&registry_impl->thread, conn_mux_entry, registry);
 	if (ret) {
-		JLOG_FATAL("thread_create for connections failed, error=%d", ret);
+		JLOG_FATAL("Thread creation failed, error=%d", ret);
 		goto error;
 	}
 
