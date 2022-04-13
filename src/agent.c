@@ -148,7 +148,14 @@ error:
 void agent_destroy(juice_agent_t *agent) {
 	JLOG_DEBUG("Destroying agent");
 
-	conn_destroy(agent);
+	if (agent->resolver_thread_started) {
+		JLOG_VERBOSE("Waiting for resolver thread");
+		thread_join(agent->resolver_thread, NULL);
+	}
+
+	if (agent->conn_impl) {
+		conn_destroy(agent);
+	}
 
 	// Free credentials in entries
 	for (int i = 0; i < agent->entries_count; ++i) {
@@ -178,6 +185,24 @@ void agent_destroy(juice_agent_t *agent) {
 	JLOG_VERBOSE("Destroyed agent");
 }
 
+static bool has_nonnumeric_server_hostnames(const juice_config_t *config) {
+	if (config->stun_server_host && !addr_is_numeric_hostname(config->stun_server_host))
+		return true;
+
+	for (int i = 0; i < config->turn_servers_count; ++i) {
+		juice_turn_server_t *turn_server = config->turn_servers + i;
+		if (turn_server->host && !addr_is_numeric_hostname(turn_server->host))
+			return true;
+	}
+
+	return false;
+}
+
+static thread_return_t THREAD_CALL resolver_thread_entry(void *arg) {
+	agent_resolve_servers((juice_agent_t *)arg);
+	return (thread_return_t)0;
+}
+
 int agent_gather_candidates(juice_agent_t *agent) {
 	JLOG_VERBOSE("Gathering candidates");
 	if (agent->conn_impl) {
@@ -194,6 +219,11 @@ int agent_gather_candidates(juice_agent_t *agent) {
 	if (conn_create(agent, &socket_config)) {
 		JLOG_FATAL("Connection creation for agent failed");
 		return -1;
+	}
+
+	if (agent->mode == AGENT_MODE_UNKNOWN) {
+		JLOG_DEBUG("Assuming controlling mode");
+		agent->mode = AGENT_MODE_CONTROLLING;
 	}
 
 	addr_record_t records[ICE_MAX_CANDIDATES_COUNT - 1];
@@ -245,12 +275,31 @@ int agent_gather_candidates(juice_agent_t *agent) {
 			agent->config.cb_candidate(agent, buffer, agent->config.user_ptr);
 	}
 
-	if (agent->mode == AGENT_MODE_UNKNOWN) {
-		JLOG_DEBUG("Assuming controlling mode");
-		agent->mode = AGENT_MODE_CONTROLLING;
+	agent_change_state(agent, JUICE_STATE_CONNECTING);
+	conn_unlock(agent);
+	conn_interrupt(agent);
+
+	if (has_nonnumeric_server_hostnames(&agent->config)) {
+		// Resolve server hostnames in a separate thread as it may block
+		JLOG_DEBUG("Starting resolver thread for servers");
+		int ret = thread_init(&agent->resolver_thread, resolver_thread_entry, agent);
+		if (ret) {
+			JLOG_FATAL("Thread creation failed, error=%d", ret);
+			agent_update_gathering_done(agent);
+			return -1;
+		}
+		agent->resolver_thread_started = true;
+	} else {
+		JLOG_DEBUG("Resolving servers synchronously");
+		if (agent_resolve_servers(agent) < 0)
+			return -1;
 	}
 
-	agent_change_state(agent, JUICE_STATE_CONNECTING);
+	return 0;
+}
+
+int agent_resolve_servers(juice_agent_t *agent) {
+	conn_lock(agent);
 
 	// TURN server resolution
 	juice_concurrency_mode_t mode = agent->config.concurrency_mode;
@@ -265,12 +314,14 @@ int agent_gather_candidates(juice_agent_t *agent) {
 				break;
 
 			juice_turn_server_t *turn_server = agent->config.turn_servers + i;
+			if (!turn_server->host)
+				continue;
+
 			if (!turn_server->port)
 				turn_server->port = 3478; // default TURN port
 
 			char service[8];
 			snprintf(service, 8, "%hu", turn_server->port);
-
 			addr_record_t records[DEFAULT_MAX_RECORDS_COUNT];
 			int records_count =
 			    addr_resolve(turn_server->host, service, records, DEFAULT_MAX_RECORDS_COUNT);
@@ -405,6 +456,12 @@ int agent_set_remote_description(juice_agent_t *agent, const char *sdp) {
 		conn_unlock(agent);
 		return -1;
 	}
+
+	if (agent->mode == AGENT_MODE_UNKNOWN) {
+		JLOG_DEBUG("Assuming controlled mode");
+		agent->mode = AGENT_MODE_CONTROLLED;
+	}
+
 	// There is only one component, therefore we can unfreeze already existing pairs now
 	JLOG_DEBUG("Unfreezing %d existing candidate pairs", (int)agent->candidate_pairs_count);
 	for (int i = 0; i < agent->candidate_pairs_count; ++i) {
@@ -415,10 +472,6 @@ int agent_set_remote_description(juice_agent_t *agent, const char *sdp) {
 		ice_candidate_t *remote = agent->remote.candidates + i;
 		if (agent_add_candidate_pairs_for_remote(agent, remote))
 			JLOG_WARN("Failed to add candidate pair from remote description");
-	}
-	if (agent->mode == AGENT_MODE_UNKNOWN) {
-		JLOG_DEBUG("Assuming controlled mode");
-		agent->mode = AGENT_MODE_CONTROLLED;
 	}
 
 	conn_unlock(agent);
@@ -462,7 +515,7 @@ int agent_set_remote_gathering_done(juice_agent_t *agent) {
 }
 
 int agent_send(juice_agent_t *agent, const char *data, size_t size, int ds) {
-	// Try not to lock the global mutex in the send path
+	// Try not to lock in the send path
 	agent_stun_entry_t *selected_entry = atomic_load(&agent->selected_entry);
 	if (!selected_entry) {
 		JLOG_ERROR("Send called before ICE is connected");

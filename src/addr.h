@@ -46,6 +46,7 @@ typedef struct addr_record {
 } addr_record_t;
 
 int addr_resolve(const char *hostname, const char *service, addr_record_t *records, size_t count);
+bool addr_is_numeric_hostname(const char *hostname);
 
 bool addr_record_is_equal(const addr_record_t *a, const addr_record_t *b, bool compare_ports);
 int addr_record_to_string(const addr_record_t *record, char *buffer, size_t size);

@@ -189,7 +189,7 @@ int conn_thread_init(juice_agent_t *agent, conn_registry_t *registry, udp_socket
 	JLOG_DEBUG("Starting connection thread");
 	int ret = thread_init(&conn_impl->thread, conn_thread_entry, agent);
 	if (ret) {
-		JLOG_FATAL("thread_create for connection failed, error=%d", ret);
+		JLOG_FATAL("Thread creation failed, error=%d", ret);
 		free(conn_impl);
 		agent->conn_impl = NULL;
 		return -1;

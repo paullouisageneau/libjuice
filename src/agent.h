@@ -137,12 +137,16 @@ struct juice_agent {
 
 	int conn_index;
 	void *conn_impl;
+
+	thread_t resolver_thread;
+	bool resolver_thread_started;
 };
 
 juice_agent_t *agent_create(const juice_config_t *config);
 void agent_destroy(juice_agent_t *agent);
 
 int agent_gather_candidates(juice_agent_t *agent);
+int agent_resolve_servers(juice_agent_t *agent);
 int agent_get_local_description(juice_agent_t *agent, char *buffer, size_t size);
 int agent_set_remote_description(juice_agent_t *agent, const char *sdp);
 int agent_add_remote_candidate(juice_agent_t *agent, const char *sdp);
