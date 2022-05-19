@@ -438,7 +438,9 @@ int agent_get_local_description(juice_agent_t *agent, char *buffer, size_t size)
 int agent_set_remote_description(juice_agent_t *agent, const char *sdp) {
 	conn_lock(agent);
 	JLOG_VERBOSE("Setting remote SDP description: %s", sdp);
-	int ret = ice_parse_sdp(sdp, &agent->remote);
+
+	ice_description_t remote;
+	int ret = ice_parse_sdp(sdp, &remote);
 	if (ret < 0) {
 		if (ret == ICE_PARSE_ERROR)
 			JLOG_ERROR("Failed to parse remote SDP description");
@@ -446,16 +448,32 @@ int agent_set_remote_description(juice_agent_t *agent, const char *sdp) {
 		conn_unlock(agent);
 		return -1;
 	}
-	if (!*agent->remote.ice_ufrag) {
+	if (!*remote.ice_ufrag) {
 		JLOG_ERROR("Missing ICE user fragment in remote description");
 		conn_unlock(agent);
 		return -1;
 	}
-	if (!*agent->remote.ice_pwd) {
+	if (!*remote.ice_pwd) {
 		JLOG_ERROR("Missing ICE password in remote description");
 		conn_unlock(agent);
 		return -1;
 	}
+
+	if (*agent->remote.ice_ufrag) {
+		// There is already a remote description
+		if (strcmp(agent->remote.ice_ufrag, remote.ice_ufrag) == 0 ||
+		    strcmp(agent->remote.ice_pwd, remote.ice_pwd) == 0) {
+			JLOG_DEBUG("Remote description is already set, ignoring");
+			conn_unlock(agent);
+			return 0;
+		}
+
+		JLOG_WARN("ICE restart is unsupported");
+		conn_unlock(agent);
+		return -1;
+	}
+
+	agent->remote = remote;
 
 	if (agent->mode == AGENT_MODE_UNKNOWN) {
 		JLOG_DEBUG("Assuming controlled mode");
@@ -828,7 +846,7 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 	ice_candidate_pair_t *nominated_pair = NULL;
 	ice_candidate_pair_t *selected_pair = NULL;
 	for (int i = 0; i < agent->candidate_pairs_count; ++i) {
-		ice_candidate_pair_t *pair = *(agent->ordered_pairs + i);
+		ice_candidate_pair_t *pair = agent->ordered_pairs[i];
 		if (pair->nominated) {
 			// RFC 8445 8.1.1. Nominating Pairs:
 			// If more than one candidate pair is nominated by the controlling agent, and if the
