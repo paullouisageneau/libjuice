@@ -50,7 +50,7 @@ $ cd libjuice
 
 ### Build with CMake
 
-The CMake library targets `libjuice` and `libjuice-static` respectively correspond to the shared and static libraries. The default target will build the library and tests.
+The CMake library targets `libjuice` and `libjuice-static` respectively correspond to the shared and static libraries. The default target will build the library and tests. It exports the targets with namespace `LibJuice::LibJuice` and `LibJuice::LibJuiceStatic` to link the library from another CMake project.
 
 #### POSIX-compliant operating systems (including Linux and Apple macOS)
 
