@@ -292,12 +292,15 @@ int udp_set_diffserv(socket_t sock, int ds) {
 			JLOG_WARN("Setting IPv6 traffic class failed, errno=%d", sockerrno);
 			return -1;
 		}
+#ifdef IP_TOS
+		// Attempt to also set IP_TOS for IPv4, in case the system requires it
+		setsockopt(sock, IPPROTO_IP, IP_TOS, &ds, sizeof(ds));
+#endif
 		return 0;
 #else
 		JLOG_INFO("Setting IPv6 traffic class is not supported");
 		return -1;
 #endif
-
 	default:
 		return -1;
 	}
