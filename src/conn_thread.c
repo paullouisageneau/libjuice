@@ -269,6 +269,8 @@ int conn_thread_send(juice_agent_t *agent, const addr_record_t *dst, const char 
 	if (ret < 0) {
 		if (sockerrno == SEAGAIN || sockerrno == SEWOULDBLOCK)
 			JLOG_INFO("Send failed, buffer is full");
+		if (sockerrno == SEMSGSIZE)
+			JLOG_INFO("Send failed, datagram is too large");
 		else
 			JLOG_WARN("Send failed, errno=%d", sockerrno);
 	}
