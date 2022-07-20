@@ -256,7 +256,7 @@ int conn_poll_process(conn_registry_t *registry, pfds_record_t *pfds) {
 		if (pfd->revents & POLLIN) {
 			char buffer[BUFFER_SIZE];
 			addr_record_t src;
-			int ret;
+			int ret = 0;
 			int left = 1000; // limit for fairness between sockets
 			while (left-- &&
 			       (ret = conn_poll_recv(conn_impl->sock, buffer, BUFFER_SIZE, &src)) > 0) {
