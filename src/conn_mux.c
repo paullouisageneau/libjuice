@@ -105,7 +105,7 @@ static int insert_map_entry(registry_impl_t *impl, const addr_record_t *record,
 		return insert_map_entry(impl, record, agent);
 	}
 
-	if (entry->type == MAP_ENTRY_TYPE_EMPTY)
+	if (entry->type != MAP_ENTRY_TYPE_FULL)
 		++impl->map_count;
 
 	entry->type = MAP_ENTRY_TYPE_FULL;
