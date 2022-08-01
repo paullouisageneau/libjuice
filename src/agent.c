@@ -343,6 +343,21 @@ int agent_resolve_servers(juice_agent_t *agent) {
 						record = records + j;
 				}
 				if (record) {
+					// Ignore duplicate TURN servers as they will cause conflicts
+					bool is_duplicate = false;
+					for (int i = 0; i < agent->entries_count; ++i) {
+						agent_stun_entry_t *entry = agent->entries + i;
+						if (entry->type == AGENT_STUN_ENTRY_TYPE_RELAY &&
+						    addr_record_is_equal(&entry->record, record, true)) {
+							is_duplicate = true;
+							break;
+						}
+					}
+					if (is_duplicate) {
+						JLOG_INFO("Duplicate TURN server, ignoring");
+						continue;
+					}
+
 					JLOG_VERBOSE("Registering STUN entry %d for relay request",
 					             agent->entries_count);
 					agent_stun_entry_t *entry = agent->entries + agent->entries_count;
