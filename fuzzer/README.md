@@ -14,3 +14,9 @@ cmake -DCMAKE_BUILD_TYPE=Debug -DFUZZER=ON -DCMAKE_C_COMPILER=$CC \
 -DLIB_FUZZING_ENGINE=$LIB_FUZZING_ENGINE \
 ../
 ```
+
+#### Run it
+```
+mkdir coverage
+./fuzzer coverage/ ../fuzzer/input/
+```
