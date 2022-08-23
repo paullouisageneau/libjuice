@@ -73,10 +73,10 @@ set(TESTS_SOURCES
 )
 source_group("Test Files" FILES "${TESTS_SOURCES}")
 
-set(FUZZ_SOURCES
+set(FUZZER_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/fuzzer/fuzzer.c
 )
-source_group("fuzzer Files" FILES "${FUZZ_SOURCES}")
+source_group("Fuzzer Files" FILES "${FUZZER_SOURCES}")
 
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
@@ -216,9 +216,9 @@ if(NOT NO_TESTS)
 	target_link_libraries(juice-tests juice Threads::Threads)
 endif()
 
-# fuzzer
+# Fuzzer
 if(FUZZER)
-	add_executable(stun-fuzzer ${FUZZ_SOURCES})
+	add_executable(stun-fuzzer ${FUZZER_SOURCES})
 	target_include_directories(stun-fuzzer PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 	target_include_directories(stun-fuzzer PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include/juice)
 
