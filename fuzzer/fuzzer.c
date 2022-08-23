@@ -33,9 +33,9 @@ extern int LLVMFuzzerTestOneInput(const uint8_t *Data, size_t Size) {
 	stun_message_t msg;
 	memset(&msg, 0, sizeof(msg));
 
-	if (_juice_is_stun_datagram((void *)Data, Size))
-		if (_juice_stun_read((void *)Data, Size, &msg) == 0)
-			_juice_stun_check_integrity((void *)Data, Size, &msg, "VOkJxbRl1RmTxUk/WvJxBt");
+	_juice_is_stun_datagram((void *)Data, Size);
+	_juice_stun_read((void *)Data, Size, &msg);
+	_juice_stun_check_integrity((void *)Data, Size, &msg, "VOkJxbRl1RmTxUk/WvJxBt");
 
 	return 0;
 }

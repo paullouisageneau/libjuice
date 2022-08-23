@@ -514,6 +514,11 @@ bool is_stun_datagram(const void *data, size_t size) {
 int stun_read(void *data, size_t size, stun_message_t *msg) {
 	memset(msg, 0, sizeof(*msg));
 
+	if (size < sizeof(struct stun_header)) {
+		JLOG_ERROR("STUN message too short, size=%zu", size);
+		return -1;
+	}
+
 	const struct stun_header *header = data;
 	const size_t length = ntohs(header->length);
 	if (size < sizeof(struct stun_header) + length) {
@@ -535,7 +540,7 @@ int stun_read(void *data, size_t size, stun_message_t *msg) {
 	uint8_t *attr_begin = begin + sizeof(struct stun_header);
 	uint8_t *end = attr_begin + length;
 	const uint8_t *pos = attr_begin;
-	while (pos != end) {
+	while (pos < end) {
 		int ret = stun_read_attr(pos, end - pos, msg, begin, attr_begin, &security_bits);
 		if (ret <= 0) {
 			JLOG_DEBUG("Reading STUN attribute failed");
@@ -552,7 +557,8 @@ int stun_read(void *data, size_t size, stun_message_t *msg) {
 	// 438 (Stale Nonce), the client MUST test if the NONCE attribute value starts with the "nonce
 	// cookie". If so and the "nonce cookie" has the STUN Security Feature "Password algorithms"
 	// bit set to 1 but no PASSWORD-ALGORITHMS attribute is present, then the client MUST NOT retry
-	// the request with a new transaction. See https://www.rfc-editor.org/rfc/rfc8489.html#section-9.2.5
+	// the request with a new transaction. See
+	// https://www.rfc-editor.org/rfc/rfc8489.html#section-9.2.5
 	if (msg->msg_class == STUN_CLASS_RESP_ERROR &&
 	    (msg->error_code == 401 || msg->error_code == 438) &&
 	    security_bits & STUN_SECURITY_PASSWORD_ALGORITHMS_BIT &&
@@ -657,7 +663,8 @@ int stun_read_attr(const void *data, size_t size, stun_message_t *msg, uint8_t *
 	case STUN_ATTR_ALTERNATE_SERVER: {
 		JLOG_VERBOSE("Reading alternate server");
 		uint8_t zero_mask[16] = {0};
-		if (stun_read_value_mapped_address(attr->value, length, &msg->alternate_server, zero_mask) < 0)
+		if (stun_read_value_mapped_address(attr->value, length, &msg->alternate_server, zero_mask) <
+		    0)
 			return -1;
 		break;
 	}
@@ -1085,7 +1092,7 @@ bool stun_check_integrity(void *buf, size_t size, const stun_message_t *msg, con
 	const uint8_t *attr_begin = begin + sizeof(struct stun_header);
 	const uint8_t *end = attr_begin + length;
 	const uint8_t *pos = attr_begin;
-	while (pos != end) {
+	while (pos < end) {
 		const struct stun_attr *attr = (const struct stun_attr *)pos;
 		size_t attr_length = ntohs(attr->length);
 		if (size < sizeof(struct stun_attr) + attr_length)
