@@ -50,18 +50,8 @@ int test_notrickle() {
 	// Agent 1: Create agent
 	juice_config_t config1;
 	memset(&config1, 0, sizeof(config1));
-
-	// TURN server
-	// Please do not use outside of libjuice tests
-	juice_turn_server_t turn_server;
-	memset(&turn_server, 0, sizeof(turn_server));
-	turn_server.host = "stun.ageneau.net";
-	turn_server.port = 3478;
-	turn_server.username = "juice_test";
-	turn_server.password = "28245150316902";
-	config1.turn_servers = &turn_server;
-	config1.turn_servers_count = 1;
-
+	config1.stun_server_host = "stun.l.google.com";
+	config1.stun_server_port = 19302;
 	config1.cb_state_changed = on_state_changed1;
 	config1.cb_gathering_done = on_gathering_done1;
 	config1.cb_recv = on_recv1;
@@ -78,14 +68,6 @@ int test_notrickle() {
 	config2.cb_gathering_done = on_gathering_done2;
 	config2.cb_recv = on_recv2;
 	config2.user_ptr = NULL;
-
-	// Use the same TURN server
-	config2.turn_servers = &turn_server;
-	config2.turn_servers_count = 1;
-
-	// Port range example
-	config2.local_port_range_begin = 60000;
-	config2.local_port_range_end = 61000;
 
 	agent2 = juice_create(&config2);
 

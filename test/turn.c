@@ -54,14 +54,17 @@ int test_turn() {
 	juice_config_t config1;
 	memset(&config1, 0, sizeof(config1));
 
-	// TURN server
-	// Please do not use outside of libjuice tests
+	// STUN server example (use your own server in production)
+	config1.stun_server_host = "openrelay.metered.ca";
+	config1.stun_server_port = 80;
+
+	// TURN server example (use your own server in production)
 	juice_turn_server_t turn_server;
 	memset(&turn_server, 0, sizeof(turn_server));
-	turn_server.host = "stun.ageneau.net";
-	turn_server.port = 3478;
-	turn_server.username = "juice_test";
-	turn_server.password = "28245150316902";
+	turn_server.host = "openrelay.metered.ca";
+	turn_server.port = 80;
+	turn_server.username = "openrelayproject";
+	turn_server.password = "openrelayproject";
 	config1.turn_servers = &turn_server;
 	config1.turn_servers_count = 1;
 
@@ -77,9 +80,9 @@ int test_turn() {
 	juice_config_t config2;
 	memset(&config2, 0, sizeof(config2));
 
-	// Use the same TURN server
-	config2.turn_servers = &turn_server;
-	config2.turn_servers_count = 1;
+	// STUN server example (use your own server in production)
+	config2.stun_server_host = "openrelay.metered.ca";
+	config2.stun_server_port = 80;
 
 	config2.cb_state_changed = on_state_changed2;
 	config2.cb_candidate = on_candidate2;
@@ -114,13 +117,13 @@ int test_turn() {
 	sleep(2);
 
 	// -- Connection should be finished --
-	bool success = true;
-	/*
-	    // Check states
-	    juice_state_t state1 = juice_get_state(agent1);
-	    juice_state_t state2 = juice_get_state(agent2);
-	    bool success = (state1 == JUICE_STATE_COMPLETED && state2 == JUICE_STATE_COMPLETED);
-	*/
+
+	// Check states
+	juice_state_t state1 = juice_get_state(agent1);
+	juice_state_t state2 = juice_get_state(agent2);
+	bool success = ((state1 == JUICE_STATE_COMPLETED || state1 == JUICE_STATE_CONNECTED) &&
+	                (state2 == JUICE_STATE_CONNECTED || state2 == JUICE_STATE_COMPLETED));
+
 	// Retrieve candidates
 	char local[JUICE_MAX_CANDIDATE_SDP_STRING_LEN];
 	char remote[JUICE_MAX_CANDIDATE_SDP_STRING_LEN];
@@ -192,11 +195,11 @@ static void on_state_changed2(juice_agent_t *agent, juice_state_t state, void *u
 
 // Agent 1: on local candidate gathered
 static void on_candidate1(juice_agent_t *agent, const char *sdp, void *user_ptr) {
-	printf("Candidate 1: %s\n", sdp);
-
 	// Filter relayed candidates
 	if (!strstr(sdp, "relay"))
 		return;
+
+	printf("Candidate 1: %s\n", sdp);
 
 	// Agent 2: Receive it from agent 1
 	juice_add_remote_candidate(agent2, sdp);
@@ -204,11 +207,11 @@ static void on_candidate1(juice_agent_t *agent, const char *sdp, void *user_ptr)
 
 // Agent 2: on local candidate gathered
 static void on_candidate2(juice_agent_t *agent, const char *sdp, void *user_ptr) {
-	printf("Candidate 2: %s\n", sdp);
-
-	// Filter relayed candidates
-	if (!strstr(sdp, "relay"))
+	// Filter server reflexive candidates
+	if (!strstr(sdp, "srflx"))
 		return;
+
+	printf("Candidate 2: %s\n", sdp);
 
 	// Agent 1: Receive it from agent 2
 	juice_add_remote_candidate(agent1, sdp);
