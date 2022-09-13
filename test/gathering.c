@@ -48,18 +48,17 @@ int test_gathering() {
 	juice_config_t config;
 	memset(&config, 0, sizeof(config));
 
-	// STUN server
+	// STUN server example (use your own server in production)
 	config.stun_server_host = "stun.stunprotocol.org";
 	config.stun_server_port = 3478;
 
-	// TURN server
-	// Please do not use outside of libjuice tests
+	// TURN server example (use your own server in production)
 	juice_turn_server_t turn_server;
 	memset(&turn_server, 0, sizeof(turn_server));
-	turn_server.host = "stun.ageneau.net";
-	turn_server.port = 3478;
-	turn_server.username = "juice_test";
-	turn_server.password = "28245150316902";
+	turn_server.host = "openrelay.metered.ca";
+	turn_server.port = 80;
+	turn_server.username = "openrelayproject";
+	turn_server.password = "openrelayproject";
 	config.turn_servers = &turn_server;
 	config.turn_servers_count = 1;
 
