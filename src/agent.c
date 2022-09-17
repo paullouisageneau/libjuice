@@ -2089,9 +2089,7 @@ int agent_add_remote_reflexive_candidate(juice_agent_t *agent, ice_candidate_typ
 		JLOG_ERROR("Invalid type for remote reflexive candidate");
 		return -1;
 	}
-	int family = record->addr.ss_family;
-	if (ice_find_candidate_from_addr(&agent->remote, record,
-	                                 family == AF_INET6 ? ICE_CANDIDATE_TYPE_UNKNOWN : type)) {
+	if (ice_find_candidate_from_addr(&agent->remote, record, ICE_CANDIDATE_TYPE_UNKNOWN)) {
 		JLOG_VERBOSE("A remote candidate exists for the remote address");
 		return 0;
 	}
