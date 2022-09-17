@@ -132,12 +132,16 @@ int test_turn() {
 	                                   JUICE_MAX_CANDIDATE_SDP_STRING_LEN) == 0)) {
 		printf("Local candidate  1: %s\n", local);
 		printf("Remote candidate 1: %s\n", remote);
+
+		success &= (strstr(local, "relay") != NULL);
 	}
 	if (success &=
 	    (juice_get_selected_candidates(agent2, local, JUICE_MAX_CANDIDATE_SDP_STRING_LEN, remote,
 	                                   JUICE_MAX_CANDIDATE_SDP_STRING_LEN) == 0)) {
 		printf("Local candidate  2: %s\n", local);
 		printf("Remote candidate 2: %s\n", remote);
+
+		success &= (strstr(remote, "relay") != NULL);
 	}
 
 	// Retrieve addresses
