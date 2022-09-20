@@ -10,6 +10,7 @@ option(NO_TESTS "Disable tests build" OFF)
 option(NO_EXPORT_HEADER "Disable export header" OFF)
 option(WARNINGS_AS_ERRORS "Treat warnings as errors" OFF)
 option(FUZZER "Enable oss-fuzz fuzzing" OFF)
+option(CLANG_TIDY "Enable clang-tidy" OFF)
 
 # Mitigations
 option(ENABLE_LOCALHOST_ADDRESS "List localhost addresses in candidates" OFF)
@@ -25,6 +26,10 @@ if(WIN32)
 		add_definitions(-DNOMINMAX)
 		add_definitions(-D_CRT_SECURE_NO_WARNINGS)
 	endif()
+endif()
+
+if(CLANG_TIDY)
+	set(CMAKE_C_CLANG_TIDY clang-tidy)
 endif()
 
 set(LIBJUICE_SOURCES
