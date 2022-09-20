@@ -178,6 +178,7 @@ int conn_thread_init(juice_agent_t *agent, conn_registry_t *registry, udp_socket
 	conn_impl->sock = udp_create_socket(config);
 	if (conn_impl->sock == INVALID_SOCKET) {
 		JLOG_ERROR("UDP socket creation failed");
+		free(conn_impl);
 		return -1;
 	}
 
