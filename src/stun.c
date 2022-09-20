@@ -421,11 +421,14 @@ int stun_write_attr(void *buf, size_t size, uint16_t type, const void *value, si
 	struct stun_attr *attr = buf;
 	attr->type = htons(type);
 	attr->length = htons((uint16_t)length);
-	memcpy(attr->value, value, length);
 
-	// Pad to align on 4 bytes
-	while (length & 0x03)
-		attr->value[length++] = 0;
+	if (length > 0) {
+		memcpy(attr->value, value, length);
+
+		// Pad to align on 4 bytes
+		while (length & 0x03)
+			attr->value[length++] = 0;
+	}
 
 	return (int)(sizeof(struct stun_attr) + length);
 }

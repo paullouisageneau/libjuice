@@ -152,6 +152,7 @@ int conn_create(juice_agent_t *agent, udp_socket_config_t *config) {
 		if (i == registry->agents_size) {
 			int new_size = registry->agents_size * 2;
 			JLOG_DEBUG("Reallocating connections array, new_size=%d", new_size);
+			assert(new_size > 0);
 
 			juice_agent_t **new_agents =
 			    realloc(registry->agents, new_size * sizeof(juice_agent_t *));

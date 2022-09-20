@@ -152,6 +152,7 @@ int conn_poll_prepare(conn_registry_t *registry, pfds_record_t *pfds, timestamp_
 
 	registry_impl_t *registry_impl = registry->impl;
 	struct pollfd *interrupt_pfd = pfds->pfds;
+	assert(interrupt_pfd);
 #ifdef _WIN32
 	interrupt_pfd->fd = registry_impl->interrupt_sock;
 #else
