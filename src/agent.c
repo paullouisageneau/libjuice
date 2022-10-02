@@ -915,7 +915,12 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 			}
 		}
 
-		if (selected_pair->nominated || agent->mode == AGENT_MODE_CONTROLLING) {
+		bool selected_pair_has_relay =
+		    (selected_pair->local && selected_pair->local->type == ICE_CANDIDATE_TYPE_RELAYED) ||
+		    (selected_pair->remote && selected_pair->remote->type == ICE_CANDIDATE_TYPE_RELAYED);
+
+		if (selected_pair->nominated ||
+		    (agent->mode == AGENT_MODE_CONTROLLING && !selected_pair_has_relay)) {
 			// Limit retransmissions of still pending entries
 			for (int i = 0; i < agent->entries_count; ++i) {
 				agent_stun_entry_t *entry = agent->entries + i;
