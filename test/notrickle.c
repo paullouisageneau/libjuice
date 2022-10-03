@@ -50,8 +50,21 @@ int test_notrickle() {
 	// Agent 1: Create agent
 	juice_config_t config1;
 	memset(&config1, 0, sizeof(config1));
+
+	// STUN server example
 	config1.stun_server_host = "stun.l.google.com";
 	config1.stun_server_port = 19302;
+
+	// TURN server example (use your own server in production)
+	juice_turn_server_t turn_server;
+	memset(&turn_server, 0, sizeof(turn_server));
+	turn_server.host = "openrelay.metered.ca";
+	turn_server.port = 80;
+	turn_server.username = "openrelayproject";
+	turn_server.password = "openrelayproject";
+	config1.turn_servers = &turn_server;
+	config1.turn_servers_count = 1;
+
 	config1.cb_state_changed = on_state_changed1;
 	config1.cb_gathering_done = on_gathering_done1;
 	config1.cb_recv = on_recv1;
@@ -62,8 +75,11 @@ int test_notrickle() {
 	// Agent 2: Create agent
 	juice_config_t config2;
 	memset(&config2, 0, sizeof(config2));
+
+	// STUN server example
 	config2.stun_server_host = "stun.l.google.com";
 	config2.stun_server_port = 19302;
+
 	config2.cb_state_changed = on_state_changed2;
 	config2.cb_gathering_done = on_gathering_done2;
 	config2.cb_recv = on_recv2;

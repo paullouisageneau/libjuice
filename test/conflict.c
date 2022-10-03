@@ -53,7 +53,6 @@ int test_conflict() {
 	// Agent 1: Create agent
 	juice_config_t config1;
 	memset(&config1, 0, sizeof(config1));
-
 	config1.cb_state_changed = on_state_changed1;
 	config1.cb_candidate = on_candidate1;
 	config1.cb_gathering_done = on_gathering_done1;
@@ -65,7 +64,6 @@ int test_conflict() {
 	// Agent 2: Create agent
 	juice_config_t config2;
 	memset(&config2, 0, sizeof(config2));
-
 	config2.cb_state_changed = on_state_changed2;
 	config2.cb_candidate = on_candidate2;
 	config2.cb_gathering_done = on_gathering_done2;
