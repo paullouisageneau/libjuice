@@ -34,8 +34,11 @@ static void sleep(unsigned int secs) { Sleep(secs * 1000); }
 
 #define BUFFER_SIZE 4096
 
-#define TURN_USERNAME "server_test"
-#define TURN_PASSWORD "79874638521694"
+#define TURN_USERNAME1 "server_test1"
+#define TURN_PASSWORD1 "79874638521694"
+
+#define TURN_USERNAME2 "server_test2"
+#define TURN_PASSWORD2 "36512189907731"
 
 static juice_server_t *server;
 static juice_agent_t *agent1;
@@ -62,8 +65,8 @@ int test_server() {
 	// Create server
 	juice_server_credentials_t credentials[1];
 	memset(&credentials, 0, sizeof(credentials));
-	credentials[0].username = TURN_USERNAME;
-	credentials[0].password = TURN_PASSWORD;
+	credentials[0].username = TURN_USERNAME1;
+	credentials[0].password = TURN_PASSWORD1;
 
 	juice_server_config_t server_config;
 	memset(&server_config, 0, sizeof(server_config));
@@ -80,6 +83,13 @@ int test_server() {
 		return -1;
 	}
 
+	// Added credentials example
+	juice_server_credentials_t added_credentials[1];
+	memset(&added_credentials, 0, sizeof(added_credentials));
+	added_credentials[0].username = TURN_USERNAME2;
+	added_credentials[0].password = TURN_PASSWORD2;
+	juice_server_add_credentials(server, added_credentials, 60000); // 60s
+
 	// Agent 1: Create agent
 	juice_config_t config1;
 	memset(&config1, 0, sizeof(config1));
@@ -89,13 +99,13 @@ int test_server() {
 	config1.stun_server_port = 3478;
 
 	// Set TURN server
-	juice_turn_server_t turn_server;
-	memset(&turn_server, 0, sizeof(turn_server));
-	turn_server.host = "localhost";
-	turn_server.port = 3478;
-	turn_server.username = TURN_USERNAME;
-	turn_server.password = TURN_PASSWORD;
-	config1.turn_servers = &turn_server;
+	juice_turn_server_t turn_server1;
+	memset(&turn_server1, 0, sizeof(turn_server1));
+	turn_server1.host = "localhost";
+	turn_server1.port = 3478;
+	turn_server1.username = TURN_USERNAME1;
+	turn_server1.password = TURN_PASSWORD1;
+	config1.turn_servers = &turn_server1;
 	config1.turn_servers_count = 1;
 
 	config1.cb_state_changed = on_state_changed1;
@@ -115,7 +125,13 @@ int test_server() {
 	config2.stun_server_port = 3478;
 
 	// Set TURN server
-	config2.turn_servers = &turn_server;
+	juice_turn_server_t turn_server2;
+	memset(&turn_server2, 0, sizeof(turn_server2));
+	turn_server2.host = "localhost";
+	turn_server2.port = 3478;
+	turn_server2.username = TURN_USERNAME2;
+	turn_server2.password = TURN_PASSWORD2;
+	config2.turn_servers = &turn_server2;
 	config2.turn_servers_count = 1;
 
 	config2.cb_state_changed = on_state_changed2;
