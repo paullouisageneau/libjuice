@@ -295,6 +295,9 @@ int server_add_credentials(juice_server_t *server, const juice_server_credential
 			mutex_unlock(&server->mutex);
 			return -1;
 		}
+		memset(reallocated + server->allocs_count, 0,
+		       ((int)server->config.max_allocations - server->allocs_count) *
+		           sizeof(server_turn_alloc_t));
 		server->allocs_count = (int)server->config.max_allocations;
 		server->allocs = reallocated;
 	}
@@ -353,14 +356,9 @@ error:
 }
 
 void server_run(juice_server_t *server) {
-	const nfds_t nfd = 1 + server->allocs_count;
-	struct pollfd *pfd = calloc(nfd, sizeof(struct pollfd));
-	if (!pfd) {
-		JLOG_FATAL("Memory allocation for poll descriptors failed");
-		return;
-	}
-
 	mutex_lock(&server->mutex);
+	nfds_t nfd = 0;
+	struct pollfd *pfd = NULL;
 
 	// Main loop
 	timestamp_t next_timestamp;
@@ -368,6 +366,16 @@ void server_run(juice_server_t *server) {
 		timediff_t timediff = next_timestamp - current_timestamp();
 		if (timediff < 0)
 			timediff = 0;
+
+		if (!pfd || nfd != (nfds_t)(1 + server->allocs_count)) {
+			free(pfd);
+			nfd = (nfds_t)(1 + server->allocs_count);
+			pfd = calloc(nfd, sizeof(struct pollfd));
+			if (!pfd) {
+				JLOG_FATAL("Memory allocation for poll descriptors failed");
+				break;
+			}
+		}
 
 		pfd[0].fd = server->sock;
 		pfd[0].events = POLLIN;
@@ -420,8 +428,8 @@ void server_run(juice_server_t *server) {
 	}
 
 	JLOG_DEBUG("Leaving server thread");
-	mutex_unlock(&server->mutex);
 	free(pfd);
+	mutex_unlock(&server->mutex);
 }
 
 int server_send(juice_server_t *server, const addr_record_t *dst, const char *data, size_t size) {
@@ -710,7 +718,7 @@ int server_dispatch_stun(juice_server_t *server, void *buf, size_t size, stun_me
 		if (msg->credentials.enable_userhash) {
 			juice_credentials_list_t *node = server->credentials;
 			while (node) {
-				if ((!node->timestamp || node->timestamp < now) &&
+				if ((!node->timestamp || node->timestamp > now) &&
 				    const_time_memcmp(node->userhash, msg->credentials.userhash, USERHASH_SIZE) ==
 				        0) {
 					credentials = &node->credentials;
@@ -727,7 +735,7 @@ int server_dispatch_stun(juice_server_t *server, void *buf, size_t size, stun_me
 		} else {
 			juice_credentials_list_t *node = server->credentials;
 			while (node) {
-				if ((!node->timestamp || node->timestamp < now) &&
+				if ((!node->timestamp || node->timestamp > now) &&
 				    const_time_strcmp(node->credentials.username, msg->credentials.username) == 0) {
 					credentials = &node->credentials;
 				}
