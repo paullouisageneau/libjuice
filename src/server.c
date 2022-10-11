@@ -710,7 +710,7 @@ int server_dispatch_stun(juice_server_t *server, void *buf, size_t size, stun_me
 		if (msg->credentials.enable_userhash) {
 			juice_credentials_list_t *node = server->credentials;
 			while (node) {
-				if ((!node->timestamp || node->timestamp < now) &&
+				if ((!node->timestamp || node->timestamp > now) &&
 				    const_time_memcmp(node->userhash, msg->credentials.userhash, USERHASH_SIZE) ==
 				        0) {
 					credentials = &node->credentials;
@@ -727,7 +727,7 @@ int server_dispatch_stun(juice_server_t *server, void *buf, size_t size, stun_me
 		} else {
 			juice_credentials_list_t *node = server->credentials;
 			while (node) {
-				if ((!node->timestamp || node->timestamp < now) &&
+				if ((!node->timestamp || node->timestamp > now) &&
 				    const_time_strcmp(node->credentials.username, msg->credentials.username) == 0) {
 					credentials = &node->credentials;
 				}
