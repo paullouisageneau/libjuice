@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2020 Paul-Louis Ageneau
+ * Copyright (c) 2020-2022 Paul-Louis Ageneau
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -29,13 +29,19 @@ extern "C" {
 
 #ifdef JUICE_HAS_EXPORT_HEADER
 #include "juice_export.h"
-#endif
-
-#ifndef JUICE_EXPORT
-#ifdef _WIN32
-#define JUICE_EXPORT __declspec(dllexport)
-#else
+#else // no export header
+#ifdef JUICE_STATIC
 #define JUICE_EXPORT
+#else // dynamic library
+#ifdef _WIN32
+#if defined(JUICE_EXPORTS) || defined(juice_EXPORTS)
+#define JUICE_EXPORT __declspec(dllexport) // building the library
+#else
+#define JUICE_EXPORT __declspec(dllimport) // using the library
+#endif
+#else // not WIN32
+#define JUICE_EXPORT
+#endif
 #endif
 #endif
 

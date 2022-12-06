@@ -104,6 +104,7 @@ target_include_directories(juice-static PUBLIC
 target_include_directories(juice-static PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include/juice)
 target_include_directories(juice-static PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_compile_definitions(juice-static PRIVATE $<$<CONFIG:Release>:RELEASE=1>)
+target_compile_definitions(juice-static PUBLIC JUICE_STATIC)
 target_link_libraries(juice-static PRIVATE Threads::Threads)
 
 if(WIN32)
@@ -175,11 +176,18 @@ install(FILES ${CMAKE_BINARY_DIR}/LibJuiceConfigVersion.cmake
 
 if(NOT NO_EXPORT_HEADER AND CMAKE_VERSION VERSION_GREATER_EQUAL "3.12")
 	include(GenerateExportHeader)
-	generate_export_header(juice)
+	generate_export_header(juice
+		EXPORT_MACRO_NAME JUICE_EXPORT
+		NO_EXPORT_MACRO_NAME JUICE_NO_EXPORT
+		DEPRECATED_MACRO_NAME JUICE_DEPRECATED
+		STATIC_DEFINE JUICE_STATIC)
 	target_include_directories(juice PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>)
 	target_compile_definitions(juice PUBLIC -DJUICE_HAS_EXPORT_HEADER)
 	set_target_properties(juice PROPERTIES C_VISIBILITY_PRESET hidden)
 	install(FILES ${PROJECT_BINARY_DIR}/juice_export.h DESTINATION include/juice)
+else()
+	target_compile_definitions(juice PRIVATE JUICE_EXPORTS)
+	target_compile_definitions(juice-static PRIVATE JUICE_EXPORTS)
 endif()
 
 if(NOT MSVC)
