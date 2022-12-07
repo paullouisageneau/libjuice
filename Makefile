@@ -30,6 +30,8 @@ ifneq ($(FORCE_M32), 0)
         LDFLAGS+= -m32
 endif
 
+CFLAGS+=-DJUICE_EXPORTS
+
 ifneq ($(LIBS), "")
 INCLUDES+=$(if $(LIBS),$(shell pkg-config --cflags $(LIBS)),)
 LDLIBS+=$(if $(LIBS), $(shell pkg-config --libs $(LIBS)),)
