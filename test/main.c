@@ -47,9 +47,9 @@ int main(int argc, char **argv) {
 		return -3;
 	}
 
-	printf("\nRunning STUN/TURN gathering test...\n");
+	printf("\nRunning candidates gathering test...\n");
 	if (test_gathering()) {
-		fprintf(stderr, "STUN/TURN gathering test failed\n");
+		fprintf(stderr, "Candidates gathering test failed\n");
 		return -1;
 	}
 
@@ -59,12 +59,14 @@ int main(int argc, char **argv) {
 		return -1;
 	}
 
+// Disabled as the Open Relay TURN server is unreliable
+/*
 	printf("\nRunning TURN connectivity test...\n");
 	if (test_turn()) {
 		fprintf(stderr, "TURN connectivity test failed\n");
 		return -1;
 	}
-
+*/
 	printf("\nRunning thread-mode connectivity test...\n");
 	if (test_thread()) {
 		fprintf(stderr, "Thread-mode connectivity test failed\n");

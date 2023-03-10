@@ -23,8 +23,7 @@ static void sleep(unsigned int secs) { Sleep(secs * 1000); }
 #define BUFFER_SIZE 4096
 
 static juice_agent_t *agent;
-static bool srflx_success = false;
-static bool relay_success = false;
+static bool success = false;
 static bool done = false;
 
 static void on_state_changed(juice_agent_t *agent, juice_state_t state, void *user_ptr);
@@ -38,19 +37,9 @@ int test_gathering() {
 	juice_config_t config;
 	memset(&config, 0, sizeof(config));
 
-	// STUN server example (use your own server in production)
-	config.stun_server_host = "stun.stunprotocol.org";
-	config.stun_server_port = 3478;
-
-	// TURN server example (use your own server in production)
-	juice_turn_server_t turn_server;
-	memset(&turn_server, 0, sizeof(turn_server));
-	turn_server.host = "openrelay.metered.ca";
-	turn_server.port = 80;
-	turn_server.username = "openrelayproject";
-	turn_server.password = "openrelayproject";
-	config.turn_servers = &turn_server;
-	config.turn_servers_count = 1;
+	// STUN server example
+	config.stun_server_host = "stun.l.google.com";
+	config.stun_server_port = 19302;
 
 	config.cb_state_changed = on_state_changed;
 	config.cb_candidate = on_candidate;
@@ -69,7 +58,7 @@ int test_gathering() {
 
 	// Wait until gathering done
 	int secs = 10;
-	while (secs-- && !done && !(srflx_success && relay_success))
+	while (secs-- && !done && !success)
 		sleep(1);
 
 	// Destroy
@@ -78,7 +67,7 @@ int test_gathering() {
 	// Sleep so we can check destruction went well
 	sleep(2);
 
-	if (srflx_success && relay_success) {
+	if (success) {
 		printf("Success\n");
 		return 0;
 	} else {
@@ -98,11 +87,7 @@ static void on_candidate(juice_agent_t *agent, const char *sdp, void *user_ptr) 
 
 	// Success if a valid srflx candidate is emitted
 	if (strstr(sdp, " typ srflx raddr 0.0.0.0 rport 0"))
-		srflx_success = true;
-
-	// Success if a valid relay candidate is emitted
-	if (strstr(sdp, " typ relay raddr 0.0.0.0 rport 0"))
-		relay_success = true;
+		success = true;
 }
 
 // On local candidates gathering done
