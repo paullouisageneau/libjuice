@@ -13,6 +13,7 @@ option(FUZZER "Enable oss-fuzz fuzzing" OFF)
 option(CLANG_TIDY "Enable clang-tidy" OFF)
 
 # Mitigations
+option(DISABLE_CONSENT_FRESHNESS "Disable RFC 7675 Consent Freshness" OFF)
 option(ENABLE_LOCALHOST_ADDRESS "List localhost addresses in candidates" OFF)
 option(ENABLE_LOCAL_ADDRESS_TRANSLATION "Translate local addresses to localhost" OFF)
 
@@ -205,12 +206,19 @@ if(WARNINGS_AS_ERRORS)
 	endif()
 endif()
 
+if(DISABLE_CONSENT_FRESHNESS)
+	target_compile_definitions(juice PRIVATE JUICE_DISABLE_CONSENT_FRESHNESS=1)
+	target_compile_definitions(juice-static PRIVATE JUICE_DISABLE_CONSENT_FRESHNESS=1)
+endif()
+
 if(ENABLE_LOCALHOST_ADDRESS)
 	target_compile_definitions(juice PRIVATE JUICE_ENABLE_LOCALHOST_ADDRESS=1)
+	target_compile_definitions(juice-static PRIVATE JUICE_ENABLE_LOCALHOST_ADDRESS=1)
 endif()
 
 if(ENABLE_LOCAL_ADDRESS_TRANSLATION)
 	target_compile_definitions(juice PRIVATE JUICE_ENABLE_LOCAL_ADDRESS_TRANSLATION=1)
+	target_compile_definitions(juice-static PRIVATE JUICE_ENABLE_LOCAL_ADDRESS_TRANSLATION=1)
 endif()
 
 # Tests
