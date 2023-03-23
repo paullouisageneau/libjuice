@@ -200,6 +200,8 @@ int agent_gather_candidates(juice_agent_t *agent) {
 		return 0;
 	}
 
+	agent_change_state(agent, JUICE_STATE_GATHERING);
+
 	udp_socket_config_t socket_config;
 	memset(&socket_config, 0, sizeof(socket_config));
 	socket_config.bind_address = agent->config.bind_address;
@@ -227,7 +229,6 @@ int agent_gather_candidates(juice_agent_t *agent) {
 		records_count = ICE_MAX_CANDIDATES_COUNT - 1;
 
 	conn_lock(agent);
-	agent_change_state(agent, JUICE_STATE_GATHERING);
 
 	JLOG_VERBOSE("Adding %d local host candidates", records_count);
 	for (int i = 0; i < records_count; ++i) {
@@ -254,6 +255,9 @@ int agent_gather_candidates(juice_agent_t *agent) {
 	char buffer[BUFFER_SIZE];
 	for (int i = 0; i < agent->local.candidates_count; ++i) {
 		ice_candidate_t *candidate = agent->local.candidates + i;
+		if (candidate->type != ICE_CANDIDATE_TYPE_HOST)
+			continue;
+
 		if (ice_generate_candidate_sdp(candidate, buffer, BUFFER_SIZE) < 0) {
 			JLOG_ERROR("Failed to generate SDP for local candidate");
 			continue;
@@ -667,6 +671,9 @@ int agent_input(juice_agent_t *agent, char *buf, size_t len, const addr_record_t
                 const addr_record_t *relayed) {
 	JLOG_VERBOSE("Received datagram, size=%d", len);
 
+	if (agent->state == JUICE_STATE_DISCONNECTED || agent->state == JUICE_STATE_GATHERING)
+		return 0;
+
 	if (is_stun_datagram(buf, len)) {
 		if (JLOG_DEBUG_ENABLED) {
 			char src_str[ADDR_MAX_STRING_LEN];
@@ -731,7 +738,7 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 	timestamp_t now = current_timestamp();
 	*next_timestamp = now + 10000; // We need at least to rearm keepalives
 
-	if (agent->state == JUICE_STATE_DISCONNECTED)
+	if (agent->state == JUICE_STATE_DISCONNECTED || agent->state == JUICE_STATE_GATHERING)
 		return 0;
 
 	for (int i = 0; i < agent->entries_count; ++i) {
