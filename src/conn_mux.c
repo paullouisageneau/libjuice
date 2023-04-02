@@ -337,7 +337,7 @@ int conn_mux_process(conn_registry_t *registry, struct pollfd *pfd) {
 
 			juice_agent_t *agent = lookup_agent(registry, buffer, (size_t)ret, &src);
 			if (!agent || !is_ready(agent)) {
-				JLOG_WARN("Agent not found for incoming datagram, dropping");
+				JLOG_DEBUG("Agent not found for incoming datagram, dropping");
 				continue;
 			}
 
