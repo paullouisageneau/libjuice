@@ -146,7 +146,7 @@ socket_t udp_create_socket(const udp_socket_config_t *config) {
 			return sock;
 		}
 
-		JLOG_ERROR("UDP socket binding failed on port %hu, errno=%d", port);
+		JLOG_ERROR("UDP socket binding failed on port %hu, errno=%d", port, sockerrno);
 
 	} else {
 		struct sockaddr_storage addr;
