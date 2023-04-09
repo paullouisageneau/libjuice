@@ -1306,9 +1306,12 @@ int agent_process_stun_binding(juice_agent_t *agent, const stun_message_t *msg,
 				pair->nominated = true;
 			} else if (!pair->nomination_requested) {
 				pair->nomination_requested = true;
-				pair->state = ICE_CANDIDATE_PAIR_STATE_PENDING;
-				entry->state = AGENT_STUN_ENTRY_STATE_PENDING;
-				agent_arm_transmission(agent, entry, STUN_PACING_TIME); // transmit after response
+				if (*agent->remote.ice_ufrag != '\0') {
+					pair->state = ICE_CANDIDATE_PAIR_STATE_PENDING;
+					entry->state = AGENT_STUN_ENTRY_STATE_PENDING;
+					agent_arm_transmission(agent, entry,
+					                       STUN_PACING_TIME); // transmit after response
+				}
 			}
 		}
 		if (agent_send_stun_binding(agent, entry, STUN_CLASS_RESP_SUCCESS, 0, msg->transaction_id,
