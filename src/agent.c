@@ -436,11 +436,15 @@ int agent_get_local_description(juice_agent_t *agent, char *buffer, size_t size)
 		return -1;
 	}
 	JLOG_VERBOSE("Generated local SDP description: %s", buffer);
+	agent->local_generated = true;
+
+	agent_update_pac_timestamp(agent);
 
 	if (agent->mode == AGENT_MODE_UNKNOWN) {
 		JLOG_DEBUG("Assuming controlling mode");
 		agent->mode = AGENT_MODE_CONTROLLING;
 	}
+
 	conn_unlock(agent);
 	return 0;
 }
@@ -485,6 +489,8 @@ int agent_set_remote_description(juice_agent_t *agent, const char *sdp) {
 
 	agent->remote = remote;
 
+	agent_update_pac_timestamp(agent);
+
 	if (agent->mode == AGENT_MODE_UNKNOWN) {
 		JLOG_DEBUG("Assuming controlled mode");
 		agent->mode = AGENT_MODE_CONTROLLED;
@@ -510,6 +516,11 @@ int agent_set_remote_description(juice_agent_t *agent, const char *sdp) {
 int agent_add_remote_candidate(juice_agent_t *agent, const char *sdp) {
 	conn_lock(agent);
 	JLOG_VERBOSE("Adding remote candidate: %s", sdp);
+	if (agent->remote.finished) {
+		JLOG_ERROR("Remote candidate added after remote gathering done");
+		conn_unlock(agent);
+		return -1;
+	}
 	ice_candidate_t candidate;
 	int ret = ice_parse_candidate_sdp(sdp, &candidate);
 	if (ret < 0) {
@@ -537,8 +548,8 @@ int agent_add_remote_candidate(juice_agent_t *agent, const char *sdp) {
 int agent_set_remote_gathering_done(juice_agent_t *agent) {
 	conn_lock(agent);
 	agent->remote.finished = true;
-	agent->fail_timestamp = 0; // So the bookkeeping will recompute it and fail
 	conn_unlock(agent);
+	conn_interrupt(agent);
 	return 0;
 }
 
@@ -770,8 +781,12 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 
 				if (ret >= 0) {
 					--entry->retransmissions;
-					entry->next_transmission = now + entry->retransmission_timeout;
-					entry->retransmission_timeout *= 2;
+					if (entry->retransmissions < 0) {
+						entry->next_transmission = now + LAST_STUN_RETRANSMISSION_TIMEOUT;
+					} else {
+						entry->next_transmission = now + entry->retransmission_timeout;
+						entry->retransmission_timeout *= 2;
+					}
 					continue;
 				}
 			}
@@ -868,9 +883,6 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 			entry->next_transmission = 0;
 		}
 	}
-
-	if (agent->candidate_pairs_count == 0)
-		goto finally;
 
 	int pending_count = 0;
 	ice_candidate_pair_t *nominated_pair = NULL;
@@ -1020,21 +1032,23 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 			}
 		}
 	} else if (pending_count == 0) {
-		// Failed
-		if (!agent->fail_timestamp)
-			agent->fail_timestamp = now + (agent->remote.finished ? 0 : ICE_FAIL_TIMEOUT);
+		if (agent->pac_timestamp) {
+			timestamp_t pac_expiry = agent->pac_timestamp + ICE_PAC_TIMEOUT;
+			// RFC 8863: While the timer is still running, the ICE agent MUST NOT update a checklist
+			// state from Running to Failed, even if there are no pairs left in the checklist to
+			// check.
+			if (now >= pac_expiry) {
+				JLOG_INFO("Connectivity timer expired");
+				agent_change_state(agent, JUICE_STATE_FAILED);
+				atomic_store(&agent->selected_entry, NULL); // disallow sending
+				return 0;
+			}
 
-		if (agent->fail_timestamp && now >= agent->fail_timestamp) {
-			agent_change_state(agent, JUICE_STATE_FAILED);
-			atomic_store(&agent->selected_entry, NULL); // disallow sending
-			return 0;
+			if (*next_timestamp > pac_expiry)
+				*next_timestamp = pac_expiry;
 		}
-
-		if (*next_timestamp > agent->fail_timestamp)
-			*next_timestamp = agent->fail_timestamp;
 	}
 
-finally:
 	for (int i = 0; i < agent->entries_count; ++i) {
 		agent_stun_entry_t *entry = agent->entries + i;
 		if (entry->next_transmission && *next_timestamp > entry->next_transmission)
@@ -2341,6 +2355,21 @@ void agent_arm_transmission(juice_agent_t *agent, agent_stun_entry_t *entry, tim
 	}
 }
 
+void agent_update_pac_timestamp(juice_agent_t *agent) {
+	if (agent->pac_timestamp)
+		return;
+
+	// RFC 8863: The ICE agent will start its timer once it believes ICE connectivity checks are
+	// starting. This occurs when the agent has sent the values needed to perform connectivity
+	// checks (e.g., the Username Fragment and Password [...]) and has received some indication that
+	// the remote side is ready to start connectivity checks, typically via receipt of the values
+	// mentioned above.
+	if (*agent->remote.ice_ufrag != '\0' && (agent->local_generated || agent->gathering_done)) {
+		JLOG_INFO("Connectivity timer started");
+		agent->pac_timestamp = current_timestamp();
+	}
+}
+
 void agent_update_gathering_done(juice_agent_t *agent) {
 	JLOG_VERBOSE("Updating gathering status");
 	for (int i = 0; i < agent->entries_count; ++i) {
@@ -2355,6 +2384,8 @@ void agent_update_gathering_done(juice_agent_t *agent) {
 		JLOG_INFO("Candidate gathering done");
 		agent->local.finished = true;
 		agent->gathering_done = true;
+
+		agent_update_pac_timestamp(agent);
 
 		if (agent->config.cb_gathering_done)
 			agent->config.cb_gathering_done(agent, agent->config.user_ptr);
