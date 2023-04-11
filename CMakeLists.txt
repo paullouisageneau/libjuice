@@ -1,6 +1,6 @@
 cmake_minimum_required (VERSION 3.7)
 project (libjuice
-	VERSION 1.2.1
+	VERSION 1.2.2
 	LANGUAGES C)
 set(PROJECT_DESCRIPTION "UDP Interactive Connectivity Establishment (ICE) library")
 
