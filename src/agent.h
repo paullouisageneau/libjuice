@@ -23,15 +23,21 @@
 
 // RFC 8445: Agents MUST NOT use an RTO value smaller than 500 ms.
 #define MIN_STUN_RETRANSMISSION_TIMEOUT 500 // msecs
-#define MAX_STUN_RETRANSMISSION_COUNT 5     // count (exponential backoff, will give ~30s)
+#define LAST_STUN_RETRANSMISSION_TIMEOUT (MIN_STUN_RETRANSMISSION_TIMEOUT * 16)
+#define MAX_STUN_RETRANSMISSION_COUNT 6 // exponential backoff, total 39500ms
 
-// RFC 8445: ICE agents SHOULD use a default Ta value, 50 ms, but MAY use
-// another value based on the characteristics of the associated data.
+// RFC 8445: ICE agents SHOULD use a default Ta value, 50 ms, but MAY use another value based on the
+// characteristics of the associated data.
 #define STUN_PACING_TIME 50 // msecs
 
 // RFC 8445: Agents SHOULD use a Tr value of 15 seconds. Agents MAY use a bigger value but MUST NOT
 // use a value smaller than 15 seconds.
 #define STUN_KEEPALIVE_PERIOD 15000 // msecs
+
+// ICE Patiently Awaiting Connectivity timer
+// RFC 8863: The RECOMMENDED duration for the PAC timer is equal to the agent's connectivity check
+// transaction timeout, including all retransmissions.
+#define ICE_PAC_TIMEOUT 39500 // msecs
 
 // Consent freshness
 // RFC 7675: Consent expires after 30 seconds.
@@ -45,11 +51,8 @@
 #define MAX_CONSENT_CHECK_PERIOD 6000 // msecs
 
 // TURN refresh period
-#define TURN_LIFETIME 600000                        // msecs, 10 min
-#define TURN_REFRESH_PERIOD (TURN_LIFETIME - 60000) // msecs, lifetime - 1 min
-
-// ICE trickling timeout
-#define ICE_FAIL_TIMEOUT 30000 // msecs
+#define TURN_LIFETIME 600000                        // msecs (10 min)
+#define TURN_REFRESH_PERIOD (TURN_LIFETIME - 60000) // msecs (lifetime - 1 min)
 
 // Max STUN and TURN server entries
 #define MAX_SERVER_ENTRIES_COUNT 2 // max STUN server entries
@@ -132,7 +135,8 @@ struct juice_agent {
 	atomic_ptr(agent_stun_entry_t) selected_entry;
 
 	uint64_t ice_tiebreaker;
-	timestamp_t fail_timestamp;
+	timestamp_t pac_timestamp; // Patiently Awaiting Connectivity timer
+	bool local_generated;
 	bool gathering_done;
 
 	int conn_index;
@@ -213,6 +217,7 @@ int agent_unfreeze_candidate_pair(juice_agent_t *agent, ice_candidate_pair_t *pa
 
 void agent_arm_keepalive(juice_agent_t *agent, agent_stun_entry_t *entry);
 void agent_arm_transmission(juice_agent_t *agent, agent_stun_entry_t *entry, timediff_t delay);
+void agent_update_pac_timestamp(juice_agent_t *agent);
 void agent_update_gathering_done(juice_agent_t *agent);
 void agent_update_candidate_pairs(juice_agent_t *agent);
 void agent_update_ordered_pairs(juice_agent_t *agent);
