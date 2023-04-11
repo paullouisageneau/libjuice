@@ -64,9 +64,6 @@ int test_gathering() {
 	// Destroy
 	juice_destroy(agent);
 
-	// Sleep so we can check destruction went well
-	sleep(2);
-
 	if (success) {
 		printf("Success\n");
 		return 0;

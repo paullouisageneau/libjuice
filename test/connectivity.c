@@ -48,16 +48,6 @@ int test_connectivity() {
 	config1.stun_server_host = "stun.l.google.com";
 	config1.stun_server_port = 19302;
 
-	// TURN server example (use your own server in production)
-	juice_turn_server_t turn_server;
-	memset(&turn_server, 0, sizeof(turn_server));
-	turn_server.host = "openrelay.metered.ca";
-	turn_server.port = 80;
-	turn_server.username = "openrelayproject";
-	turn_server.password = "openrelayproject";
-	config1.turn_servers = &turn_server;
-	config1.turn_servers_count = 1;
-
 	config1.cb_state_changed = on_state_changed1;
 	config1.cb_candidate = on_candidate1;
 	config1.cb_gathering_done = on_gathering_done1;
@@ -158,9 +148,6 @@ int test_connectivity() {
 
 	// Agent 2: destroy
 	juice_destroy(agent2);
-
-	// Sleep so we can check destruction went well
-	sleep(2);
 
 	if (success) {
 		printf("Success\n");
