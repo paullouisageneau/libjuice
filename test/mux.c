@@ -147,9 +147,6 @@ int test_mux() {
 	// Agent 2: destroy
 	juice_destroy(agent2);
 
-	// Sleep so we can check destruction went well
-	sleep(2);
-
 	if (success) {
 		printf("Success\n");
 		return 0;

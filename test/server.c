@@ -167,9 +167,6 @@ int test_server() {
 	// Destroy server
 	juice_server_destroy(server);
 
-	// Sleep so we can check destruction went well
-	sleep(2);
-
 	if (srflx_success && relay_success && success) {
 		printf("Success\n");
 		return 0;
