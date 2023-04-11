@@ -1186,11 +1186,6 @@ int agent_dispatch_stun(juice_agent_t *agent, void *buf, size_t size, stun_messa
 		}
 	}
 
-	if (entry->state == AGENT_STUN_ENTRY_STATE_FAILED) {
-		JLOG_DEBUG("Ignoring STUN message matching failed entry");
-		return 0;
-	}
-
 	switch (msg->msg_method) {
 	case STUN_METHOD_BINDING:
 		// Message was verified earlier, no need to re-verify
@@ -1305,19 +1300,26 @@ int agent_process_stun_binding(juice_agent_t *agent, const stun_message_t *msg,
 				JLOG_DEBUG("Got a nominated pair (controlled)");
 				pair->nominated = true;
 			} else if (!pair->nomination_requested) {
+				JLOG_DEBUG("Pair nomination requested (controlled)");
 				pair->nomination_requested = true;
-				if (*agent->remote.ice_ufrag != '\0') {
-					pair->state = ICE_CANDIDATE_PAIR_STATE_PENDING;
-					entry->state = AGENT_STUN_ENTRY_STATE_PENDING;
-					agent_arm_transmission(agent, entry,
-					                       STUN_PACING_TIME); // transmit after response
-				}
 			}
 		}
+		// Response
 		if (agent_send_stun_binding(agent, entry, STUN_CLASS_RESP_SUCCESS, 0, msg->transaction_id,
 		                            src)) {
 			JLOG_ERROR("Failed to send STUN Binding response");
 			return -1;
+		}
+		// Triggered check
+		// RFC 8445: If the state of that pair is Succeeded, nothing further is done. If the state
+		// of that pair is In-Progress, [...] the agent MUST [...] trigger a new connectivity check
+		// of the pair. [...] If the state of that pair is Waiting, Frozen, or Failed, the agent
+		// MUST [...] trigger a new connectivity check of the pair.
+		if (pair->state != ICE_CANDIDATE_PAIR_STATE_SUCCEEDED && *agent->remote.ice_ufrag != '\0') {
+			JLOG_DEBUG("Triggered pair check");
+			pair->state = ICE_CANDIDATE_PAIR_STATE_PENDING;
+			entry->state = AGENT_STUN_ENTRY_STATE_PENDING;
+			agent_arm_transmission(agent, entry, STUN_PACING_TIME);
 		}
 		break;
 	}
