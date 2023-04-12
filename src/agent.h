@@ -24,7 +24,8 @@
 // RFC 8445: Agents MUST NOT use an RTO value smaller than 500 ms.
 #define MIN_STUN_RETRANSMISSION_TIMEOUT 500 // msecs
 #define LAST_STUN_RETRANSMISSION_TIMEOUT (MIN_STUN_RETRANSMISSION_TIMEOUT * 16)
-#define MAX_STUN_RETRANSMISSION_COUNT 6 // exponential backoff, total 39500ms
+#define MAX_STUN_CHECK_RETRANSMISSION_COUNT 6  // exponential backoff, total 39500ms
+#define MAX_STUN_SERVER_RETRANSMISSION_COUNT 5 // total 23500ms
 
 // RFC 8445: ICE agents SHOULD use a default Ta value, 50 ms, but MAY use another value based on the
 // characteristics of the associated data.
