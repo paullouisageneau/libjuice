@@ -136,7 +136,6 @@ struct juice_agent {
 
 	uint64_t ice_tiebreaker;
 	timestamp_t pac_timestamp; // Patiently Awaiting Connectivity timer
-	bool local_generated;
 	bool gathering_done;
 
 	int conn_index;

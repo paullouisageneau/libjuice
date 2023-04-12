@@ -436,9 +436,6 @@ int agent_get_local_description(juice_agent_t *agent, char *buffer, size_t size)
 		return -1;
 	}
 	JLOG_VERBOSE("Generated local SDP description: %s", buffer);
-	agent->local_generated = true;
-
-	agent_update_pac_timestamp(agent);
 
 	if (agent->mode == AGENT_MODE_UNKNOWN) {
 		JLOG_DEBUG("Assuming controlling mode");
@@ -2364,7 +2361,7 @@ void agent_update_pac_timestamp(juice_agent_t *agent) {
 	// checks (e.g., the Username Fragment and Password [...]) and has received some indication that
 	// the remote side is ready to start connectivity checks, typically via receipt of the values
 	// mentioned above.
-	if (*agent->remote.ice_ufrag != '\0' && (agent->local_generated || agent->gathering_done)) {
+	if (*agent->remote.ice_ufrag != '\0' && agent->gathering_done) {
 		JLOG_INFO("Connectivity timer started");
 		agent->pac_timestamp = current_timestamp();
 	}
