@@ -2329,11 +2329,16 @@ void agent_arm_transmission(juice_agent_t *agent, agent_stun_entry_t *entry, tim
 	entry->next_transmission = current_timestamp() + delay;
 
 	if (entry->state == AGENT_STUN_ENTRY_STATE_PENDING) {
-		bool limit = agent->selected_pair &&
-		             (agent->selected_pair->nominated || (agent->selected_pair != entry->pair &&
-		                                                  agent->mode == AGENT_MODE_CONTROLLING));
-		entry->retransmissions = limit ? 1 : MAX_STUN_RETRANSMISSION_COUNT;
 		entry->retransmission_timeout = MIN_STUN_RETRANSMISSION_TIMEOUT;
+		if (entry->type == AGENT_STUN_ENTRY_TYPE_CHECK) {
+			bool limit =
+			    agent->selected_pair &&
+			    (agent->selected_pair->nominated ||
+			     (agent->selected_pair != entry->pair && agent->mode == AGENT_MODE_CONTROLLING));
+			entry->retransmissions = limit ? 1 : MAX_STUN_CHECK_RETRANSMISSION_COUNT;
+		} else {
+			entry->retransmissions = MAX_STUN_SERVER_RETRANSMISSION_COUNT;
+		}
 	}
 
 	// Find a time slot
