@@ -42,7 +42,7 @@ static int parse_sdp_line(const char *line, ice_description_t *description) {
 		sscanf(arg, "%256s", description->ice_pwd);
 		return 0;
 	}
-	if (match_prefix(line, "a=end-of-candidates:", &arg)) {
+	if (match_prefix(line, "a=end-of-candidates", &arg)) {
 		description->finished = true;
 		return 0;
 	}
