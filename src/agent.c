@@ -910,6 +910,21 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 		}
 	}
 
+	if (agent->mode == AGENT_MODE_CONTROLLING && nominated_pair) {
+		// RFC 8445 8.1.1. Nominating Pairs:
+		// Once the controlling agent has successfully nominated a candidate pair, the agent MUST
+		// NOT nominate another pair for same component of the data stream within the ICE session.
+		for (int i = 0; i < agent->candidate_pairs_count; ++i) {
+			ice_candidate_pair_t *pair = agent->ordered_pairs[i];
+			if (pair != nominated_pair && pair->state == ICE_CANDIDATE_PAIR_STATE_PENDING) {
+				// Entries will be synchronized after the current loop.
+				JLOG_VERBOSE("Cancelling check for non-nominated pair");
+				pair->state = ICE_CANDIDATE_PAIR_STATE_FROZEN;
+			}
+		}
+		pending_count = 0;
+	}
+
 	// Cancel entries of frozen pairs
 	for (int i = 0; i < agent->entries_count; ++i) {
 		agent_stun_entry_t *entry = agent->entries + i;
@@ -930,12 +945,19 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 	}
 
 	if (selected_pair) {
-		// Succeeded
+		bool selected_pair_has_relay =
+		    (selected_pair->local && selected_pair->local->type == ICE_CANDIDATE_TYPE_RELAYED) ||
+		    (selected_pair->remote && selected_pair->remote->type == ICE_CANDIDATE_TYPE_RELAYED);
+
 		// Change selected entry if this is a new selected pair
 		if (agent->selected_pair != selected_pair) {
 			JLOG_DEBUG(selected_pair->nominated ? "New selected and nominated pair"
 			                                    : "New selected pair");
 			agent->selected_pair = selected_pair;
+
+			// Start nomination timer if controlling and not relayed
+			if (agent->mode == AGENT_MODE_CONTROLLING && !selected_pair_has_relay)
+				agent->nomination_timestamp = now + NOMINATION_TIMEOUT;
 
 			for (int i = 0; i < agent->entries_count; ++i) {
 				agent_stun_entry_t *entry = agent->entries + i;
@@ -991,32 +1013,34 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 			// Connected
 			agent_change_state(agent, JUICE_STATE_CONNECTED);
 
-			// RFC 8445 8.1.1. Nominating Pairs:
-			// Once the controlling agent has successfully nominated a candidate pair, the agent
-			// MUST NOT nominate another pair for same component of the data stream within the ICE
-			// session.
-			// For this reason, we wait until no pair is pending so the selected pair won't change.
-			if (agent->mode == AGENT_MODE_CONTROLLING && pending_count == 0 && selected_pair &&
-			    !selected_pair->nomination_requested) {
-				// Nominate selected
-				JLOG_DEBUG("Requesting pair nomination (controlling)");
-				selected_pair->nomination_requested = true;
-				for (int i = 0; i < agent->entries_count; ++i) {
-					agent_stun_entry_t *entry = agent->entries + i;
-					if (entry->pair && entry->pair == selected_pair) {
-						entry->state = AGENT_STUN_ENTRY_STATE_PENDING; // we don't want keepalives
-						agent_arm_transmission(agent, entry, 0);       // transmit now
-						break;
+			if (agent->mode == AGENT_MODE_CONTROLLING && agent->nomination_timestamp) {
+				bool finished = agent->remote.finished && pending_count == 0;
+				if ((now >= agent->nomination_timestamp || finished) &&
+				    !selected_pair->nomination_requested) {
+					// Nominate selected
+					JLOG_DEBUG("Requesting pair nomination (controlling)");
+					selected_pair->nomination_requested = true;
+					for (int i = 0; i < agent->entries_count; ++i) {
+						agent_stun_entry_t *entry = agent->entries + i;
+						if (entry->pair && entry->pair == selected_pair) {
+							entry->state =
+							    AGENT_STUN_ENTRY_STATE_PENDING;      // we don't want keepalives
+							agent_arm_transmission(agent, entry, 0); // transmit now
+							break;
+						}
 					}
 				}
+				else if (*next_timestamp > agent->nomination_timestamp)
+					*next_timestamp = agent->nomination_timestamp;
 			}
 		}
+
 	} else if (pending_count == 0) {
 		if (agent->pac_timestamp) {
 			timestamp_t pac_expiry = agent->pac_timestamp + ICE_PAC_TIMEOUT;
-			// RFC 8863: While the timer is still running, the ICE agent MUST NOT update a checklist
-			// state from Running to Failed, even if there are no pairs left in the checklist to
-			// check.
+			// RFC 8863: While the timer is still running, the ICE agent MUST NOT update a
+			// checklist state from Running to Failed, even if there are no pairs left in the
+			// checklist to check.
 			if (now >= pac_expiry) {
 				JLOG_INFO("Connectivity timer expired");
 				agent_change_state(agent, JUICE_STATE_FAILED);
@@ -2232,7 +2256,8 @@ int agent_add_candidate_pair(juice_agent_t *agent, ice_candidate_t *local, // lo
 	}
 
 	// There is only one component, therefore we can unfreeze if no pair is nominated
-	if (*agent->remote.ice_ufrag != '\0' && (!agent->selected_pair || !agent->selected_pair->nominated)) {
+	if (*agent->remote.ice_ufrag != '\0' &&
+	    (!agent->selected_pair || !agent->selected_pair->nominated)) {
 		JLOG_VERBOSE("Unfreezing the new candidate pair");
 		agent_unfreeze_candidate_pair(agent, pos);
 	}
