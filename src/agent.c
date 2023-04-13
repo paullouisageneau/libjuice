@@ -946,30 +946,13 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 			}
 		}
 
-		bool selected_pair_has_relay =
-		    (selected_pair->local && selected_pair->local->type == ICE_CANDIDATE_TYPE_RELAYED) ||
-		    (selected_pair->remote && selected_pair->remote->type == ICE_CANDIDATE_TYPE_RELAYED);
-
-		if (selected_pair->nominated ||
-		    (agent->mode == AGENT_MODE_CONTROLLING && !selected_pair_has_relay)) {
-			// Limit retransmissions of still pending entries
-			for (int i = 0; i < agent->entries_count; ++i) {
-				agent_stun_entry_t *entry = agent->entries + i;
-				if (entry->pair != selected_pair &&
-				    entry->state == AGENT_STUN_ENTRY_STATE_PENDING && entry->retransmissions > 1)
-					entry->retransmissions = 1;
-			}
-		}
-
 		if (nominated_pair) {
 			// Completed
 			// Do not allow direct transition from connecting to completed
 			if (agent->state == JUICE_STATE_CONNECTING)
 				agent_change_state(agent, JUICE_STATE_CONNECTED);
 
-			// Actually transition to finished only if controlled or if nothing is pending anymore
-			if (agent->mode == AGENT_MODE_CONTROLLED || pending_count == 0)
-				agent_change_state(agent, JUICE_STATE_COMPLETED);
+			agent_change_state(agent, JUICE_STATE_COMPLETED);
 
 			agent_stun_entry_t *nominated_entry = NULL;
 			agent_stun_entry_t *relay_entry = NULL;
@@ -1574,7 +1557,7 @@ int agent_send_stun_binding(juice_agent_t *agent, agent_stun_entry_t *entry, stu
 		// The datagram must be sent through the relay
 		JLOG_DEBUG("Sending STUN message via relay");
 		int ret;
-		if (agent->state == JUICE_STATE_COMPLETED)
+		if (entry->pair && entry->pair->nominated)
 			ret = agent_channel_send(agent, entry->relay_entry, &entry->record, buffer, size, 0);
 		else
 			ret = agent_relay_send(agent, entry->relay_entry, &entry->record, buffer, size, 0);
@@ -2248,8 +2231,8 @@ int agent_add_candidate_pair(juice_agent_t *agent, ice_candidate_t *local, // lo
 		}
 	}
 
-	// There is only one component, therefore we can unfreeze the pair and schedule it when possible
-	if (*agent->remote.ice_ufrag != '\0') {
+	// There is only one component, therefore we can unfreeze if no pair is nominated
+	if (*agent->remote.ice_ufrag != '\0' && (!agent->selected_pair || !agent->selected_pair->nominated)) {
 		JLOG_VERBOSE("Unfreezing the new candidate pair");
 		agent_unfreeze_candidate_pair(agent, pos);
 	}
@@ -2330,15 +2313,9 @@ void agent_arm_transmission(juice_agent_t *agent, agent_stun_entry_t *entry, tim
 
 	if (entry->state == AGENT_STUN_ENTRY_STATE_PENDING) {
 		entry->retransmission_timeout = MIN_STUN_RETRANSMISSION_TIMEOUT;
-		if (entry->type == AGENT_STUN_ENTRY_TYPE_CHECK) {
-			bool limit =
-			    agent->selected_pair &&
-			    (agent->selected_pair->nominated ||
-			     (agent->selected_pair != entry->pair && agent->mode == AGENT_MODE_CONTROLLING));
-			entry->retransmissions = limit ? 1 : MAX_STUN_CHECK_RETRANSMISSION_COUNT;
-		} else {
-			entry->retransmissions = MAX_STUN_SERVER_RETRANSMISSION_COUNT;
-		}
+		entry->retransmissions = entry->type == AGENT_STUN_ENTRY_TYPE_CHECK
+		                             ? MAX_STUN_CHECK_RETRANSMISSION_COUNT
+		                             : MAX_STUN_SERVER_RETRANSMISSION_COUNT;
 	}
 
 	// Find a time slot
@@ -2447,8 +2424,8 @@ agent_stun_entry_t *agent_find_entry_from_record(juice_agent_t *agent, const add
                                                  const addr_record_t *relayed) {
 	agent_stun_entry_t *selected_entry = atomic_load(&agent->selected_entry);
 
-	if (agent->state == JUICE_STATE_COMPLETED && selected_entry) {
-		// As an optimization, try to match the selected entry first
+	if (selected_entry && selected_entry->pair && selected_entry->pair->nominated) {
+		// As an optimization, try to match the nominated entry first
 		if (relayed) {
 			if (entry_is_relayed(selected_entry) &&
 			    addr_record_is_equal(&selected_entry->pair->local->resolved, relayed, true) &&
