@@ -64,10 +64,10 @@ int test_mux() {
 	config2.concurrency_mode = JUICE_CONCURRENCY_MODE_MUX;
 	config2.local_port_range_begin = 60000;
 	config2.local_port_range_end = 60000;
-	config2.cb_state_changed = on_state_changed1;
-	config2.cb_candidate = on_candidate1;
-	config2.cb_gathering_done = on_gathering_done1;
-	config2.cb_recv = on_recv1;
+	config2.cb_state_changed = on_state_changed2;
+	config2.cb_candidate = on_candidate2;
+	config2.cb_gathering_done = on_gathering_done2;
+	config2.cb_recv = on_recv2;
 	config2.user_ptr = NULL;
 
 	agent2 = juice_create(&config2);
