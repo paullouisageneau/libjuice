@@ -221,7 +221,7 @@ int agent_unfreeze_candidate_pair(juice_agent_t *agent, ice_candidate_pair_t *pa
 
 void agent_arm_keepalive(juice_agent_t *agent, agent_stun_entry_t *entry);
 void agent_arm_transmission(juice_agent_t *agent, agent_stun_entry_t *entry, timediff_t delay);
-void agent_update_pac_timestamp(juice_agent_t *agent);
+void agent_update_pac_timer(juice_agent_t *agent);
 void agent_update_gathering_done(juice_agent_t *agent);
 void agent_update_candidate_pairs(juice_agent_t *agent);
 void agent_update_ordered_pairs(juice_agent_t *agent);

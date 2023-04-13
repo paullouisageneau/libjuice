@@ -486,7 +486,7 @@ int agent_set_remote_description(juice_agent_t *agent, const char *sdp) {
 
 	agent->remote = remote;
 
-	agent_update_pac_timestamp(agent);
+	agent_update_pac_timer(agent);
 
 	if (agent->mode == AGENT_MODE_UNKNOWN) {
 		JLOG_DEBUG("Assuming controlled mode");
@@ -1029,27 +1029,22 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 							break;
 						}
 					}
-				}
-				else if (*next_timestamp > agent->nomination_timestamp)
+				} else if (*next_timestamp > agent->nomination_timestamp) {
 					*next_timestamp = agent->nomination_timestamp;
+				}
 			}
 		}
 
-	} else if (pending_count == 0) {
-		if (agent->pac_timestamp) {
-			timestamp_t pac_expiry = agent->pac_timestamp + ICE_PAC_TIMEOUT;
-			// RFC 8863: While the timer is still running, the ICE agent MUST NOT update a
-			// checklist state from Running to Failed, even if there are no pairs left in the
-			// checklist to check.
-			if (now >= pac_expiry) {
-				JLOG_INFO("Connectivity timer expired");
-				agent_change_state(agent, JUICE_STATE_FAILED);
-				atomic_store(&agent->selected_entry, NULL); // disallow sending
-				return 0;
-			}
-
-			if (*next_timestamp > pac_expiry)
-				*next_timestamp = pac_expiry;
+	} else if (pending_count == 0 && agent->pac_timestamp) {
+		// RFC 8863: While the timer is still running, the ICE agent MUST NOT update a checklist
+		// state from Running to Failed, even if there are no pairs left in the checklist to check.
+		if (now >= agent->pac_timestamp) {
+			JLOG_INFO("Connectivity timer expired");
+			agent_change_state(agent, JUICE_STATE_FAILED);
+			atomic_store(&agent->selected_entry, NULL); // disallow sending
+			return 0;
+		} else if (*next_timestamp > agent->pac_timestamp) {
+			*next_timestamp = agent->pac_timestamp;
 		}
 	}
 
@@ -2359,7 +2354,7 @@ void agent_arm_transmission(juice_agent_t *agent, agent_stun_entry_t *entry, tim
 	}
 }
 
-void agent_update_pac_timestamp(juice_agent_t *agent) {
+void agent_update_pac_timer(juice_agent_t *agent) {
 	if (agent->pac_timestamp)
 		return;
 
@@ -2370,7 +2365,7 @@ void agent_update_pac_timestamp(juice_agent_t *agent) {
 	// mentioned above.
 	if (*agent->remote.ice_ufrag != '\0' && agent->gathering_done) {
 		JLOG_INFO("Connectivity timer started");
-		agent->pac_timestamp = current_timestamp();
+		agent->pac_timestamp = current_timestamp() + ICE_PAC_TIMEOUT;
 	}
 }
 
@@ -2389,7 +2384,7 @@ void agent_update_gathering_done(juice_agent_t *agent) {
 		agent->local.finished = true;
 		agent->gathering_done = true;
 
-		agent_update_pac_timestamp(agent);
+		agent_update_pac_timer(agent);
 
 		if (agent->config.cb_gathering_done)
 			agent->config.cb_gathering_done(agent, agent->config.user_ptr);
