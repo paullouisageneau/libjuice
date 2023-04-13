@@ -51,6 +51,9 @@
 #define MIN_CONSENT_CHECK_PERIOD 4000 // msecs
 #define MAX_CONSENT_CHECK_PERIOD 6000 // msecs
 
+// Nomination timeout to settle for a non-relayed pair
+#define NOMINATION_TIMEOUT 4000
+
 // TURN refresh period
 #define TURN_LIFETIME 600000                        // msecs (10 min)
 #define TURN_REFRESH_PERIOD (TURN_LIFETIME - 60000) // msecs (lifetime - 1 min)
@@ -137,6 +140,7 @@ struct juice_agent {
 
 	uint64_t ice_tiebreaker;
 	timestamp_t pac_timestamp; // Patiently Awaiting Connectivity timer
+	timestamp_t nomination_timestamp;
 	bool gathering_done;
 
 	int conn_index;
@@ -217,7 +221,7 @@ int agent_unfreeze_candidate_pair(juice_agent_t *agent, ice_candidate_pair_t *pa
 
 void agent_arm_keepalive(juice_agent_t *agent, agent_stun_entry_t *entry);
 void agent_arm_transmission(juice_agent_t *agent, agent_stun_entry_t *entry, timediff_t delay);
-void agent_update_pac_timestamp(juice_agent_t *agent);
+void agent_update_pac_timer(juice_agent_t *agent);
 void agent_update_gathering_done(juice_agent_t *agent);
 void agent_update_candidate_pairs(juice_agent_t *agent);
 void agent_update_ordered_pairs(juice_agent_t *agent);
