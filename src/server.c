@@ -44,14 +44,17 @@
 #define MAX_RELAYED_RECORDS_COUNT 8
 #define BUFFER_SIZE 4096
 
-static char *alloc_string_copy(const char *orig) {
+static char *alloc_string_copy(const char *orig, bool *alloc_failed) {
 	if (!orig)
 		return NULL;
 
 	char *copy = malloc(strlen(orig) + 1);
-	if (!copy)
-		return NULL;
+	if (!copy) {
+		if (alloc_failed)
+			*alloc_failed = true;
 
+		return NULL;
+	}
 	strcpy(copy, orig);
 	return copy;
 }
@@ -122,38 +125,27 @@ juice_server_t *server_create(const juice_server_config_t *config) {
 
 	mutex_init(&server->mutex, MUTEX_RECURSIVE);
 
-	server->config = *config;
-
-	if (server->config.bind_address) {
-		server->config.bind_address = alloc_string_copy(server->config.bind_address);
-		if (!server->config.bind_address) {
-			JLOG_FATAL("Memory allocation for bind address failed");
-			goto error;
-		}
-	}
-
-	if (server->config.external_address) {
-		server->config.external_address = alloc_string_copy(server->config.external_address);
-		if (!server->config.external_address) {
-			JLOG_FATAL("Memory allocation for external address failed");
-			goto error;
-		}
-	}
-
-	const char *realm =
-	    config->realm && *config->realm != '\0' ? config->realm : SERVER_DEFAULT_REALM;
-	server->config.realm = alloc_string_copy(realm);
-	if (!server->config.realm) {
-		JLOG_FATAL("Memory allocation for realm failed");
+	bool alloc_failed = false;
+	server->config.max_allocations =
+	    config->max_allocations > 0 ? config->max_allocations : SERVER_DEFAULT_MAX_ALLOCATIONS;
+	server->config.max_peers = config->max_peers;
+	server->config.bind_address = alloc_string_copy(config->bind_address, &alloc_failed);
+	server->config.external_address = alloc_string_copy(config->external_address, &alloc_failed);
+	server->config.port = config->port;
+	server->config.relay_port_range_begin = config->relay_port_range_begin;
+	server->config.relay_port_range_end = config->relay_port_range_end;
+	server->config.realm = alloc_string_copy(
+	    config->realm && *config->realm != '\0' ? config->realm : SERVER_DEFAULT_REALM,
+	    &alloc_failed);
+	if (alloc_failed) {
+		JLOG_FATAL("Memory allocation for server configuration failed");
 		goto error;
 	}
 
-	if (server->config.max_allocations == 0)
-		server->config.max_allocations = SERVER_DEFAULT_MAX_ALLOCATIONS;
-
-	server->credentials = NULL;
-
-	if (server->config.credentials_count == 0) {
+	// Don't copy credentials but process them
+	server->config.credentials = NULL;
+	server->config.credentials_count = 0;
+	if (config->credentials_count <= 0) {
 		// TURN disabled
 		JLOG_INFO("TURN relaying disabled, STUN-only mode");
 		server->allocs = NULL;
@@ -161,20 +153,23 @@ juice_server_t *server_create(const juice_server_config_t *config) {
 
 	} else {
 		// TURN enabled
-		for (int i = 0; i < server->config.credentials_count; ++i) {
-			juice_server_credentials_t *credentials = server->config.credentials + i;
+		server->allocs = calloc(server->config.max_allocations, sizeof(server_turn_alloc_t));
+		if (!server->allocs) {
+			JLOG_FATAL("Memory allocation for TURN allocation table failed");
+			goto error;
+		}
+		server->allocs_count = (int)server->config.max_allocations;
 
+		for (int i = 0; i < config->credentials_count; ++i) {
+			juice_server_credentials_t *credentials = config->credentials + i;
 			if (server->config.max_allocations < credentials->allocations_quota)
 				server->config.max_allocations = credentials->allocations_quota;
 
-			if (server_do_add_credentials(server, credentials, 0) == NULL) { // never expires
+			if (!server_do_add_credentials(server, credentials, 0)) { // never expires
 				JLOG_FATAL("Failed to add TURN credentials");
 				goto error;
 			}
 		}
-
-		server->config.credentials = NULL; // Don't copy
-		server->config.credentials_count = 0;
 
 		juice_credentials_list_t *node = server->credentials;
 		while (node) {
@@ -184,13 +179,6 @@ juice_server_t *server_create(const juice_server_config_t *config) {
 
 			node = node->next;
 		}
-
-		server->allocs = calloc(server->config.max_allocations, sizeof(server_turn_alloc_t));
-		if (!server->allocs) {
-			JLOG_FATAL("Memory allocation for TURN allocation table failed");
-			goto error;
-		}
-		server->allocs_count = (int)server->config.max_allocations;
 	}
 
 	server->config.port = udp_get_port(server->sock);
@@ -314,13 +302,13 @@ juice_credentials_list_t *server_do_add_credentials(juice_server_t *server,
 		goto error;
 	}
 
-	node->credentials = *credentials;
+	bool alloc_failed = false;
 	node->credentials.username =
-	    alloc_string_copy(node->credentials.username ? node->credentials.username : "");
+	    alloc_string_copy(credentials->username ? credentials->username : "", &alloc_failed);
 	node->credentials.password =
-	    alloc_string_copy(node->credentials.password ? node->credentials.password : "");
-
-	if (!node->credentials.username || !node->credentials.password) {
+	    alloc_string_copy(credentials->password ? credentials->password : "", &alloc_failed);
+	node->credentials.allocations_quota = credentials->allocations_quota;
+	if (alloc_failed) {
 		JLOG_ERROR("Memory allocation for TURN credentials failed");
 		goto error;
 	}
