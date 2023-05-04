@@ -38,19 +38,18 @@
 #define BUFFER_SIZE 4096
 #define DEFAULT_MAX_RECORDS_COUNT 8
 
-static char *alloc_string_copy(const char *orig) {
+static char *alloc_string_copy(const char *orig, bool *alloc_failed) {
 	if (!orig)
 		return NULL;
-	char *copy = malloc(strlen(orig) + 1);
-	strcpy(copy, orig);
-	return copy;
-}
 
-static void *alloc_copy(const void *orig, size_t size) {
-	if (!orig || !size)
+	char *copy = malloc(strlen(orig) + 1);
+	if (!copy) {
+		if (alloc_failed)
+			*alloc_failed = true;
+
 		return NULL;
-	char *copy = malloc(size);
-	memcpy(copy, orig, size);
+	}
+	strcpy(copy, orig);
 	return copy;
 }
 
@@ -71,41 +70,46 @@ juice_agent_t *agent_create(const juice_config_t *config) {
 		return NULL;
 	}
 
-	agent->config = *config;
-
-	if (agent->config.stun_server_host) {
-		agent->config.stun_server_host = alloc_string_copy(agent->config.stun_server_host);
-		if (!agent->config.stun_server_host) {
-			JLOG_FATAL("Memory allocation for STUN server host failed");
-			goto error;
-		}
+	bool alloc_failed = false;
+	agent->config.concurrency_mode = config->concurrency_mode;
+	agent->config.stun_server_host = alloc_string_copy(config->stun_server_host, &alloc_failed);
+	agent->config.stun_server_port = config->stun_server_port;
+	agent->config.bind_address = alloc_string_copy(config->bind_address, &alloc_failed);
+	agent->config.local_port_range_begin = config->local_port_range_begin;
+	agent->config.local_port_range_end = config->local_port_range_end;
+	agent->config.cb_state_changed = config->cb_state_changed;
+	agent->config.cb_candidate = config->cb_candidate;
+	agent->config.cb_gathering_done = config->cb_gathering_done;
+	agent->config.cb_recv = config->cb_recv;
+	agent->config.user_ptr = config->user_ptr;
+	if (alloc_failed) {
+		JLOG_FATAL("Memory allocation for configuration copy failed");
+		goto error;
 	}
 
-	if (agent->config.turn_servers_count) {
-		size_t turn_servers_size = agent->config.turn_servers_count * sizeof(juice_turn_server_t);
-		agent->config.turn_servers = alloc_copy(agent->config.turn_servers, turn_servers_size);
+	if (config->turn_servers_count <= 0) {
+		agent->config.turn_servers = NULL;
+		agent->config.turn_servers_count = 0;
+	} else {
+		agent->config.turn_servers =
+		    calloc(config->turn_servers_count, sizeof(juice_turn_server_t));
 		if (!agent->config.turn_servers) {
-			JLOG_FATAL("Memory allocation for TURN server credentials array failed");
+			JLOG_FATAL("Memory allocation for TURN servers copy failed");
 			goto error;
 		}
-
-		for (int i = 0; i < agent->config.turn_servers_count; ++i) {
-			juice_turn_server_t *turn_server = agent->config.turn_servers + i;
-			turn_server->host = alloc_string_copy(turn_server->host);
-			turn_server->username = alloc_string_copy(turn_server->username);
-			turn_server->password = alloc_string_copy(turn_server->password);
-			if (!turn_server->host || !turn_server->username || !turn_server->password) {
-				JLOG_FATAL("Memory allocation for TURN server credentials array failed");
+		agent->config.turn_servers_count = config->turn_servers_count;
+		for (int i = 0; i < config->turn_servers_count; ++i) {
+			agent->config.turn_servers[i].host =
+			    alloc_string_copy(config->turn_servers[i].host, &alloc_failed);
+			agent->config.turn_servers[i].username =
+			    alloc_string_copy(config->turn_servers[i].username, &alloc_failed);
+			agent->config.turn_servers[i].password =
+			    alloc_string_copy(config->turn_servers[i].password, &alloc_failed);
+			agent->config.turn_servers[i].port = config->turn_servers[i].port;
+			if (alloc_failed) {
+				JLOG_FATAL("Memory allocation for TURN server configuration copy failed");
 				goto error;
 			}
-		}
-	}
-
-	if (agent->config.bind_address) {
-		agent->config.bind_address = alloc_string_copy(agent->config.bind_address);
-		if (!agent->config.bind_address) {
-			JLOG_FATAL("Memory allocation for bind address failed");
-			goto error;
 		}
 	}
 
