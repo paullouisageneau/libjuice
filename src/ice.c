@@ -105,7 +105,9 @@ int ice_parse_sdp(const char *sdp, ice_description_t *description) {
 		if (*sdp == '\n') {
 			if (size) {
 				buffer[size++] = '\0';
-				parse_sdp_line(buffer, description);
+				if(parse_sdp_line(buffer, description) == ICE_PARSE_ERROR)
+					return ICE_PARSE_ERROR;
+
 				size = 0;
 			}
 		} else if (*sdp != '\r' && size + 1 < BUFFER_SIZE) {
@@ -118,7 +120,13 @@ int ice_parse_sdp(const char *sdp, ice_description_t *description) {
 	JLOG_DEBUG("Parsed remote description: ufrag=\"%s\", pwd=\"%s\", candidates=%d",
 	           description->ice_ufrag, description->ice_pwd, description->candidates_count);
 
-	return *description->ice_ufrag && *description->ice_pwd ? 0 : ICE_PARSE_ERROR;
+	if (*description->ice_ufrag == '\0')
+		return ICE_PARSE_MISSING_UFRAG;
+
+	if (*description->ice_pwd == '\0')
+		return ICE_PARSE_MISSING_PWD;
+
+	return 0;
 }
 
 int ice_parse_candidate_sdp(const char *line, ice_candidate_t *candidate) {

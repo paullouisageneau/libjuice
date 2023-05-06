@@ -76,6 +76,8 @@ typedef enum ice_resolve_mode {
 
 #define ICE_PARSE_ERROR -1
 #define ICE_PARSE_IGNORED -2
+#define ICE_PARSE_MISSING_UFRAG -3
+#define ICE_PARSE_MISSING_PWD -4
 
 int ice_parse_sdp(const char *sdp, ice_description_t *description);
 int ice_parse_candidate_sdp(const char *line, ice_candidate_t *candidate);
