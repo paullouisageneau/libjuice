@@ -456,19 +456,13 @@ int agent_set_remote_description(juice_agent_t *agent, const char *sdp) {
 	ice_description_t remote;
 	int ret = ice_parse_sdp(sdp, &remote);
 	if (ret < 0) {
-		if (ret == ICE_PARSE_ERROR)
+		if (ret == ICE_PARSE_MISSING_UFRAG)
+			JLOG_ERROR("Missing ICE user fragment in remote description");
+		else if (ret == ICE_PARSE_MISSING_PWD)
+			JLOG_ERROR("Missing ICE password in remote description");
+		else
 			JLOG_ERROR("Failed to parse remote SDP description");
 
-		conn_unlock(agent);
-		return -1;
-	}
-	if (!*remote.ice_ufrag) {
-		JLOG_ERROR("Missing ICE user fragment in remote description");
-		conn_unlock(agent);
-		return -1;
-	}
-	if (!*remote.ice_pwd) {
-		JLOG_ERROR("Missing ICE password in remote description");
 		conn_unlock(agent);
 		return -1;
 	}
