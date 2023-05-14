@@ -89,6 +89,7 @@ static void delete_allocation(server_turn_alloc_t *alloc) {
 }
 
 static thread_return_t THREAD_CALL server_thread_entry(void *arg) {
+	thread_set_name_self("juice server");
 	server_run((juice_server_t *)arg);
 	return (thread_return_t)0;
 }

@@ -34,6 +34,7 @@ int conn_thread_process(juice_agent_t *agent, struct pollfd *pfd);
 int conn_thread_recv(socket_t sock, char *buffer, size_t size, addr_record_t *src);
 
 static thread_return_t THREAD_CALL conn_thread_entry(void *arg) {
+	thread_set_name_self("juice agent");
 	juice_agent_t *agent = (juice_agent_t *)arg;
 	conn_thread_run(agent);
 	return (thread_return_t)0;

@@ -50,6 +50,7 @@ int conn_poll_recv(socket_t sock, char *buffer, size_t size, addr_record_t *src)
 int conn_poll_run(conn_registry_t *registry);
 
 static thread_return_t THREAD_CALL conn_thread_entry(void *arg) {
+	thread_set_name_self("juice poll");
 	conn_registry_t *registry = (conn_registry_t *)arg;
 	conn_poll_run(registry);
 	return (thread_return_t)0;

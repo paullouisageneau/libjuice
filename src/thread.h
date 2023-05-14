@@ -66,6 +66,13 @@ static inline void thread_join_impl(thread_t t, thread_return_t *res) {
 
 #include <pthread.h>
 
+#if defined(__linux__)
+#include <sys/prctl.h> // for prctl(PR_SET_NAME)
+#endif
+#if defined(__FreeBSD__)
+#include <pthread_np.h> // for pthread_set_name_np
+#endif
+
 typedef pthread_mutex_t mutex_t;
 typedef pthread_t thread_t;
 typedef void *thread_return_t;
@@ -95,17 +102,31 @@ static inline int mutex_init_impl(mutex_t *m, int flags) {
 
 #endif // ifdef _WIN32
 
+static inline void thread_set_name_self(const char *name) {
+#if defined(_WIN32)
+	(void)name;
+#elif defined(__linux__)
+	prctl(PR_SET_NAME, name);
+#elif defined(__APPLE__)
+	pthread_setname_np(name);
+#elif defined(__FreeBSD__)
+	pthread_set_name_np(pthread_self(), name);
+#else
+	(void)name;
+#endif
+}
+
 #if __STDC_VERSION__ >= 201112L && !defined(__STDC_NO_ATOMICS__)
 
 #include <stdatomic.h>
 #define atomic(T) _Atomic(T)
-#define atomic_ptr(T) _Atomic(T*)
+#define atomic_ptr(T) _Atomic(T *)
 
 #else // no atomics
 
 // Since we don't need compare-and-swap, just assume store and load are atomic
 #define atomic(T) volatile T
-#define atomic_ptr(T) T* volatile
+#define atomic_ptr(T) T *volatile
 #define atomic_store(a, v) (void)(*(a) = (v))
 #define atomic_load(a) (*(a))
 #define ATOMIC_VAR_INIT(v) (v)
@@ -113,4 +134,3 @@ static inline int mutex_init_impl(mutex_t *m, int flags) {
 #endif // if atomics
 
 #endif // JUICE_THREAD_H
-
