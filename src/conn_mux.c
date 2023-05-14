@@ -158,7 +158,8 @@ int conn_mux_recv(conn_registry_t *registry, char *buffer, size_t size, addr_rec
 void conn_mux_fail(conn_registry_t *registry);
 int conn_mux_run(conn_registry_t *registry);
 
-static thread_return_t THREAD_CALL conn_mux_entry(void *arg) {
+static thread_return_t THREAD_CALL conn_mux_thread_entry(void *arg) {
+	thread_set_name_self("juice mux");
 	conn_registry_t *registry = (conn_registry_t *)arg;
 	conn_mux_run(registry);
 	return (thread_return_t)0;
@@ -193,7 +194,7 @@ int conn_mux_registry_init(conn_registry_t *registry, udp_socket_config_t *confi
 	registry->impl = registry_impl;
 
 	JLOG_DEBUG("Starting connections thread");
-	int ret = thread_init(&registry_impl->thread, conn_mux_entry, registry);
+	int ret = thread_init(&registry_impl->thread, conn_mux_thread_entry, registry);
 	if (ret) {
 		JLOG_FATAL("Thread creation failed, error=%d", ret);
 		goto error;

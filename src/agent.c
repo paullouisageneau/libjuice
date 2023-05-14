@@ -193,6 +193,7 @@ static bool has_nonnumeric_server_hostnames(const juice_config_t *config) {
 }
 
 static thread_return_t THREAD_CALL resolver_thread_entry(void *arg) {
+	thread_set_name_self("juice resolver");
 	agent_resolve_servers((juice_agent_t *)arg);
 	return (thread_return_t)0;
 }
