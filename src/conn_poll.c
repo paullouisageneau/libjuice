@@ -224,25 +224,25 @@ int conn_poll_process(conn_registry_t *registry, pfds_record_t *pfds) {
 #endif
 	}
 
+	mutex_lock(&registry->mutex);
 	for (nfds_t i = 1; i < pfds->size; ++i) {
 		struct pollfd *pfd = pfds->pfds + i;
 		if (pfd->fd == INVALID_SOCKET)
 			continue;
 
-		mutex_lock(&registry->mutex);
 		juice_agent_t *agent = registry->agents[i - 1];
 		if (!agent)
-			goto end;
+			continue;
 
 		conn_impl_t *conn_impl = agent->conn_impl;
 		if (!conn_impl || conn_impl->sock != pfd->fd || conn_impl->state != CONN_STATE_READY)
-			goto end;
+			continue;
 
 		if (pfd->revents & POLLNVAL || pfd->revents & POLLERR) {
 			JLOG_WARN("Error when polling socket");
 			agent_conn_fail(agent);
 			conn_impl->state = CONN_STATE_FINISHED;
-			goto end;
+			continue;
 		}
 
 		if (pfd->revents & POLLIN) {
@@ -259,32 +259,29 @@ int conn_poll_process(conn_registry_t *registry, pfds_record_t *pfds) {
 				}
 			}
 			if (conn_impl->state == CONN_STATE_FINISHED)
-				goto end;
+				continue;
 
 			if (ret < 0) {
 				agent_conn_fail(agent);
 				conn_impl->state = CONN_STATE_FINISHED;
-				goto end;
+				continue;
 			}
 
 			if (agent_conn_update(agent, &conn_impl->next_timestamp) != 0) {
 				JLOG_WARN("Agent update failed");
 				conn_impl->state = CONN_STATE_FINISHED;
-				goto end;
+				continue;
 			}
 
 		} else if (conn_impl->next_timestamp <= current_timestamp()) {
 			if (agent_conn_update(agent, &conn_impl->next_timestamp) != 0) {
 				JLOG_WARN("Agent update failed");
 				conn_impl->state = CONN_STATE_FINISHED;
-				goto end;
+				continue;
 			}
 		}
-
-	end:
-		mutex_unlock(&registry->mutex);
 	}
-
+	mutex_unlock(&registry->mutex);
 	return 0;
 }
 
