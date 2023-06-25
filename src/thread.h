@@ -20,6 +20,8 @@
 
 #include <windows.h>
 
+typedef HRESULT(WINAPI *pfnSetThreadDescription)(HANDLE, PCWSTR); // for thread_set_name_self()
+
 typedef HANDLE mutex_t;
 typedef HANDLE thread_t;
 typedef DWORD thread_return_t;
@@ -104,7 +106,17 @@ static inline int mutex_init_impl(mutex_t *m, int flags) {
 
 static inline void thread_set_name_self(const char *name) {
 #if defined(_WIN32)
-	(void)name;
+	wchar_t wname[256];
+	if (MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, name, -1, wname, 256) > 0) {
+		HMODULE kernel32 = GetModuleHandleW(L"kernel32.dll");
+		if (kernel32) {
+			pfnSetThreadDescription pSetThreadDescription =
+			    (pfnSetThreadDescription)GetProcAddress(kernel32, "SetThreadDescription");
+			if (pSetThreadDescription) {
+				pSetThreadDescription(GetCurrentThread(), wname);
+			}
+		}
+	}
 #elif defined(__linux__)
 	prctl(PR_SET_NAME, name);
 #elif defined(__APPLE__)
