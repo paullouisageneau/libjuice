@@ -87,7 +87,7 @@ void juice_log_write(juice_log_level_t level, const char *file, int line, const 
 #if !RELEASE
 		len = snprintf(message, BUFFER_SIZE, "%s:%d: ", filename, line);
 		if (len < 0)
-			return;
+			goto __exit;
 #endif
 		if (len < BUFFER_SIZE) {
 			va_list args;
@@ -125,5 +125,7 @@ void juice_log_write(juice_log_level_t level, const char *file, int line, const 
 		fprintf(stdout, "\n");
 		fflush(stdout);
 	}
+
+__exit:
 	mutex_unlock(&log_mutex);
 }
