@@ -19,7 +19,7 @@ For a STUN/TURN server application based on libjuice, see [Violet](https://githu
 
 ## Compatibility
 
-The library implements a simplified but fully compatible ICE agent ([RFC5245](https://www.rfc-editor.org/rfc/rfc5245.html) then [RFC8445](https://www.rfc-editor.org/rfc/rfc8445.html)) featuring:
+The library implements a simplified full ICE agent ([RFC5245](https://www.rfc-editor.org/rfc/rfc5245.html) then [RFC8445](https://www.rfc-editor.org/rfc/rfc8445.html)) featuring:
 - STUN protocol ([RFC5389](https://www.rfc-editor.org/rfc/rfc5389.html) then [RFC8489](https://www.rfc-editor.org/rfc/rfc8489.html))
 - TURN relaying ([RFC5766](https://www.rfc-editor.org/rfc/rfc5766.html) then [RFC8656](https://www.rfc-editor.org/rfc/rfc8656.html))
 - ICE Consent freshness ([RFC7675](https://www.rfc-editor.org/rfc/rfc7675.html))

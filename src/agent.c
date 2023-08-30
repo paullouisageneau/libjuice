@@ -487,7 +487,13 @@ int agent_set_remote_description(juice_agent_t *agent, const char *sdp) {
 
 	agent_update_pac_timer(agent);
 
-	if (agent->mode == AGENT_MODE_UNKNOWN) {
+	if (agent->remote.ice_lite && agent->mode != AGENT_MODE_CONTROLLING) {
+		// RFC 8445 6.1.1. Determining Role:
+		// The full agent MUST take the controlling role, and the lite agent MUST take the
+		// controlled role.
+		JLOG_DEBUG("Remote ICE agent is lite, assuming controlling mode");
+		agent->mode = AGENT_MODE_CONTROLLING;
+	} else if (agent->mode == AGENT_MODE_UNKNOWN) {
 		JLOG_DEBUG("Assuming controlled mode");
 		agent->mode = AGENT_MODE_CONTROLLED;
 	}

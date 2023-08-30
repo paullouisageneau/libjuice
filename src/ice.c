@@ -42,6 +42,10 @@ static int parse_sdp_line(const char *line, ice_description_t *description) {
 		sscanf(arg, "%256s", description->ice_pwd);
 		return 0;
 	}
+	if (match_prefix(line, "a=ice-lite", &arg)) {
+		description->ice_lite = true;
+		return 0;
+	}
 	if (match_prefix(line, "a=end-of-candidates", &arg)) {
 		description->finished = true;
 		return 0;
@@ -96,6 +100,7 @@ static int parse_sdp_candidate(const char *line, ice_candidate_t *candidate) {
 
 int ice_parse_sdp(const char *sdp, ice_description_t *description) {
 	memset(description, 0, sizeof(*description));
+	description->ice_lite = false;
 	description->candidates_count = 0;
 	description->finished = false;
 
@@ -145,6 +150,7 @@ int ice_create_local_description(ice_description_t *description) {
 	memset(description, 0, sizeof(*description));
 	juice_random_str64(description->ice_ufrag, 4 + 1);
 	juice_random_str64(description->ice_pwd, 22 + 1);
+	description->ice_lite = false;
 	description->candidates_count = 0;
 	description->finished = false;
 	JLOG_DEBUG("Created local description: ufrag=\"%s\", pwd=\"%s\"", description->ice_ufrag,
@@ -264,6 +270,9 @@ int ice_generate_sdp(const ice_description_t *description, char *buffer, size_t 
 		if (i == 0) {
 			ret = snprintf(begin, end - begin, "a=ice-ufrag:%s\r\na=ice-pwd:%s\r\n",
 			               description->ice_ufrag, description->ice_pwd);
+			if (description->ice_lite)
+				ret = snprintf(begin, end - begin, "a=ice-lite\r\n");
+
 		} else if (i < description->candidates_count + 1) {
 			const ice_candidate_t *candidate = description->candidates + i - 1;
 			if (candidate->type == ICE_CANDIDATE_TYPE_UNKNOWN ||
