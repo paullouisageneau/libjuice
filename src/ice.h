@@ -47,6 +47,7 @@ typedef struct ice_candidate {
 typedef struct ice_description {
 	char ice_ufrag[256 + 1]; // 4 to 256 characters
 	char ice_pwd[256 + 1];   // 22 to 256 characters
+	bool ice_lite;
 	ice_candidate_t candidates[ICE_MAX_CANDIDATES_COUNT];
 	int candidates_count;
 	bool finished;
