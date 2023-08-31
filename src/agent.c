@@ -1377,24 +1377,24 @@ int agent_process_stun_binding(juice_agent_t *agent, const stun_message_t *msg,
 		}
 
 		if (entry->type == AGENT_STUN_ENTRY_TYPE_CHECK) {
+			ice_candidate_pair_t *pair = entry->pair;
+			if (!pair) {
+				JLOG_ERROR("STUN entry for candidate pair checking has no candidate pair");
+				return -1;
+			}
+
 			// 7.2.5.2.1. Non-Symmetric Transport Addresses:
 			// The ICE agent MUST check that the source and destination transport addresses in the
 			// Binding request and response are symmetric. [...] If the addresses are not symmetric,
 			// the agent MUST set the candidate pair state to Failed.
-			ice_candidate_pair_t *pair = entry->pair;
 			if (!addr_record_is_equal(src, &entry->record, true)) {
 				JLOG_DEBUG(
 				    "Candidate pair check failed (non-symmetric source address in response)");
 				entry->state = AGENT_STUN_ENTRY_STATE_FAILED;
 				entry->next_transmission = 0;
-				if(pair)
+				if (pair)
 					pair->state = ICE_CANDIDATE_PAIR_STATE_FAILED;
 				break;
-			}
-
-			if (!pair) {
-				JLOG_ERROR("STUN entry for candidate pair checking has no candidate pair");
-				return -1;
 			}
 
 			if (pair->state != ICE_CANDIDATE_PAIR_STATE_SUCCEEDED) {
@@ -1466,6 +1466,9 @@ int agent_process_stun_binding(juice_agent_t *agent, const stun_message_t *msg,
 				// [RFC5389], the ICE agent SHOULD set the candidate pair state to Failed.
 				JLOG_DEBUG("Chandidate pair check failed (unrecoverable error)");
 				entry->state = AGENT_STUN_ENTRY_STATE_FAILED;
+				entry->next_transmission = 0;
+				if (entry->pair)
+					entry->pair->state = ICE_CANDIDATE_PAIR_STATE_FAILED;
 			}
 		} else if (entry->type == AGENT_STUN_ENTRY_TYPE_SERVER) {
 			JLOG_INFO("STUN server binding failed (unrecoverable error)");
