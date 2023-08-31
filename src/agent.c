@@ -1381,14 +1381,17 @@ int agent_process_stun_binding(juice_agent_t *agent, const stun_message_t *msg,
 			// The ICE agent MUST check that the source and destination transport addresses in the
 			// Binding request and response are symmetric. [...] If the addresses are not symmetric,
 			// the agent MUST set the candidate pair state to Failed.
+			ice_candidate_pair_t *pair = entry->pair;
 			if (!addr_record_is_equal(src, &entry->record, true)) {
 				JLOG_DEBUG(
 				    "Candidate pair check failed (non-symmetric source address in response)");
 				entry->state = AGENT_STUN_ENTRY_STATE_FAILED;
+				entry->next_transmission = 0;
+				if(pair)
+					pair->state = ICE_CANDIDATE_PAIR_STATE_FAILED;
 				break;
 			}
 
-			ice_candidate_pair_t *pair = entry->pair;
 			if (!pair) {
 				JLOG_ERROR("STUN entry for candidate pair checking has no candidate pair");
 				return -1;
