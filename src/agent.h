@@ -52,7 +52,7 @@
 #define MAX_CONSENT_CHECK_PERIOD 6000 // msecs
 
 // Nomination timeout to settle for a non-relayed pair
-#define NOMINATION_TIMEOUT 2000
+#define NOMINATION_TIMEOUT 4000
 
 // TURN refresh period
 #define TURN_LIFETIME 600000                        // msecs (10 min)
