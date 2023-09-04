@@ -13,7 +13,7 @@ The library is a simplified implementation of the Interactive Connectivity Estab
 
 libjuice is licensed under MPL 2.0, see [LICENSE](https://github.com/paullouisageneau/libjuice/blob/master/LICENSE).
 
-libjuice is available on [AUR](https://aur.archlinux.org/packages/libjuice/) and [vcpkg](https://vcpkg.info/port/libjuice). Bindings are available for [Rust](https://github.com/VollmondT/juice-rs).
+libjuice is available on [AUR](https://aur.archlinux.org/packages/libjuice/) and [vcpkg](https://vcpkg.io/en/getting-started). Bindings are available for [Rust](https://github.com/VollmondT/juice-rs).
 
 For a STUN/TURN server application based on libjuice, see [Violet](https://github.com/paullouisageneau/violet).
 
