@@ -950,18 +950,14 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 	}
 
 	if (selected_pair) {
-		bool selected_pair_has_relay =
-		    (selected_pair->local && selected_pair->local->type == ICE_CANDIDATE_TYPE_RELAYED) ||
-		    (selected_pair->remote && selected_pair->remote->type == ICE_CANDIDATE_TYPE_RELAYED);
-
 		// Change selected entry if this is a new selected pair
 		if (agent->selected_pair != selected_pair) {
 			JLOG_DEBUG(selected_pair->nominated ? "New selected and nominated pair"
 			                                    : "New selected pair");
 			agent->selected_pair = selected_pair;
 
-			// Start nomination timer if controlling and not relayed
-			if (agent->mode == AGENT_MODE_CONTROLLING && !selected_pair_has_relay)
+			// Start nomination timer if controlling
+			if (agent->mode == AGENT_MODE_CONTROLLING)
 				agent->nomination_timestamp = now + NOMINATION_TIMEOUT;
 
 			for (int i = 0; i < agent->entries_count; ++i) {
@@ -1018,10 +1014,9 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 			// Connected
 			agent_change_state(agent, JUICE_STATE_CONNECTED);
 
-			if (agent->mode == AGENT_MODE_CONTROLLING && agent->nomination_timestamp) {
-				bool finished = agent->remote.finished && pending_count == 0;
-				if ((now >= agent->nomination_timestamp || finished) &&
-				    !selected_pair->nomination_requested) {
+			if (agent->mode == AGENT_MODE_CONTROLLING && !selected_pair->nomination_requested) {
+				if (pending_count == 0 ||
+				    (agent->nomination_timestamp && now >= agent->nomination_timestamp)) {
 					// Nominate selected
 					JLOG_DEBUG("Requesting pair nomination (controlling)");
 					selected_pair->nomination_requested = true;
@@ -1034,7 +1029,8 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 							break;
 						}
 					}
-				} else if (*next_timestamp > agent->nomination_timestamp) {
+				} else if (agent->nomination_timestamp &&
+				           *next_timestamp > agent->nomination_timestamp) {
 					*next_timestamp = agent->nomination_timestamp;
 				}
 			}
