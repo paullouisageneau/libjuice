@@ -1018,10 +1018,9 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 			// Connected
 			agent_change_state(agent, JUICE_STATE_CONNECTED);
 
-			if (agent->mode == AGENT_MODE_CONTROLLING && agent->nomination_timestamp) {
-				bool finished = agent->remote.finished && pending_count == 0;
-				if ((now >= agent->nomination_timestamp || finished) &&
-				    !selected_pair->nomination_requested) {
+			if (agent->mode == AGENT_MODE_CONTROLLING && !selected_pair->nomination_requested) {
+				if (pending_count == 0 ||
+				    (agent->nomination_timestamp && now >= agent->nomination_timestamp)) {
 					// Nominate selected
 					JLOG_DEBUG("Requesting pair nomination (controlling)");
 					selected_pair->nomination_requested = true;
@@ -1034,7 +1033,8 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 							break;
 						}
 					}
-				} else if (*next_timestamp > agent->nomination_timestamp) {
+				} else if (agent->nomination_timestamp &&
+				           *next_timestamp > agent->nomination_timestamp) {
 					*next_timestamp = agent->nomination_timestamp;
 				}
 			}
