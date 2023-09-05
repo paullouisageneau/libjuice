@@ -51,7 +51,7 @@
 #define MIN_CONSENT_CHECK_PERIOD 4000 // msecs
 #define MAX_CONSENT_CHECK_PERIOD 6000 // msecs
 
-// Nomination timeout to settle for a non-relayed pair
+// Nomination timeout for the controlling agent to settle for the selected pair
 #define NOMINATION_TIMEOUT 2000
 
 // TURN refresh period
