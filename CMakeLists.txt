@@ -21,6 +21,8 @@ set(C_STANDARD 11)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 set(CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake/Modules)
 
+include(GNUInstallDirs)
+
 if(WIN32)
 	add_definitions(-DWIN32_LEAN_AND_MEAN)
 	if (MSVC)
@@ -146,25 +148,25 @@ set_target_properties(juice-static PROPERTIES EXPORT_NAME LibJuiceStatic)
 add_library(LibJuice::LibJuiceStatic ALIAS juice-static)
 
 install(TARGETS juice EXPORT LibJuiceTargets
-	RUNTIME DESTINATION bin
-	LIBRARY DESTINATION lib
-	ARCHIVE DESTINATION lib
+	RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+	LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+	ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
 )
 
-install(FILES ${LIBJUICE_HEADERS} DESTINATION include/juice)
+install(FILES ${LIBJUICE_HEADERS} DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/juice)
 
 # Export Targets
 install(
 	EXPORT LibJuiceTargets
 	FILE LibJuiceTargets.cmake
 	NAMESPACE LibJuice::
-	DESTINATION lib/cmake/LibJuice
+	DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/LibJuice
 )
 
 # Export config
 install(
         FILES ${CMAKE_CURRENT_SOURCE_DIR}/cmake/LibJuiceConfig.cmake
-        DESTINATION lib/cmake/LibJuice
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/LibJuice
 )
 
 include(CMakePackageConfigHelpers)
@@ -173,7 +175,7 @@ write_basic_package_version_file(
     VERSION ${PROJECT_VERSION}
     COMPATIBILITY SameMajorVersion)
 install(FILES ${CMAKE_BINARY_DIR}/LibJuiceConfigVersion.cmake
-    DESTINATION lib/cmake/LibJuice)
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/LibJuice)
 
 if(NOT NO_EXPORT_HEADER AND CMAKE_VERSION VERSION_GREATER_EQUAL "3.12")
 	include(GenerateExportHeader)
@@ -185,7 +187,7 @@ if(NOT NO_EXPORT_HEADER AND CMAKE_VERSION VERSION_GREATER_EQUAL "3.12")
 	target_include_directories(juice PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>)
 	target_compile_definitions(juice PUBLIC -DJUICE_HAS_EXPORT_HEADER)
 	set_target_properties(juice PROPERTIES C_VISIBILITY_PRESET hidden)
-	install(FILES ${PROJECT_BINARY_DIR}/juice_export.h DESTINATION include/juice)
+	install(FILES ${PROJECT_BINARY_DIR}/juice_export.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/juice)
 else()
 	target_compile_definitions(juice PRIVATE JUICE_EXPORTS)
 	target_compile_definitions(juice-static PRIVATE JUICE_EXPORTS)
