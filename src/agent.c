@@ -1596,8 +1596,13 @@ int agent_send_stun_binding(juice_agent_t *agent, agent_stun_entry_t *entry, stu
 	}
 
 	// Direct send
-	if (agent_direct_send(agent, &entry->record, buffer, size, 0) < 0) {
-		JLOG_WARN("STUN message send failed");
+	int ret = agent_direct_send(agent, &entry->record, buffer, size, 0);
+	if (ret < 0) {
+		if (ret == ENETUNREACH)
+			JLOG_INFO("STUN binding failed: Network unreachable");
+		else
+			JLOG_WARN("STUN message send failed");
+
 		return -1;
 	}
 	return 0;
