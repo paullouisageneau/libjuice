@@ -279,7 +279,8 @@ int agent_gather_candidates(juice_agent_t *agent) {
 	conn_unlock(agent);
 	conn_interrupt(agent);
 
-	if (has_nonnumeric_server_hostnames(&agent->config)) {
+	if (has_nonnumeric_server_hostnames(&agent->config) &&
+	    conn_mode_is_concurrent(agent->config.concurrency_mode)) {
 		// Resolve server hostnames in a separate thread as it may block
 		JLOG_DEBUG("Starting resolver thread for servers");
 		int ret = thread_init(&agent->resolver_thread, resolver_thread_entry, agent);

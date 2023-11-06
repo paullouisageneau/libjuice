@@ -11,6 +11,7 @@
 #include "conn_mux.h"
 #include "conn_poll.h"
 #include "conn_thread.h"
+#include "conn_user.h"
 #include "log.h"
 
 #include <assert.h>
@@ -33,10 +34,10 @@ typedef struct conn_mode_entry {
 	int (*get_addrs_func)(juice_agent_t *agent, addr_record_t *records, size_t size);
 
 	mutex_t mutex;
-	conn_registry_t *registry;
+	conn_registry_t *registry; // left NULL for concurrency modes that don't use a global registry
 } conn_mode_entry_t;
 
-#define MODE_ENTRIES_SIZE 3
+#define MODE_ENTRIES_SIZE 4
 
 static conn_mode_entry_t mode_entries[MODE_ENTRIES_SIZE] = {
     {conn_poll_registry_init, conn_poll_registry_cleanup, conn_poll_init, conn_poll_cleanup,
@@ -46,7 +47,10 @@ static conn_mode_entry_t mode_entries[MODE_ENTRIES_SIZE] = {
      conn_mux_lock, conn_mux_unlock, conn_mux_interrupt, conn_mux_send, conn_mux_get_addrs,
      MUTEX_INITIALIZER, NULL},
     {NULL, NULL, conn_thread_init, conn_thread_cleanup, conn_thread_lock, conn_thread_unlock,
-     conn_thread_interrupt, conn_thread_send, conn_thread_get_addrs, MUTEX_INITIALIZER, NULL}};
+     conn_thread_interrupt, conn_thread_send, conn_thread_get_addrs, MUTEX_INITIALIZER, NULL},
+	{NULL, NULL, conn_user_init, conn_user_cleanup, conn_user_lock, conn_user_unlock,
+     conn_user_interrupt, conn_user_send, conn_user_get_addrs, MUTEX_INITIALIZER, NULL},
+};
 
 static conn_mode_entry_t *get_mode_entry(juice_agent_t *agent) {
 	juice_concurrency_mode_t mode = agent->config.concurrency_mode;

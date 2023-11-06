@@ -41,4 +41,8 @@ int conn_send(juice_agent_t *agent, const addr_record_t *dst, const char *data, 
               int ds);
 int conn_get_addrs(juice_agent_t *agent, addr_record_t *records, size_t size);
 
+static bool conn_mode_is_concurrent(juice_concurrency_mode_t mode) {
+	return mode != JUICE_CONCURRENCY_MODE_USER;
+}
+
 #endif
