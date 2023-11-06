@@ -148,6 +148,7 @@ void conn_user_unlock(juice_agent_t *agent) {
 
 int conn_user_interrupt(juice_agent_t *agent) {
 	// juice_user_poll does not block when polling, so there's nothing to interrupt
+	(void) agent; // Explicitly discard unused parameter
 	return JUICE_ERR_SUCCESS;
 }
 
