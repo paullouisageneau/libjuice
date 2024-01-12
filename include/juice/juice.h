@@ -75,7 +75,7 @@ typedef enum juice_concurrency_mode {
 	JUICE_CONCURRENCY_MODE_MUX,      // Connections are multiplexed on a single UDP socket
 	JUICE_CONCURRENCY_MODE_THREAD,   // Each connection runs in its own thread
 
-	JUICE_CONCURRENCY_MODE_USER,     // Agents must be updated via calls to juice_user_poll...
+	JUICE_CONCURRENCY_MODE_USER,     // Agents must be updated via frequent calls to juice_user_poll...
 	                                 // Note:
 	                                 // - ICE keepalive requires regular polling RFC 8445 11.
 	                                 // - The OS's UDP packet buffering capacity is limited you need to make
@@ -125,7 +125,7 @@ JUICE_EXPORT const char *juice_state_to_string(juice_state_t state);
 
 // Valid for JUICE_CONCURRENCY_MODE_USER only
 //
-// Non-blocking tries to read a datagram from `agent`'s socket. Forwards Non-ICE packets to you via the `on_recv`.
+// Non-blocking tries to read a datagram from `agent`'s socket. Forwards Non-ICE packets to you via `agent`'s `on_recv` callback.
 // You shouldn't use data in `buffer` directly since it might be a STUN packet, contain TURN headers, etc;
 // The intended use of passing `buffer` is to give finer control to the user e.g. zero-copy
 // 
