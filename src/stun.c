@@ -908,7 +908,8 @@ int stun_read_attr(const void *data, size_t size, stun_message_t *msg, uint8_t *
 			JLOG_DEBUG("STUN ICE controlling attribute length invalid, length=%zu", length);
 			return -1;
 		}
-		msg->ice_controlling = ntohll(*((uint64_t *)attr->value));
+		uint32_t* value32 = (uint32_t *)attr->value;
+		msg->ice_controlling = ntohll(((uint64_t)value32[1] << 32) | value32[0]);
 		break;
 	}
 	case STUN_ATTR_ICE_CONTROLLED: {
@@ -917,7 +918,8 @@ int stun_read_attr(const void *data, size_t size, stun_message_t *msg, uint8_t *
 			JLOG_DEBUG("STUN ICE controlled attribute length invalid, length=%zu", length);
 			return -1;
 		}
-		msg->ice_controlled = ntohll(*((uint64_t *)attr->value));
+		uint32_t* value32 = (uint32_t *)attr->value;
+		msg->ice_controlled = ntohll(((uint64_t)value32[1] << 32) | value32[0]);
 		break;
 	}
 	case STUN_ATTR_CHANNEL_NUMBER: {
@@ -1002,7 +1004,8 @@ int stun_read_attr(const void *data, size_t size, stun_message_t *msg, uint8_t *
 			JLOG_DEBUG("STUN reservation token length invalid, length=%zu", length);
 			return -1;
 		}
-		msg->reservation_token = ntohll(*((uint64_t *)attr->value));
+		uint32_t* value32 = (uint32_t *)attr->value;
+		msg->reservation_token = ntohll(((uint64_t)value32[1] << 32) | value32[0]);
 		break;
 	}
 	default: {
