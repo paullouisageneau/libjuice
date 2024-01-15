@@ -909,7 +909,7 @@ int stun_read_attr(const void *data, size_t size, stun_message_t *msg, uint8_t *
 			return -1;
 		}
 		uint32_t* value32 = (uint32_t *)attr->value;
-		msg->ice_controlling = ntohll(((uint64_t)value32[1] << 32) | value32[0]);
+		msg->ice_controlling = ((uint64_t)ntohl(value32[0]) << 32) | ntohl(value32[1]);
 		break;
 	}
 	case STUN_ATTR_ICE_CONTROLLED: {
@@ -919,7 +919,7 @@ int stun_read_attr(const void *data, size_t size, stun_message_t *msg, uint8_t *
 			return -1;
 		}
 		uint32_t* value32 = (uint32_t *)attr->value;
-		msg->ice_controlled = ntohll(((uint64_t)value32[1] << 32) | value32[0]);
+		msg->ice_controlled = ((uint64_t)ntohl(value32[0]) << 32) | ntohl(value32[1]);
 		break;
 	}
 	case STUN_ATTR_CHANNEL_NUMBER: {
@@ -1005,7 +1005,7 @@ int stun_read_attr(const void *data, size_t size, stun_message_t *msg, uint8_t *
 			return -1;
 		}
 		uint32_t* value32 = (uint32_t *)attr->value;
-		msg->reservation_token = ntohll(((uint64_t)value32[1] << 32) | value32[0]);
+		msg->reservation_token = ((uint64_t)ntohl(value32[0]) << 32) | ntohl(value32[1]);
 		break;
 	}
 	default: {
