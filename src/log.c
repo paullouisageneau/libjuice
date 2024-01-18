@@ -126,6 +126,8 @@ void juice_log_write(juice_log_level_t level, const char *file, int line, const 
 		fflush(stdout);
 	}
 
+#if !RELEASE
 __exit:
+#endif
 	mutex_unlock(&log_mutex);
 }
