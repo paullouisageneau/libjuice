@@ -17,22 +17,23 @@ extern "C" {
 #include <stddef.h>
 #include <stdint.h>
 
-#ifdef JUICE_HAS_EXPORT_HEADER
-#include "juice_export.h"
-#else // no export header
-#ifdef JUICE_STATIC
-#define JUICE_EXPORT
-#else // dynamic library
-#ifdef _WIN32
-#if defined(JUICE_EXPORTS) || defined(juice_EXPORTS)
-#define JUICE_EXPORT __declspec(dllexport) // building the library
-#else
-#define JUICE_EXPORT __declspec(dllimport) // using the library
+#ifndef JUICE_STATIC // dynamic library
+#  ifdef _WIN32
+#    ifdef JUICE_EXPORTS
+#      define JUICE_EXPORT __declspec(dllexport) // building the library
+#    else
+#      define JUICE_EXPORT __declspec(dllimport) // using the library
+#    endif
+#  else // not WIN32
+#    if defined(__has_attribute)
+#      if __has_attribute(visibility)
+#        define JUICE_EXPORT __attribute__((visibility("default")))
+#      endif
+#    endif
+#  endif
 #endif
-#else // not WIN32
-#define JUICE_EXPORT
-#endif
-#endif
+#ifndef JUICE_EXPORT
+#  define JUICE_EXPORT
 #endif
 
 #define JUICE_ERR_SUCCESS 0
