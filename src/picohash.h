@@ -1,8 +1,14 @@
-/**
+/*
+ * The code is placed under public domain by Kazuho Oku <kazuhooku@gmail.com>.
  *
- * This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ * The MD5 implementation is based on a public domain implementation written by
+ * Solar Designer <solar@openwall.com> in 2001, which is used by Dovecot.
+ *
+ * The SHA1 implementation is based on a public domain implementation written
+ * by Wei Dai and other contributors for libcrypt, used also in liboauth.
+ *
+ * The SHA224/SHA256 implementation is based on a public domain implementation
+ * by Sam Hocevar <sam@hocevar.net> for LibTomCrypt.
  */
 #ifndef _picohash_h_
 #define _picohash_h_
