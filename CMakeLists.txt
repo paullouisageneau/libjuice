@@ -7,7 +7,6 @@ set(PROJECT_DESCRIPTION "UDP Interactive Connectivity Establishment (ICE) librar
 option(USE_NETTLE "Use Nettle for hash functions" OFF)
 option(NO_SERVER "Disable server support" OFF)
 option(NO_TESTS "Disable tests build" OFF)
-option(NO_EXPORT_HEADER "Disable export header" OFF)
 option(WARNINGS_AS_ERRORS "Treat warnings as errors" OFF)
 option(FUZZER "Enable oss-fuzz fuzzing" OFF)
 option(CLANG_TIDY "Enable clang-tidy" OFF)
@@ -177,21 +176,9 @@ write_basic_package_version_file(
 install(FILES ${CMAKE_BINARY_DIR}/LibJuiceConfigVersion.cmake
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/LibJuice)
 
-if(NOT NO_EXPORT_HEADER AND CMAKE_VERSION VERSION_GREATER_EQUAL "3.12")
-	include(GenerateExportHeader)
-	generate_export_header(juice
-		EXPORT_MACRO_NAME JUICE_EXPORT
-		NO_EXPORT_MACRO_NAME JUICE_NO_EXPORT
-		DEPRECATED_MACRO_NAME JUICE_DEPRECATED
-		STATIC_DEFINE JUICE_STATIC)
-	target_include_directories(juice PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>)
-	target_compile_definitions(juice PUBLIC -DJUICE_HAS_EXPORT_HEADER)
-	set_target_properties(juice PROPERTIES C_VISIBILITY_PRESET hidden)
-	install(FILES ${PROJECT_BINARY_DIR}/juice_export.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/juice)
-else()
-	target_compile_definitions(juice PRIVATE JUICE_EXPORTS)
-	target_compile_definitions(juice-static PRIVATE JUICE_EXPORTS)
-endif()
+set_target_properties(juice PROPERTIES C_VISIBILITY_PRESET hidden)
+target_compile_definitions(juice PRIVATE JUICE_EXPORTS)
+target_compile_definitions(juice-static PRIVATE JUICE_EXPORTS)
 
 if(NOT MSVC)
 	target_compile_options(juice PRIVATE -Wall -Wextra)
