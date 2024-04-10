@@ -53,6 +53,29 @@ static char *alloc_string_copy(const char *orig, bool *alloc_failed) {
 	return copy;
 }
 
+static bool copy_turn_server(juice_turn_server_t *dst, const juice_turn_server_t *src) {
+	bool alloc_failed = false;
+	dst->host = alloc_string_copy(src->host, &alloc_failed);
+	dst->username = alloc_string_copy(src->username, &alloc_failed);
+	dst->password = alloc_string_copy(src->password, &alloc_failed);
+	dst->port = src->port;
+
+	if (alloc_failed) {
+		free((void *)dst->host);
+		dst->host = NULL;
+
+		free((void *)dst->username);
+		dst->username = NULL;
+
+		free((void *)dst->password);
+		dst->password = NULL;
+
+		JLOG_FATAL("Memory allocation for TURN server configuration copy failed");
+	}
+
+	return !alloc_failed;
+}
+
 juice_agent_t *agent_create(const juice_config_t *config) {
 	JLOG_VERBOSE("Creating agent");
 
@@ -99,15 +122,7 @@ juice_agent_t *agent_create(const juice_config_t *config) {
 		}
 		agent->config.turn_servers_count = config->turn_servers_count;
 		for (int i = 0; i < config->turn_servers_count; ++i) {
-			agent->config.turn_servers[i].host =
-			    alloc_string_copy(config->turn_servers[i].host, &alloc_failed);
-			agent->config.turn_servers[i].username =
-			    alloc_string_copy(config->turn_servers[i].username, &alloc_failed);
-			agent->config.turn_servers[i].password =
-			    alloc_string_copy(config->turn_servers[i].password, &alloc_failed);
-			agent->config.turn_servers[i].port = config->turn_servers[i].port;
-			if (alloc_failed) {
-				JLOG_FATAL("Memory allocation for TURN server configuration copy failed");
+			if (!copy_turn_server(agent->config.turn_servers + i, config->turn_servers + i)) {
 				goto error;
 			}
 		}
@@ -545,6 +560,32 @@ int agent_add_remote_candidate(juice_agent_t *agent, const char *sdp) {
 	conn_unlock(agent);
 	conn_interrupt(agent);
 	return ret;
+}
+
+int agent_add_turn_server(juice_agent_t *agent, const juice_turn_server_t *turn_server) {
+	if (agent->conn_impl) {
+		JLOG_WARN("Candidates gathering already started");
+		return -1;
+	}
+
+	juice_turn_server_t *new_turn_servers =
+	    calloc(agent->config.turn_servers_count + 1, sizeof(juice_turn_server_t));
+	if (!new_turn_servers) {
+		JLOG_FATAL("Memory allocation for TURN servers copy failed");
+		return -1;
+	}
+
+	memcpy(new_turn_servers, agent->config.turn_servers,
+	       sizeof(juice_turn_server_t) * agent->config.turn_servers_count);
+	if (!copy_turn_server(new_turn_servers + agent->config.turn_servers_count, turn_server)) {
+		free(new_turn_servers);
+		return -1;
+	}
+
+	agent->config.turn_servers_count++;
+	free(agent->config.turn_servers);
+	agent->config.turn_servers = new_turn_servers;
+	return 0;
 }
 
 int agent_set_remote_gathering_done(juice_agent_t *agent) {

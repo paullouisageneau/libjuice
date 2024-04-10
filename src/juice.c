@@ -69,6 +69,16 @@ JUICE_EXPORT int juice_add_remote_candidate(juice_agent_t *agent, const char *sd
 	return JUICE_ERR_SUCCESS;
 }
 
+JUICE_EXPORT int juice_add_turn_server(juice_agent_t *agent, const juice_turn_server_t *turn_server) {
+	if (!agent || !turn_server)
+		return JUICE_ERR_INVALID;
+
+	if (agent_add_turn_server(agent, turn_server) < 0)
+		return JUICE_ERR_FAILED;
+
+	return JUICE_ERR_SUCCESS;
+}
+
 JUICE_EXPORT int juice_set_remote_gathering_done(juice_agent_t *agent) {
 	if (!agent)
 		return JUICE_ERR_INVALID;
