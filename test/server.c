@@ -67,7 +67,7 @@ int test_server() {
 	server_config.realm = "Juice test server";
 	server = juice_server_create(&server_config);
 
-	if(juice_server_get_port(server) != 3478) {
+	if (juice_server_get_port(server) != 3478) {
 		printf("juice_server_get_port failed\n");
 		juice_server_destroy(server);
 		return -1;
@@ -95,8 +95,6 @@ int test_server() {
 	turn_server1.port = 3478;
 	turn_server1.username = TURN_USERNAME1;
 	turn_server1.password = TURN_PASSWORD1;
-	config1.turn_servers = &turn_server1;
-	config1.turn_servers_count = 1;
 
 	config1.cb_state_changed = on_state_changed1;
 	config1.cb_candidate = on_candidate1;
@@ -121,8 +119,6 @@ int test_server() {
 	turn_server2.port = 3478;
 	turn_server2.username = TURN_USERNAME2;
 	turn_server2.password = TURN_PASSWORD2;
-	config2.turn_servers = &turn_server2;
-	config2.turn_servers_count = 1;
 
 	config2.cb_state_changed = on_state_changed2;
 	config2.cb_candidate = on_candidate2;
@@ -147,6 +143,10 @@ int test_server() {
 
 	// Agent 1: Receive description from agent 2
 	juice_set_remote_description(agent1, sdp2);
+
+	// Agent 1+2: Add TURN servers
+	juice_add_turn_server(agent1, &turn_server1);
+	juice_add_turn_server(agent2, &turn_server2);
 
 	// Agent 1: Gather candidates (and send them to agent 2)
 	juice_gather_candidates(agent1);
