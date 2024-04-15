@@ -53,7 +53,7 @@ static char *alloc_string_copy(const char *orig, bool *alloc_failed) {
 	return copy;
 }
 
-static bool copy_turn_server(juice_turn_server_t *dst, const juice_turn_server_t *src) {
+static int copy_turn_server(juice_turn_server_t *dst, const juice_turn_server_t *src) {
 	bool alloc_failed = false;
 	dst->host = alloc_string_copy(src->host, &alloc_failed);
 	dst->username = alloc_string_copy(src->username, &alloc_failed);
@@ -61,19 +61,17 @@ static bool copy_turn_server(juice_turn_server_t *dst, const juice_turn_server_t
 	dst->port = src->port;
 
 	if (alloc_failed) {
-		free((void *)dst->host);
-		dst->host = NULL;
-
-		free((void *)dst->username);
-		dst->username = NULL;
-
-		free((void *)dst->password);
-		dst->password = NULL;
-
 		JLOG_FATAL("Memory allocation for TURN server configuration copy failed");
+		free((void *)dst->host);
+		free((void *)dst->username);
+		free((void *)dst->password);
+		dst->host = NULL;
+		dst->username = NULL;
+		dst->password = NULL;
+		return -1;
 	}
 
-	return !alloc_failed;
+	return 0;
 }
 
 juice_agent_t *agent_create(const juice_config_t *config) {
@@ -122,7 +120,7 @@ juice_agent_t *agent_create(const juice_config_t *config) {
 		}
 		agent->config.turn_servers_count = config->turn_servers_count;
 		for (int i = 0; i < config->turn_servers_count; ++i) {
-			if (!copy_turn_server(agent->config.turn_servers + i, config->turn_servers + i)) {
+			if (copy_turn_server(agent->config.turn_servers + i, config->turn_servers + i) < 0) {
 				goto error;
 			}
 		}
@@ -568,23 +566,17 @@ int agent_add_turn_server(juice_agent_t *agent, const juice_turn_server_t *turn_
 		return -1;
 	}
 
-	juice_turn_server_t *new_turn_servers =
-	    calloc(agent->config.turn_servers_count + 1, sizeof(juice_turn_server_t));
+	juice_turn_server_t *new_turn_servers = realloc(agent->config.turn_servers, (agent->config.turn_servers_count + 1) * sizeof(juice_turn_server_t));
 	if (!new_turn_servers) {
-		JLOG_FATAL("Memory allocation for TURN servers copy failed");
+		JLOG_FATAL("Memory allocation for TURN servers failed");
 		return -1;
 	}
-
-	memcpy(new_turn_servers, agent->config.turn_servers,
-	       sizeof(juice_turn_server_t) * agent->config.turn_servers_count);
-	if (!copy_turn_server(new_turn_servers + agent->config.turn_servers_count, turn_server)) {
-		free(new_turn_servers);
-		return -1;
-	}
-
-	agent->config.turn_servers_count++;
-	free(agent->config.turn_servers);
+	memset(new_turn_servers + agent->config.turn_servers_count, 0, sizeof(juice_turn_server_t));
 	agent->config.turn_servers = new_turn_servers;
+	if (copy_turn_server(new_turn_servers + agent->config.turn_servers_count, turn_server) < 0) {
+		return -1;
+	}
+	agent->config.turn_servers_count++;
 	return 0;
 }
 
