@@ -141,7 +141,6 @@ static inline void thread_set_name_self(const char *name) {
 #define atomic_ptr(T) T *volatile
 #define atomic_store(a, v) (void)(*(a) = (v))
 #define atomic_load(a) (*(a))
-#define ATOMIC_VAR_INIT(v) (v)
 
 #endif // if atomics
 
