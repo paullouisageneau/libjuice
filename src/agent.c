@@ -135,14 +135,6 @@ juice_agent_t *agent_create(const juice_config_t *config) {
 
 	ice_create_local_description(&agent->local);
 
-	if (config->ice_ufrag) {
-		strncpy(agent->local.ice_ufrag, config->ice_ufrag, sizeof(agent->local.ice_ufrag));
-	}
-
-	if (config->ice_pwd) {
-		strncpy(agent->local.ice_pwd, config->ice_pwd, sizeof(agent->local.ice_pwd));
-	}
-
 	// RFC 8445: 16.1. Attributes
 	// The content of the [ICE-CONTROLLED/ICE-CONTROLLING] attribute is a 64-bit
 	// unsigned integer in network byte order, which contains a random number.

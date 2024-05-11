@@ -16,6 +16,7 @@
 #endif
 
 #include <stdio.h>
+#include <string.h>
 
 JUICE_EXPORT juice_agent_t *juice_create(const juice_config_t *config) {
 	if (!config)
@@ -143,6 +144,14 @@ JUICE_EXPORT int juice_get_selected_addresses(juice_agent_t *agent, char *local,
 
 	if (remote_size && addr_record_to_string(&remote_cand.resolved, remote, remote_size) < 0)
 		return JUICE_ERR_FAILED;
+
+	return JUICE_ERR_SUCCESS;
+}
+
+int juice_set_local_ice_attributes(juice_agent_t *agent, const char *ufrag, const char *pwd)
+{
+	strncpy(agent->local.ice_ufrag, ufrag, sizeof(agent->local.ice_ufrag));
+	strncpy(agent->local.ice_pwd, pwd, sizeof(agent->local.ice_pwd));
 
 	return JUICE_ERR_SUCCESS;
 }

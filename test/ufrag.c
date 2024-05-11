@@ -23,11 +23,10 @@ int test_ufrag() {
 	juice_config_t config;
 	memset(&config, 0, sizeof(config));
 
-	// STUN server example
-	config.ice_ufrag = "ufrag";
-	config.ice_pwd = "pwd";
-
 	agent = juice_create(&config);
+
+	// Set local ICE attributes
+	juice_set_local_ice_attributes(agent, "ufrag", "pwd");
 
 	// Generate local description
 	char sdp[JUICE_MAX_SDP_STRING_LEN];

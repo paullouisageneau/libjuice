@@ -91,9 +91,6 @@ typedef struct juice_config {
 	uint16_t local_port_range_begin;
 	uint16_t local_port_range_end;
 
-	const char *ice_ufrag;
-	const char *ice_pwd;
-
 	juice_cb_state_changed_t cb_state_changed;
 	juice_cb_candidate_t cb_candidate;
 	juice_cb_gathering_done_t cb_gathering_done;
@@ -119,6 +116,7 @@ JUICE_EXPORT int juice_get_selected_candidates(juice_agent_t *agent, char *local
                                                char *remote, size_t remote_size);
 JUICE_EXPORT int juice_get_selected_addresses(juice_agent_t *agent, char *local, size_t local_size,
                                               char *remote, size_t remote_size);
+JUICE_EXPORT int juice_set_local_ice_attributes(juice_agent_t *agent, const char *ufrag, const char *pwd);
 JUICE_EXPORT const char *juice_state_to_string(juice_state_t state);
 
 // ICE server
