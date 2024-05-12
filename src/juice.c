@@ -150,8 +150,18 @@ JUICE_EXPORT int juice_get_selected_addresses(juice_agent_t *agent, char *local,
 
 int juice_set_local_ice_attributes(juice_agent_t *agent, const char *ufrag, const char *pwd)
 {
-	strncpy(agent->local.ice_ufrag, ufrag, sizeof(agent->local.ice_ufrag));
-	strncpy(agent->local.ice_pwd, pwd, sizeof(agent->local.ice_pwd));
+	if (agent->conn_impl) {
+		JLOG_WARN("Candidates gathering already started");
+		return JUICE_ERR_FAILED;
+	}
+
+	if (!ufrag || !pwd || strlen(ufrag) < 4 || strlen(pwd) < 22) {
+		JLOG_WARN("Invalid ICE credentials");
+		return JUICE_ERR_INVALID;
+	}
+
+	snprintf(agent->local.ice_ufrag, sizeof(agent->local.ice_ufrag), "%s", ufrag);
+	snprintf(agent->local.ice_pwd, sizeof(agent->local.ice_pwd), "%s", pwd);
 
 	return JUICE_ERR_SUCCESS;
 }
