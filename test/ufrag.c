@@ -16,6 +16,7 @@
 int test_ufrag() {
 	juice_agent_t *agent;
 	bool success = true;
+	int ret;
 
 	juice_set_log_level(JUICE_LOG_LEVEL_DEBUG);
 
@@ -25,8 +26,24 @@ int test_ufrag() {
 
 	agent = juice_create(&config);
 
+	if (juice_set_local_ice_attributes(agent, NULL, NULL) != JUICE_ERR_INVALID)
+		success = false;
+
+	if (juice_set_local_ice_attributes(agent, "ufrag", NULL) != JUICE_ERR_INVALID)
+		success = false;
+
+	if (juice_set_local_ice_attributes(agent, NULL, "pw01234567890123456789") != JUICE_ERR_INVALID)
+		success = false;
+
+	if (juice_set_local_ice_attributes(agent, "ufrag", "pw0123456789012345678") != JUICE_ERR_INVALID)
+		success = false;
+
+	if (juice_set_local_ice_attributes(agent, "usr", "pw01234567890123456789") != JUICE_ERR_INVALID)
+		success = false;
+
+
 	// Set local ICE attributes
-	juice_set_local_ice_attributes(agent, "ufrag", "pwd");
+	juice_set_local_ice_attributes(agent, "ufrag", "pw01234567890123456789");
 
 	// Generate local description
 	char sdp[JUICE_MAX_SDP_STRING_LEN];
@@ -36,7 +53,7 @@ int test_ufrag() {
 	if (strstr(sdp, "a=ice-ufrag:ufrag\r\n") == NULL)
 		success = false;
 
-	if (strstr(sdp, "a=ice-pwd:pwd\r\n") == NULL)
+	if (strstr(sdp, "a=ice-pwd:pw01234567890123456789\r\n") == NULL)
 		success = false;
 
 	// Destroy
