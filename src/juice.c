@@ -16,6 +16,7 @@
 #endif
 
 #include <stdio.h>
+#include <string.h>
 
 JUICE_EXPORT juice_agent_t *juice_create(const juice_config_t *config) {
 	if (!config)
@@ -143,6 +144,24 @@ JUICE_EXPORT int juice_get_selected_addresses(juice_agent_t *agent, char *local,
 
 	if (remote_size && addr_record_to_string(&remote_cand.resolved, remote, remote_size) < 0)
 		return JUICE_ERR_FAILED;
+
+	return JUICE_ERR_SUCCESS;
+}
+
+int juice_set_local_ice_attributes(juice_agent_t *agent, const char *ufrag, const char *pwd)
+{
+	if (agent->conn_impl) {
+		JLOG_WARN("Candidates gathering already started");
+		return JUICE_ERR_FAILED;
+	}
+
+	if (!ufrag || !pwd || strlen(ufrag) < 4 || strlen(pwd) < 22) {
+		JLOG_WARN("Invalid ICE credentials");
+		return JUICE_ERR_INVALID;
+	}
+
+	snprintf(agent->local.ice_ufrag, sizeof(agent->local.ice_ufrag), "%s", ufrag);
+	snprintf(agent->local.ice_pwd, sizeof(agent->local.ice_pwd), "%s", pwd);
 
 	return JUICE_ERR_SUCCESS;
 }
