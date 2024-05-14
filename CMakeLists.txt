@@ -153,9 +153,16 @@ install(TARGETS juice EXPORT LibJuiceTargets
 	ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
 )
 
+install(TARGETS juice-static EXPORT LibJuiceTargets
+	RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+	LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+	ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+	OPTIONAL
+)
+
 install(FILES ${LIBJUICE_HEADERS} DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/juice)
 
-# Export Targets
+# Export targets
 install(
 	EXPORT LibJuiceTargets
 	FILE LibJuiceTargets.cmake
@@ -163,18 +170,23 @@ install(
 	DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/LibJuice
 )
 
-# Export config
-install(
-        FILES ${CMAKE_CURRENT_SOURCE_DIR}/cmake/LibJuiceConfig.cmake
-        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/LibJuice
-)
-
 include(CMakePackageConfigHelpers)
+configure_package_config_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/cmake/LibJuiceConfig.cmake.in
+    ${CMAKE_BINARY_DIR}/LibJuiceConfig.cmake
+    INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/LibJuice
+    NO_SET_AND_CHECK_MACRO
+    NO_CHECK_REQUIRED_COMPONENTS_MACRO
+)
 write_basic_package_version_file(
     ${CMAKE_BINARY_DIR}/LibJuiceConfigVersion.cmake
     VERSION ${PROJECT_VERSION}
-    COMPATIBILITY SameMajorVersion)
-install(FILES ${CMAKE_BINARY_DIR}/LibJuiceConfigVersion.cmake
+    COMPATIBILITY SameMajorVersion
+)
+# Export config and version files
+install(FILES
+	${CMAKE_BINARY_DIR}/LibJuiceConfig.cmake
+	${CMAKE_BINARY_DIR}/LibJuiceConfigVersion.cmake
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/LibJuice)
 
 set_target_properties(juice PROPERTIES C_VISIBILITY_PRESET hidden)
