@@ -108,7 +108,7 @@ static void release_registry(conn_mode_entry_t *entry) {
 
 	// registry must be locked
 
-	if (registry->agents_count == 0) {
+	if (registry->agents_count == 0 && registry->cb_stun_binding == NULL) {
 		JLOG_DEBUG("No connection left, destroying connections registry");
 		mutex_unlock(&registry->mutex);
 
@@ -246,4 +246,28 @@ int conn_get_addrs(juice_agent_t *agent, addr_record_t *records, size_t size) {
 		return -1;
 
 	return get_mode_entry(agent)->get_addrs_func(agent, records, size);
+}
+
+int juice_bind_stun(const char *bind_address, int local_port, juice_cb_stun_binding_t cb)
+{
+	conn_mode_entry_t *entry = &mode_entries[JUICE_CONCURRENCY_MODE_MUX];
+
+	udp_socket_config_t config;
+	config.bind_address = bind_address;
+	config.port_begin = config.port_end = local_port;
+
+	mutex_lock(&entry->mutex);
+
+	if (entry->registry) {
+		mutex_unlock(&entry->mutex);
+		return -1;
+	}
+
+	conn_registry_t *registry = acquire_registry(entry, &config);
+	mutex_unlock(&entry->mutex);
+
+	registry->cb_stun_binding = cb;
+	mutex_unlock(&registry->mutex);
+
+	return 0;
 }

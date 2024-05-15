@@ -30,6 +30,7 @@ typedef struct conn_registry {
 	juice_agent_t **agents;
 	int agents_size;
 	int agents_count;
+	juice_cb_stun_binding_t cb_stun_binding;
 } conn_registry_t;
 
 int conn_create(juice_agent_t *agent, udp_socket_config_t *config);

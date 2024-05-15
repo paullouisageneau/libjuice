@@ -63,6 +63,7 @@ typedef void (*juice_cb_candidate_t)(juice_agent_t *agent, const char *sdp, void
 typedef void (*juice_cb_gathering_done_t)(juice_agent_t *agent, void *user_ptr);
 typedef void (*juice_cb_recv_t)(juice_agent_t *agent, const char *data, size_t size,
                                 void *user_ptr);
+typedef void (*juice_cb_stun_binding_t)(const char *ufrag, const char *pwd, const char *bind_address);
 
 typedef struct juice_turn_server {
 	const char *host;
@@ -118,6 +119,7 @@ JUICE_EXPORT int juice_get_selected_addresses(juice_agent_t *agent, char *local,
                                               char *remote, size_t remote_size);
 JUICE_EXPORT int juice_set_local_ice_attributes(juice_agent_t *agent, const char *ufrag, const char *pwd);
 JUICE_EXPORT const char *juice_state_to_string(juice_state_t state);
+JUICE_EXPORT int juice_bind_stun(const char *bind_address, int local_port, juice_cb_stun_binding_t cb);
 
 // ICE server
 

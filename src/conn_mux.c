@@ -243,6 +243,8 @@ int conn_mux_prepare(conn_registry_t *registry, struct pollfd *pfd, timestamp_t 
 	}
 
 	int count = registry->agents_count;
+	if (registry->cb_stun_binding)
+		++count;
 	mutex_unlock(&registry->mutex);
 	return count;
 }
@@ -295,6 +297,13 @@ static juice_agent_t *lookup_agent(conn_registry_t *registry, char *buf, size_t 
 			}
 		}
 
+		if (registry->cb_stun_binding) {
+			JLOG_DEBUG("Found STUN agent for unknown ICE ufrag");
+			char src_str[ADDR_MAX_STRING_LEN];
+			addr_record_to_string(src, src_str, ADDR_MAX_STRING_LEN);
+			registry->cb_stun_binding(username, separator + 1, src_str);
+			return NULL;
+		}
 	} else {
 		if (!STUN_IS_RESPONSE(msg.msg_class)) {
 			JLOG_INFO("Got unexpected STUN message from unknown source address");
