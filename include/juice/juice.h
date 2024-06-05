@@ -98,6 +98,9 @@ typedef struct juice_config {
 
 	void *user_ptr;
 
+	const char *ice_ufrag;
+	const char *ice_pwd;
+
 } juice_config_t;
 
 JUICE_EXPORT juice_agent_t *juice_create(const juice_config_t *config);

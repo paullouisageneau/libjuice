@@ -103,6 +103,15 @@ juice_agent_t *agent_create(const juice_config_t *config) {
 	agent->config.cb_gathering_done = config->cb_gathering_done;
 	agent->config.cb_recv = config->cb_recv;
 	agent->config.user_ptr = config->user_ptr;
+
+	if (config->ice_ufrag != NULL) {
+		agent->config.ice_ufrag = alloc_string_copy(config->ice_ufrag, &alloc_failed);
+	}
+
+	if (config->ice_pwd != NULL) {
+		agent->config.ice_pwd = alloc_string_copy(config->ice_pwd, &alloc_failed);
+	}
+
 	if (alloc_failed) {
 		JLOG_FATAL("Memory allocation for configuration copy failed");
 		goto error;
@@ -133,7 +142,7 @@ juice_agent_t *agent_create(const juice_config_t *config) {
 	agent->conn_index = -1;
 	agent->conn_impl = NULL;
 
-	ice_create_local_description(&agent->local);
+	ice_create_local_description(&agent->local, (char*)agent->config.ice_ufrag, (char*)agent->config.ice_pwd);
 
 	// RFC 8445: 16.1. Attributes
 	// The content of the [ICE-CONTROLLED/ICE-CONTROLLING] attribute is a 64-bit

@@ -67,3 +67,41 @@ int test_ufrag() {
 		return -1;
 	}
 }
+
+int test_custom_ufrag() {
+	juice_agent_t *agent;
+	bool success = true;
+	int ret;
+
+	juice_set_log_level(JUICE_LOG_LEVEL_DEBUG);
+
+	// Create agent
+	juice_config_t config;
+	memset(&config, 0, sizeof(config));
+	config.ice_ufrag = "custom-ice-ufrag";
+	config.ice_pwd = "custom-ice-pwd";
+
+	agent = juice_create(&config);
+
+	// Generate local description
+	char sdp[JUICE_MAX_SDP_STRING_LEN];
+	juice_get_local_description(agent, sdp, JUICE_MAX_SDP_STRING_LEN);
+	printf("Local description:\n%s\n", sdp);
+
+	if (strstr(sdp, "a=ice-ufrag:custom-ice-ufrag\r\n") == NULL)
+		success = false;
+
+	if (strstr(sdp, "a=ice-pwd:custom-ice-pwd\r\n") == NULL)
+		success = false;
+
+	// Destroy
+	juice_destroy(agent);
+
+	if (success) {
+		printf("Success\n");
+		return 0;
+	} else {
+		printf("Failure\n");
+		return -1;
+	}
+}

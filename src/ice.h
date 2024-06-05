@@ -82,7 +82,7 @@ typedef enum ice_resolve_mode {
 
 int ice_parse_sdp(const char *sdp, ice_description_t *description);
 int ice_parse_candidate_sdp(const char *line, ice_candidate_t *candidate);
-int ice_create_local_description(ice_description_t *description);
+int ice_create_local_description(ice_description_t *description, char *ice_ufrag, char *ice_pwd);
 int ice_create_local_candidate(ice_candidate_type_t type, int component, int index,
                                const addr_record_t *record, ice_candidate_t *candidate);
 int ice_resolve_candidate(ice_candidate_t *candidate, ice_resolve_mode_t mode);

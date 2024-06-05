@@ -22,6 +22,7 @@ int test_turn(void);
 int test_conflict(void);
 int test_bind(void);
 int test_ufrag(void);
+int test_custom_ufrag(void);
 
 #ifndef NO_SERVER
 int test_server(void);
@@ -102,6 +103,12 @@ int main(int argc, char **argv) {
 	if (test_ufrag()) {
 		fprintf(stderr, "Ufrag test failed\n");
 		return -1;
+	}
+
+	printf("\nRunning custom ufrag test...\n");
+	if (test_custom_ufrag()) {
+		fprintf(stderr, "Custom ufrag test failed\n");
+		return -2;
 	}
 
 #ifndef NO_SERVER
