@@ -299,9 +299,28 @@ static juice_agent_t *lookup_agent(conn_registry_t *registry, char *buf, size_t 
 
 		if (registry->cb_stun_binding) {
 			JLOG_DEBUG("Found STUN agent for unknown ICE ufrag");
-			char src_str[ADDR_MAX_STRING_LEN];
-			addr_record_to_string(src, src_str, ADDR_MAX_STRING_LEN);
-			registry->cb_stun_binding(username, separator + 1, src_str);
+			const struct sockaddr *sa = (const struct sockaddr *)&src->addr;
+
+			socklen_t salen = addr_get_len(sa);
+			if (salen == 0)
+				return NULL;
+
+			char host[ADDR_MAX_NUMERICHOST_LEN];
+			if (getnameinfo(sa, salen, host, ADDR_MAX_NUMERICHOST_LEN, NULL, 0, NI_NUMERICHOST)) {
+				JLOG_ERROR("getnameinfo failed, errno=%d", sockerrno);
+				return NULL;
+			}
+
+			juice_stun_binding_t binding_info;
+
+			binding_info.ufrag = username;
+			binding_info.pwd = separator + 1;
+			binding_info.family = sa->sa_family;
+			binding_info.address = host;
+			binding_info.port = addr_get_port((struct sockaddr *)src);
+
+			registry->cb_stun_binding(&binding_info);
+
 			return NULL;
 		}
 	} else {

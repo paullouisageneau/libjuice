@@ -63,7 +63,17 @@ typedef void (*juice_cb_candidate_t)(juice_agent_t *agent, const char *sdp, void
 typedef void (*juice_cb_gathering_done_t)(juice_agent_t *agent, void *user_ptr);
 typedef void (*juice_cb_recv_t)(juice_agent_t *agent, const char *data, size_t size,
                                 void *user_ptr);
-typedef void (*juice_cb_stun_binding_t)(const char *ufrag, const char *pwd, const char *bind_address);
+
+typedef struct juice_stun_binding {
+	const char *ufrag;
+	const char *pwd;
+
+	uint8_t family;
+	const char *address;
+	uint16_t port;
+} juice_stun_binding_t;
+
+typedef void (*juice_cb_stun_binding_t)(const juice_stun_binding_t *info);
 
 typedef struct juice_turn_server {
 	const char *host;
