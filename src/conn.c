@@ -266,6 +266,9 @@ int juice_bind_stun(const char *bind_address, int local_port, juice_cb_stun_bind
 	conn_registry_t *registry = acquire_registry(entry, &config);
 	mutex_unlock(&entry->mutex);
 
+	if (!registry)
+		return -2;
+
 	registry->cb_stun_binding = cb;
 	mutex_unlock(&registry->mutex);
 
