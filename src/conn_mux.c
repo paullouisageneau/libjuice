@@ -315,7 +315,7 @@ static juice_agent_t *lookup_agent(conn_registry_t *registry, char *buf, size_t 
 
 			binding_info.ufrag = username;
 			binding_info.pwd = separator + 1;
-			binding_info.family = sa->sa_family;
+			binding_info.family = (uint8_t)sa->sa_family;
 			binding_info.address = host;
 			binding_info.port = addr_get_port((struct sockaddr *)src);
 
