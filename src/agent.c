@@ -491,7 +491,7 @@ int agent_set_remote_description(juice_agent_t *agent, const char *sdp) {
 			return 0;
 		}
 
-		JLOG_WARN("ICE restart is unsupported");
+		JLOG_WARN("ICE restart is not supported");
 		conn_unlock(agent);
 		return -1;
 	}
@@ -560,9 +560,26 @@ int agent_add_remote_candidate(juice_agent_t *agent, const char *sdp) {
 	return ret;
 }
 
+int agent_set_local_ice_attributes(juice_agent_t *agent, const char *ufrag, const char *pwd)
+{
+	if (agent->conn_impl) {
+		JLOG_WARN("Unable to set ICE attributes, candidates gathering already started");
+		return JUICE_ERR_FAILED;
+	}
+
+	if (strlen(ufrag) < 4 || strlen(pwd) < 22 || !ice_is_valid_string(ufrag) || !ice_is_valid_string(pwd)) {
+		JLOG_WARN("Invalid ICE attributes");
+		return JUICE_ERR_INVALID;
+	}
+
+	snprintf(agent->local.ice_ufrag, sizeof(agent->local.ice_ufrag), "%s", ufrag);
+	snprintf(agent->local.ice_pwd, sizeof(agent->local.ice_pwd), "%s", pwd);
+	return JUICE_ERR_SUCCESS;
+}
+
 int agent_add_turn_server(juice_agent_t *agent, const juice_turn_server_t *turn_server) {
 	if (agent->conn_impl) {
-		JLOG_WARN("Candidates gathering already started");
+		JLOG_WARN("Unable to add TURN server, candidates gathering already started");
 		return -1;
 	}
 

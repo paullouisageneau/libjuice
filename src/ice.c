@@ -110,7 +110,7 @@ int ice_parse_sdp(const char *sdp, ice_description_t *description) {
 		if (*sdp == '\n') {
 			if (size) {
 				buffer[size++] = '\0';
-				if(parse_sdp_line(buffer, description) == ICE_PARSE_ERROR)
+				if (parse_sdp_line(buffer, description) == ICE_PARSE_ERROR)
 					return ICE_PARSE_ERROR;
 
 				size = 0;
@@ -414,4 +414,15 @@ uint32_t ice_compute_priority(ice_candidate_type_t type, int family, int compone
 
 	p += 256 - CLAMP(component, 1, 256);
 	return p;
+}
+
+bool ice_is_valid_string(const char *str) {
+	if (!str)
+		return false;
+
+	for (size_t i = 0; i < strlen(str); ++i)
+		if (!isalpha(str[i]) && !isdigit(str[i]) && str[i] != '+' && str[i] != '/')
+			return false;
+
+	return true;
 }
