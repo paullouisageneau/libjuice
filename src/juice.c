@@ -54,20 +54,14 @@ JUICE_EXPORT int juice_set_remote_description(juice_agent_t *agent, const char *
 	if (!agent || !sdp)
 		return JUICE_ERR_INVALID;
 
-	if (agent_set_remote_description(agent, sdp) < 0)
-		return JUICE_ERR_FAILED;
-
-	return JUICE_ERR_SUCCESS;
+	return agent_set_remote_description(agent, sdp);
 }
 
 JUICE_EXPORT int juice_add_remote_candidate(juice_agent_t *agent, const char *sdp) {
 	if (!agent || !sdp)
 		return JUICE_ERR_INVALID;
 
-	if (agent_add_remote_candidate(agent, sdp) < 0)
-		return JUICE_ERR_FAILED;
-
-	return JUICE_ERR_SUCCESS;
+	return agent_add_remote_candidate(agent, sdp);
 }
 
 JUICE_EXPORT int juice_add_turn_server(juice_agent_t *agent, const juice_turn_server_t *turn_server) {

@@ -40,6 +40,7 @@ extern "C" {
 #define JUICE_ERR_INVALID -1   // invalid argument
 #define JUICE_ERR_FAILED -2    // runtime error
 #define JUICE_ERR_NOT_AVAIL -3 // element not available
+#define JUICE_ERR_IGNORED -4   // ignored
 
 // ICE Agent
 

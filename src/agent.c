@@ -471,15 +471,19 @@ int agent_set_remote_description(juice_agent_t *agent, const char *sdp) {
 	ice_description_t remote;
 	int ret = ice_parse_sdp(sdp, &remote);
 	if (ret < 0) {
-		if (ret == ICE_PARSE_MISSING_UFRAG)
+		switch (ret) {
+		case ICE_PARSE_MISSING_UFRAG:
 			JLOG_ERROR("Missing ICE user fragment in remote description");
-		else if (ret == ICE_PARSE_MISSING_PWD)
+			break;
+		case ICE_PARSE_MISSING_PWD:
 			JLOG_ERROR("Missing ICE password in remote description");
-		else
+			break;
+		default:
 			JLOG_ERROR("Failed to parse remote SDP description");
-
+			break;
+		}
 		conn_unlock(agent);
-		return -1;
+		return JUICE_ERR_INVALID;
 	}
 
 	if (*agent->remote.ice_ufrag) {
@@ -488,12 +492,12 @@ int agent_set_remote_description(juice_agent_t *agent, const char *sdp) {
 		    strcmp(agent->remote.ice_pwd, remote.ice_pwd) == 0) {
 			JLOG_DEBUG("Remote description is already set, ignoring");
 			conn_unlock(agent);
-			return 0;
+			return JUICE_ERR_SUCCESS;
 		}
 
 		JLOG_WARN("ICE restart is not supported");
 		conn_unlock(agent);
-		return -1;
+		return JUICE_ERR_FAILED;
 	}
 
 	agent->remote = remote;
@@ -520,12 +524,12 @@ int agent_set_remote_description(juice_agent_t *agent, const char *sdp) {
 	for (int i = 0; i < agent->remote.candidates_count; ++i) {
 		ice_candidate_t *remote = agent->remote.candidates + i;
 		if (agent_add_candidate_pairs_for_remote(agent, remote))
-			JLOG_WARN("Failed to add candidate pair from remote description");
+			JLOG_WARN("Failed to add candidate pair");
 	}
 
 	conn_unlock(agent);
 	conn_interrupt(agent);
-	return 0;
+	return JUICE_ERR_SUCCESS;
 }
 
 int agent_add_remote_candidate(juice_agent_t *agent, const char *sdp) {
@@ -534,40 +538,46 @@ int agent_add_remote_candidate(juice_agent_t *agent, const char *sdp) {
 	if (agent->remote.finished) {
 		JLOG_ERROR("Remote candidate added after remote gathering done");
 		conn_unlock(agent);
-		return -1;
+		return JUICE_ERR_FAILED;
 	}
 	ice_candidate_t candidate;
 	int ret = ice_parse_candidate_sdp(sdp, &candidate);
 	if (ret < 0) {
-		if (ret == ICE_PARSE_IGNORED)
+		if (ret == ICE_PARSE_IGNORED) {
 			JLOG_DEBUG("Ignored SDP candidate: %s", sdp);
-		else if (ret == ICE_PARSE_ERROR)
-			JLOG_ERROR("Failed to parse remote SDP candidate: %s", sdp);
+			conn_unlock(agent);
+			return JUICE_ERR_IGNORED;
+		}
 
+		JLOG_ERROR("Failed to parse remote SDP candidate: %s", sdp);
 		conn_unlock(agent);
-		return -1;
+		return JUICE_ERR_INVALID;
 	}
 	if (ice_add_candidate(&candidate, &agent->remote)) {
 		JLOG_ERROR("Failed to add candidate to remote description");
 		conn_unlock(agent);
-		return -1;
+		return JUICE_ERR_FAILED;
 	}
 	ice_candidate_t *remote = agent->remote.candidates + agent->remote.candidates_count - 1;
-	ret = agent_add_candidate_pairs_for_remote(agent, remote);
+	if (agent_add_candidate_pairs_for_remote(agent, remote)) {
+		JLOG_WARN("Failed to add candidate pair");
+		conn_unlock(agent);
+		return JUICE_ERR_FAILED;
+	}
 
 	conn_unlock(agent);
 	conn_interrupt(agent);
-	return ret;
+	return JUICE_ERR_SUCCESS;
 }
 
-int agent_set_local_ice_attributes(juice_agent_t *agent, const char *ufrag, const char *pwd)
-{
+int agent_set_local_ice_attributes(juice_agent_t *agent, const char *ufrag, const char *pwd) {
 	if (agent->conn_impl) {
 		JLOG_WARN("Unable to set ICE attributes, candidates gathering already started");
 		return JUICE_ERR_FAILED;
 	}
 
-	if (strlen(ufrag) < 4 || strlen(pwd) < 22 || !ice_is_valid_string(ufrag) || !ice_is_valid_string(pwd)) {
+	if (strlen(ufrag) < 4 || strlen(pwd) < 22 || !ice_is_valid_string(ufrag) ||
+	    !ice_is_valid_string(pwd)) {
 		JLOG_WARN("Invalid ICE attributes");
 		return JUICE_ERR_INVALID;
 	}
@@ -583,7 +593,9 @@ int agent_add_turn_server(juice_agent_t *agent, const juice_turn_server_t *turn_
 		return -1;
 	}
 
-	juice_turn_server_t *new_turn_servers = realloc(agent->config.turn_servers, (agent->config.turn_servers_count + 1) * sizeof(juice_turn_server_t));
+	juice_turn_server_t *new_turn_servers =
+	    realloc(agent->config.turn_servers,
+	            (agent->config.turn_servers_count + 1) * sizeof(juice_turn_server_t));
 	if (!new_turn_servers) {
 		JLOG_FATAL("Memory allocation for TURN servers failed");
 		return -1;
