@@ -41,6 +41,11 @@ int test_ufrag() {
 	if (juice_set_local_ice_attributes(agent, "usr", "pw01234567890123456789") != JUICE_ERR_INVALID)
 		success = false;
 
+	if (juice_set_local_ice_attributes(agent, "ufrag:", "pw01234567890123456789") != JUICE_ERR_INVALID)
+		success = false;
+
+	if (juice_set_local_ice_attributes(agent, "ufrag", "pw0123456789012345678?") != JUICE_ERR_INVALID)
+		success = false;
 
 	// Set local ICE attributes
 	juice_set_local_ice_attributes(agent, "ufrag", "pw01234567890123456789");
