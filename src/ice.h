@@ -101,4 +101,6 @@ int ice_candidates_count(const ice_description_t *description, ice_candidate_typ
 
 uint32_t ice_compute_priority(ice_candidate_type_t type, int family, int component, int index);
 
+bool ice_is_valid_string(const char *str);
+
 #endif
