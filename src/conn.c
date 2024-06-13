@@ -248,6 +248,29 @@ int conn_get_addrs(juice_agent_t *agent, addr_record_t *records, size_t size) {
 	return get_mode_entry(agent)->get_addrs_func(agent, records, size);
 }
 
+int juice_unbind_stun() {
+	conn_mode_entry_t *entry = &mode_entries[JUICE_CONCURRENCY_MODE_MUX];
+
+	mutex_lock(&entry->mutex);
+
+	conn_registry_t *registry = entry->registry;
+	if (!registry) {
+		mutex_unlock(&entry->mutex);
+		return -1;
+	}
+
+	mutex_lock(&registry->mutex);
+
+	registry->cb_stun_binding = NULL;
+	conn_mux_interrupt_registry(registry);
+
+	release_registry(entry);
+
+	mutex_unlock(&entry->mutex);
+
+	return 0;
+}
+
 int juice_bind_stun(const char *bind_address, int local_port, juice_cb_stun_binding_t cb)
 {
 	conn_mode_entry_t *entry = &mode_entries[JUICE_CONCURRENCY_MODE_MUX];

@@ -507,14 +507,7 @@ void conn_mux_unlock(juice_agent_t *agent) {
 	mutex_unlock(&registry->mutex);
 }
 
-int conn_mux_interrupt(juice_agent_t *agent) {
-	conn_impl_t *conn_impl = agent->conn_impl;
-	conn_registry_t *registry = conn_impl->registry;
-
-	mutex_lock(&registry->mutex);
-	conn_impl->next_timestamp = current_timestamp();
-	mutex_unlock(&registry->mutex);
-
+int conn_mux_interrupt_registry(conn_registry_t *registry) {
 	JLOG_VERBOSE("Interrupting connections thread");
 
 	registry_impl_t *registry_impl = registry->impl;
@@ -528,6 +521,17 @@ int conn_mux_interrupt(juice_agent_t *agent) {
 	}
 	mutex_unlock(&registry_impl->send_mutex);
 	return 0;
+}
+
+int conn_mux_interrupt(juice_agent_t *agent) {
+	conn_impl_t *conn_impl = agent->conn_impl;
+	conn_registry_t *registry = conn_impl->registry;
+
+	mutex_lock(&registry->mutex);
+	conn_impl->next_timestamp = current_timestamp();
+	mutex_unlock(&registry->mutex);
+
+	return conn_mux_interrupt_registry(registry);
 }
 
 int conn_mux_send(juice_agent_t *agent, const addr_record_t *dst, const char *data, size_t size,

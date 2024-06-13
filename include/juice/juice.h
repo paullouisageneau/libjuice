@@ -130,6 +130,7 @@ JUICE_EXPORT int juice_get_selected_addresses(juice_agent_t *agent, char *local,
 JUICE_EXPORT int juice_set_local_ice_attributes(juice_agent_t *agent, const char *ufrag, const char *pwd);
 JUICE_EXPORT const char *juice_state_to_string(juice_state_t state);
 JUICE_EXPORT int juice_bind_stun(const char *bind_address, int local_port, juice_cb_stun_binding_t cb);
+JUICE_EXPORT int juice_unbind_stun();
 
 // ICE server
 
