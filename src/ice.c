@@ -110,7 +110,7 @@ int ice_parse_sdp(const char *sdp, ice_description_t *description) {
 		if (*sdp == '\n') {
 			if (size) {
 				buffer[size++] = '\0';
-				if(parse_sdp_line(buffer, description) == ICE_PARSE_ERROR)
+				if (parse_sdp_line(buffer, description) == ICE_PARSE_ERROR)
 					return ICE_PARSE_ERROR;
 
 				size = 0;

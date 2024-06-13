@@ -491,7 +491,7 @@ int agent_set_remote_description(juice_agent_t *agent, const char *sdp) {
 			return 0;
 		}
 
-		JLOG_WARN("ICE restart is unsupported");
+		JLOG_WARN("ICE restart is not supported");
 		conn_unlock(agent);
 		return -1;
 	}
