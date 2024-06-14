@@ -262,6 +262,7 @@ int juice_unbind_stun() {
 	mutex_lock(&registry->mutex);
 
 	registry->cb_stun_binding = NULL;
+	registry->stun_binding_user_ptr = NULL;
 	conn_mux_interrupt_registry(registry);
 
 	release_registry(entry);
@@ -271,7 +272,7 @@ int juice_unbind_stun() {
 	return 0;
 }
 
-int juice_bind_stun(const char *bind_address, int local_port, juice_cb_stun_binding_t cb)
+int juice_bind_stun(const char *bind_address, int local_port, juice_cb_stun_binding_t cb, void *user_ptr)
 {
 	conn_mode_entry_t *entry = &mode_entries[JUICE_CONCURRENCY_MODE_MUX];
 
@@ -293,6 +294,7 @@ int juice_bind_stun(const char *bind_address, int local_port, juice_cb_stun_bind
 		return -2;
 
 	registry->cb_stun_binding = cb;
+	registry->stun_binding_user_ptr = user_ptr;
 	mutex_unlock(&registry->mutex);
 
 	return 0;

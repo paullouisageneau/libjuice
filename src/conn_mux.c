@@ -319,7 +319,7 @@ static juice_agent_t *lookup_agent(conn_registry_t *registry, char *buf, size_t 
 			binding_info.address = host;
 			binding_info.port = addr_get_port((struct sockaddr *)src);
 
-			registry->cb_stun_binding(&binding_info);
+			registry->cb_stun_binding(&binding_info, registry->stun_binding_user_ptr);
 
 			return NULL;
 		}
