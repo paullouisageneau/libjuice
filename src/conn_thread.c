@@ -173,7 +173,7 @@ int conn_thread_init(juice_agent_t *agent, conn_registry_t *registry, udp_socket
 		return -1;
 	}
 
-	mutex_init(&conn_impl->mutex, 0);
+	mutex_init(&conn_impl->mutex, MUTEX_RECURSIVE); // Recursive to allow calls from user callbacks
 	mutex_init(&conn_impl->send_mutex, 0);
 
 	agent->conn_impl = conn_impl;
@@ -276,4 +276,3 @@ int conn_thread_get_addrs(juice_agent_t *agent, addr_record_t *records, size_t s
 
 	return udp_get_addrs(conn_impl->sock, records, size);
 }
-

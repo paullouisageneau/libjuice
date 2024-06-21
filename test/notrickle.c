@@ -60,6 +60,7 @@ int test_notrickle() {
 	config2.stun_server_host = "stun.l.google.com";
 	config2.stun_server_port = 19302;
 
+	config2.concurrency_mode = JUICE_CONCURRENCY_MODE_THREAD;
 	config2.cb_state_changed = on_state_changed2;
 	config2.cb_gathering_done = on_gathering_done2;
 	config2.cb_recv = on_recv2;
