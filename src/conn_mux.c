@@ -243,6 +243,8 @@ int conn_mux_prepare(conn_registry_t *registry, struct pollfd *pfd, timestamp_t 
 	}
 
 	int count = registry->agents_count;
+	if (registry->cb_stun_binding)
+		++count;
 	mutex_unlock(&registry->mutex);
 	return count;
 }
@@ -295,6 +297,32 @@ static juice_agent_t *lookup_agent(conn_registry_t *registry, char *buf, size_t 
 			}
 		}
 
+		if (registry->cb_stun_binding) {
+			JLOG_DEBUG("Found STUN agent for unknown ICE ufrag");
+			const struct sockaddr *sa = (const struct sockaddr *)&src->addr;
+
+			socklen_t salen = addr_get_len(sa);
+			if (salen == 0)
+				return NULL;
+
+			char host[ADDR_MAX_NUMERICHOST_LEN];
+			if (getnameinfo(sa, salen, host, ADDR_MAX_NUMERICHOST_LEN, NULL, 0, NI_NUMERICHOST)) {
+				JLOG_ERROR("getnameinfo failed, errno=%d", sockerrno);
+				return NULL;
+			}
+
+			juice_stun_binding_t binding_info;
+
+			binding_info.ufrag = username;
+			binding_info.pwd = separator + 1;
+			binding_info.family = (uint8_t)sa->sa_family;
+			binding_info.address = host;
+			binding_info.port = addr_get_port((struct sockaddr *)src);
+
+			registry->cb_stun_binding(&binding_info, registry->stun_binding_user_ptr);
+
+			return NULL;
+		}
 	} else {
 		if (!STUN_IS_RESPONSE(msg.msg_class)) {
 			JLOG_INFO("Got unexpected STUN message from unknown source address");
@@ -479,14 +507,7 @@ void conn_mux_unlock(juice_agent_t *agent) {
 	mutex_unlock(&registry->mutex);
 }
 
-int conn_mux_interrupt(juice_agent_t *agent) {
-	conn_impl_t *conn_impl = agent->conn_impl;
-	conn_registry_t *registry = conn_impl->registry;
-
-	mutex_lock(&registry->mutex);
-	conn_impl->next_timestamp = current_timestamp();
-	mutex_unlock(&registry->mutex);
-
+int conn_mux_interrupt_registry(conn_registry_t *registry) {
 	JLOG_VERBOSE("Interrupting connections thread");
 
 	registry_impl_t *registry_impl = registry->impl;
@@ -500,6 +521,17 @@ int conn_mux_interrupt(juice_agent_t *agent) {
 	}
 	mutex_unlock(&registry_impl->send_mutex);
 	return 0;
+}
+
+int conn_mux_interrupt(juice_agent_t *agent) {
+	conn_impl_t *conn_impl = agent->conn_impl;
+	conn_registry_t *registry = conn_impl->registry;
+
+	mutex_lock(&registry->mutex);
+	conn_impl->next_timestamp = current_timestamp();
+	mutex_unlock(&registry->mutex);
+
+	return conn_mux_interrupt_registry(registry);
 }
 
 int conn_mux_send(juice_agent_t *agent, const addr_record_t *dst, const char *data, size_t size,
