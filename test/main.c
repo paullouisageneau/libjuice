@@ -10,6 +10,7 @@
 
 #include <stdio.h>
 
+int test_agent_data(void);
 int test_crc32(void);
 int test_base64(void);
 int test_stun(void);
@@ -29,6 +30,12 @@ int test_server(void);
 
 int main(int argc, char **argv) {
 	juice_set_log_level(JUICE_LOG_LEVEL_WARN);
+
+	printf("\nRunning agent data test...\n");
+	if (test_agent_data()) {
+		fprintf(stderr, "Agent data test failed\n");
+		return -1;
+	}
 
 	printf("\nRunning CRC32 implementation test...\n");
 	if (test_crc32()) {

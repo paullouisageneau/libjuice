@@ -65,6 +65,7 @@ source_group("Header Files" FILES "${LIBJUICE_HEADERS}")
 
 set(TESTS_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/test/main.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/test/agent.c
     ${CMAKE_CURRENT_SOURCE_DIR}/test/crc32.c
     ${CMAKE_CURRENT_SOURCE_DIR}/test/base64.c
     ${CMAKE_CURRENT_SOURCE_DIR}/test/stun.c

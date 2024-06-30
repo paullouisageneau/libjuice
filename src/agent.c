@@ -145,6 +145,9 @@ juice_agent_t *agent_create(const juice_config_t *config) {
 	// number.
 	juice_random(&agent->ice_tiebreaker, sizeof(agent->ice_tiebreaker));
 
+	// Initially, the agent has no data associated with it
+	agent->user_ptr = NULL;
+
 	return agent;
 
 error:

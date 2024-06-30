@@ -148,6 +148,11 @@ struct juice_agent {
 
 	thread_t resolver_thread;
 	bool resolver_thread_started;
+
+	/* This is a custom field that can be used to store user data for the agent.
+	 * Use the juice_agent_set_data and juice_agent_get_data methods to store and retrieve the data.
+	 */
+	void* user_ptr;
 };
 
 juice_agent_t *agent_create(const juice_config_t *config);
