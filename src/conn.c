@@ -108,7 +108,7 @@ static void release_registry(conn_mode_entry_t *entry) {
 
 	// registry must be locked
 
-	if (registry->agents_count == 0 && registry->cb_stun_binding == NULL) {
+	if (registry->agents_count == 0 && registry->cb_mux_incoming == NULL) {
 		JLOG_DEBUG("No connection left, destroying connections registry");
 		mutex_unlock(&registry->mutex);
 
@@ -248,7 +248,10 @@ int conn_get_addrs(juice_agent_t *agent, addr_record_t *records, size_t size) {
 	return get_mode_entry(agent)->get_addrs_func(agent, records, size);
 }
 
-int juice_unbind_stun() {
+int juice_mux_stop_listen(const char *bind_address, int local_port) {
+    (void)bind_address;
+    (void)local_port;
+
 	conn_mode_entry_t *entry = &mode_entries[JUICE_CONCURRENCY_MODE_MUX];
 
 	mutex_lock(&entry->mutex);
@@ -261,8 +264,8 @@ int juice_unbind_stun() {
 
 	mutex_lock(&registry->mutex);
 
-	registry->cb_stun_binding = NULL;
-	registry->stun_binding_user_ptr = NULL;
+	registry->cb_mux_incoming = NULL;
+	registry->mux_incoming_user_ptr = NULL;
 	conn_mux_interrupt_registry(registry);
 
 	release_registry(entry);
@@ -272,7 +275,7 @@ int juice_unbind_stun() {
 	return 0;
 }
 
-int juice_bind_stun(const char *bind_address, int local_port, juice_cb_stun_binding_t cb, void *user_ptr)
+int juice_mux_listen(const char *bind_address, int local_port, juice_cb_mux_incoming_t cb, void *user_ptr)
 {
 	conn_mode_entry_t *entry = &mode_entries[JUICE_CONCURRENCY_MODE_MUX];
 
@@ -284,6 +287,7 @@ int juice_bind_stun(const char *bind_address, int local_port, juice_cb_stun_bind
 
 	if (entry->registry) {
 		mutex_unlock(&entry->mutex);
+		JLOG_DEBUG("juice_mux_listen needs to be called before establishing any mux connection.");
 		return -1;
 	}
 
@@ -293,8 +297,8 @@ int juice_bind_stun(const char *bind_address, int local_port, juice_cb_stun_bind
 	if (!registry)
 		return -2;
 
-	registry->cb_stun_binding = cb;
-	registry->stun_binding_user_ptr = user_ptr;
+	registry->cb_mux_incoming = cb;
+	registry->mux_incoming_user_ptr = user_ptr;
 	mutex_unlock(&registry->mutex);
 
 	return 0;

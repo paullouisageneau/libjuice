@@ -243,7 +243,7 @@ int conn_mux_prepare(conn_registry_t *registry, struct pollfd *pfd, timestamp_t 
 	}
 
 	int count = registry->agents_count;
-	if (registry->cb_stun_binding)
+	if (registry->cb_mux_incoming)
 		++count;
 	mutex_unlock(&registry->mutex);
 	return count;
@@ -297,29 +297,22 @@ static juice_agent_t *lookup_agent(conn_registry_t *registry, char *buf, size_t 
 			}
 		}
 
-		if (registry->cb_stun_binding) {
-			JLOG_DEBUG("Found STUN agent for unknown ICE ufrag");
-			const struct sockaddr *sa = (const struct sockaddr *)&src->addr;
-
-			socklen_t salen = addr_get_len(sa);
-			if (salen == 0)
-				return NULL;
-
+		if (registry->cb_mux_incoming) {
+			JLOG_DEBUG("Found STUN request with unknown ICE ufrag");
 			char host[ADDR_MAX_NUMERICHOST_LEN];
-			if (getnameinfo(sa, salen, host, ADDR_MAX_NUMERICHOST_LEN, NULL, 0, NI_NUMERICHOST)) {
+			if (getnameinfo((const struct sockaddr *)&src->addr, src->len, host, ADDR_MAX_NUMERICHOST_LEN, NULL, 0, NI_NUMERICHOST)) {
 				JLOG_ERROR("getnameinfo failed, errno=%d", sockerrno);
 				return NULL;
 			}
 
-			juice_stun_binding_t binding_info;
+			juice_mux_incoming_t incoming_info;
 
-			binding_info.ufrag = username;
-			binding_info.pwd = separator + 1;
-			binding_info.family = (uint8_t)sa->sa_family;
-			binding_info.address = host;
-			binding_info.port = addr_get_port((struct sockaddr *)src);
+			incoming_info.ufrag = username;
+			incoming_info.pwd = separator + 1;
+			incoming_info.address = host;
+			incoming_info.port = addr_get_port((struct sockaddr *)src);
 
-			registry->cb_stun_binding(&binding_info, registry->stun_binding_user_ptr);
+			registry->cb_mux_incoming(&incoming_info, registry->mux_incoming_user_ptr);
 
 			return NULL;
 		}
