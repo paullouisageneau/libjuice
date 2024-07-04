@@ -65,8 +65,8 @@ typedef void (*juice_cb_recv_t)(juice_agent_t *agent, const char *data, size_t s
                                 void *user_ptr);
 
 typedef struct juice_mux_incoming {
-	const char *ufrag;
-	const char *pwd;
+	const char *remote_ufrag;
+	const char *local_ufrag;
 
 	const char *address;
 	uint16_t port;

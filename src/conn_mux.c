@@ -307,8 +307,8 @@ static juice_agent_t *lookup_agent(conn_registry_t *registry, char *buf, size_t 
 
 			juice_mux_incoming_t incoming_info;
 
-			incoming_info.ufrag = username;
-			incoming_info.pwd = separator + 1;
+			incoming_info.remote_ufrag = username;
+			incoming_info.local_ufrag = separator + 1;
 			incoming_info.address = host;
 			incoming_info.port = addr_get_port((struct sockaddr *)src);
 
