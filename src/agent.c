@@ -392,6 +392,7 @@ int agent_resolve_servers(juice_agent_t *agent) {
 					         turn_server->username);
 					entry->turn->password = turn_server->password;
 					juice_random(entry->transaction_id, STUN_TRANSACTION_ID_SIZE);
+					entry->transaction_id_expired = false;
 					++agent->entries_count;
 
 					agent_arm_transmission(agent, entry, STUN_PACING_TIME * i);
@@ -431,6 +432,7 @@ int agent_resolve_servers(juice_agent_t *agent) {
 				entry->pair = NULL;
 				entry->record = records[i];
 				juice_random(entry->transaction_id, STUN_TRANSACTION_ID_SIZE);
+				entry->transaction_id_expired = false;
 				++agent->entries_count;
 
 				agent_arm_transmission(agent, entry, STUN_PACING_TIME * i);
@@ -832,6 +834,10 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 					           record_str, entry->retransmissions,
 					           entry->retransmissions >= 2 ? "s" : "");
 				}
+				if (entry->transaction_id_expired) {
+					juice_random(entry->transaction_id, STUN_TRANSACTION_ID_SIZE);
+					entry->transaction_id_expired = false;
+				}
 				int ret;
 				switch (entry->type) {
 				case AGENT_STUN_ENTRY_TYPE_RELAY:
@@ -900,6 +906,7 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 			JLOG_DEBUG("STUN entry %d: Sending keepalive", i);
 
 			juice_random(entry->transaction_id, STUN_TRANSACTION_ID_SIZE);
+			entry->transaction_id_expired = false;
 
 			int ret;
 			switch (entry->type) {
@@ -1087,6 +1094,7 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 						if (entry->pair && entry->pair == selected_pair) {
 							entry->state =
 							    AGENT_STUN_ENTRY_STATE_PENDING;      // we don't want keepalives
+							entry->transaction_id_expired = true;	 // this is a new request
 							agent_arm_transmission(agent, entry, 0); // transmit now
 							break;
 						}
@@ -1246,7 +1254,7 @@ int agent_dispatch_stun(juice_agent_t *agent, void *buf, size_t size, stun_messa
 		JLOG_VERBOSE("STUN message is a response, looking for transaction ID");
 		entry = agent_find_entry_from_transaction_id(agent, msg->transaction_id);
 		if (!entry) {
-			JLOG_WARN("No STUN entry matching transaction ID, ignoring");
+			JLOG_DEBUG("No STUN entry matching transaction ID, ignoring");
 			return -1;
 		}
 	} else {
@@ -1506,9 +1514,9 @@ int agent_process_stun_binding(juice_agent_t *agent, const stun_message_t *msg,
 					                                                 : "controlling");
 					agent->mode = entry->mode == AGENT_MODE_CONTROLLING ? AGENT_MODE_CONTROLLED
 					                                                    : AGENT_MODE_CONTROLLING;
-					agent_update_candidate_pairs(agent);
-
 					juice_random(&agent->ice_tiebreaker, sizeof(agent->ice_tiebreaker));
+					agent_update_candidate_pairs(agent); // expires transaction IDs
+
 					if (entry->state != AGENT_STUN_ENTRY_STATE_IDLE) { // Check might not be started
 						entry->state = AGENT_STUN_ENTRY_STATE_PENDING;
 						agent_arm_transmission(agent, entry, 0);
@@ -2304,6 +2312,7 @@ int agent_add_candidate_pair(juice_agent_t *agent, ice_candidate_t *local, // lo
 	entry->record = pos->remote->resolved;
 	entry->relay_entry = relay_entry;
 	juice_random(entry->transaction_id, STUN_TRANSACTION_ID_SIZE);
+	entry->transaction_id_expired = false;
 	++agent->entries_count;
 
 	if (remote->type == ICE_CANDIDATE_TYPE_HOST)
@@ -2395,6 +2404,7 @@ void agent_arm_keepalive(juice_agent_t *agent, agent_stun_entry_t *entry) {
 		break;
 	}
 
+	entry->transaction_id_expired = true;
 	agent_arm_transmission(agent, entry, period);
 }
 
@@ -2472,6 +2482,14 @@ void agent_update_candidate_pairs(juice_agent_t *agent) {
 		ice_update_candidate_pair(pair, is_controlling);
 	}
 	agent_update_ordered_pairs(agent);
+
+	// Expire all transaction IDs for checks
+	for (int i = 0; i < agent->entries_count; ++i) {
+		agent_stun_entry_t *entry = agent->entries + i;
+		if (entry->type == AGENT_STUN_ENTRY_TYPE_CHECK) {
+			entry->transaction_id_expired = true;
+		}
+	}
 }
 
 void agent_update_ordered_pairs(juice_agent_t *agent) {
