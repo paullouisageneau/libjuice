@@ -1356,7 +1356,7 @@ int agent_process_stun_binding(juice_agent_t *agent, const stun_message_t *msg,
 		//  * If the agent's tiebreaker value is less than the contents of the ICE-CONTROLLED
 		//  attribute, the agent generates a Binding error response and includes an ERROR-CODE
 		//  attribute with a value of 487 (Role Conflict) but retains its role.
-		if (msg->ice_controlled && agent->mode == AGENT_MODE_CONTROLLED) {
+		if (agent->mode == AGENT_MODE_CONTROLLED && msg->ice_controlled) {
 			JLOG_WARN("ICE role conflict (both controlled)");
 			if (agent->ice_tiebreaker >= msg->ice_controlling) {
 				JLOG_DEBUG("Switching to controlling role");
@@ -1618,7 +1618,7 @@ int agent_send_stun_binding(juice_agent_t *agent, agent_stun_entry_t *entry, stu
 			// connectivity check that produced this valid pair [...], this time with the
 			// USE-CANDIDATE attribute.
 			msg.use_candidate = agent->mode == AGENT_MODE_CONTROLLING && entry->pair &&
-			                    entry->pair->nomination_requested;
+			                    entry->pair->nomination_requested && !entry->pair->nominated;
 
 			entry->mode = agent->mode; // save current mode in case of conflict
 			break;
