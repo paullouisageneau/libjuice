@@ -490,7 +490,7 @@ int agent_set_remote_description(juice_agent_t *agent, const char *sdp) {
 
 	if (*agent->remote.ice_ufrag) {
 		// There is already a remote description
-		if (strcmp(agent->remote.ice_ufrag, remote.ice_ufrag) == 0 ||
+		if (strcmp(agent->remote.ice_ufrag, remote.ice_ufrag) == 0 &&
 		    strcmp(agent->remote.ice_pwd, remote.ice_pwd) == 0) {
 			JLOG_DEBUG("Remote description is already set, ignoring");
 			conn_unlock(agent);
