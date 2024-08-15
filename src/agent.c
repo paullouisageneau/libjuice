@@ -333,16 +333,23 @@ int agent_resolve_servers(juice_agent_t *agent) {
 			if (!turn_server->port)
 				turn_server->port = 3478; // default TURN port
 
+			char hostname[256];
 			char service[8];
+			snprintf(hostname, 256, "%s", turn_server->host);
 			snprintf(service, 8, "%hu", turn_server->port);
+
+			conn_unlock(agent);
+
 			addr_record_t records[DEFAULT_MAX_RECORDS_COUNT];
-			int records_count =
-			    addr_resolve(turn_server->host, service, records, DEFAULT_MAX_RECORDS_COUNT);
+			int records_count = addr_resolve(hostname, service, records, DEFAULT_MAX_RECORDS_COUNT);
+
+			conn_lock(agent);
+
 			if (records_count > 0) {
 				if (records_count > DEFAULT_MAX_RECORDS_COUNT)
 					records_count = DEFAULT_MAX_RECORDS_COUNT;
 
-				JLOG_INFO("Using TURN server %s:%s", turn_server->host, service);
+				JLOG_INFO("Using TURN server %s:%s", hostname, service);
 
 				addr_record_t *record = NULL;
 				for (int j = 0; j < records_count; ++j) {
@@ -411,11 +418,18 @@ int agent_resolve_servers(juice_agent_t *agent) {
 		if (!agent->config.stun_server_port)
 			agent->config.stun_server_port = 3478; // default STUN port
 
+		char hostname[256];
 		char service[8];
+		snprintf(hostname, 256, "%s", agent->config.stun_server_host);
 		snprintf(service, 8, "%hu", agent->config.stun_server_port);
+
+		conn_unlock(agent);
+
 		addr_record_t records[MAX_STUN_SERVER_RECORDS_COUNT];
-		int records_count = addr_resolve(agent->config.stun_server_host, service, records,
-		                                 MAX_STUN_SERVER_RECORDS_COUNT);
+		int records_count = addr_resolve(hostname, service, records, MAX_STUN_SERVER_RECORDS_COUNT);
+
+		conn_lock(agent);
+
 		if (records_count > 0) {
 			if (records_count > MAX_STUN_SERVER_RECORDS_COUNT)
 				records_count = MAX_STUN_SERVER_RECORDS_COUNT;
@@ -591,6 +605,7 @@ int agent_set_local_ice_attributes(juice_agent_t *agent, const char *ufrag, cons
 
 int agent_add_turn_server(juice_agent_t *agent, const juice_turn_server_t *turn_server) {
 	if (agent->conn_impl) {
+		// The array must no be reallocated anymore after gathering started
 		JLOG_WARN("Unable to add TURN server, candidates gathering already started");
 		return -1;
 	}
