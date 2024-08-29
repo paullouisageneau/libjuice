@@ -297,7 +297,7 @@ static juice_agent_t *lookup_agent(conn_registry_t *registry, char *buf, size_t 
 			}
 		}
 
-		if (registry->cb_mux_incoming && msg.use_candidate == 0) {
+		if (registry->cb_mux_incoming) {
 			JLOG_DEBUG("Found STUN request with unknown ICE ufrag");
 			char host[ADDR_MAX_NUMERICHOST_LEN];
 			if (getnameinfo((const struct sockaddr *)&src->addr, src->len, host, ADDR_MAX_NUMERICHOST_LEN, NULL, 0, NI_NUMERICHOST)) {
