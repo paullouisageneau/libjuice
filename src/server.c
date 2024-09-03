@@ -557,7 +557,8 @@ int server_interrupt(juice_server_t *server) {
 		return -1;
 	}
 
-	if (udp_sendto_self(server->sock, NULL, 0) < 0) {
+	char dummy = 0; // Some C libraries might error out on NULL pointers
+	if (udp_sendto_self(server->sock, &dummy, 0) < 0) {
 		if (sockerrno != SEAGAIN && sockerrno != SEWOULDBLOCK) {
 			JLOG_WARN("Failed to interrupt thread by triggering socket, errno=%d", sockerrno);
 			mutex_unlock(&server->mutex);
