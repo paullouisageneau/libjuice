@@ -229,7 +229,8 @@ int conn_thread_interrupt(juice_agent_t *agent) {
 	JLOG_VERBOSE("Interrupting connection thread");
 
 	mutex_lock(&conn_impl->send_mutex);
-	if (udp_sendto_self(conn_impl->sock, NULL, 0) < 0) {
+	char dummy = 0; // Some C libraries might error out on NULL pointers
+	if (udp_sendto_self(conn_impl->sock, &dummy, 0) < 0) {
 		if (sockerrno != SEAGAIN && sockerrno != SEWOULDBLOCK) {
 			JLOG_WARN("Failed to interrupt poll by triggering socket, errno=%d", sockerrno);
 		}

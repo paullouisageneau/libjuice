@@ -377,15 +377,15 @@ int conn_poll_interrupt(juice_agent_t *agent) {
 
 	JLOG_VERBOSE("Interrupting connections thread");
 
+	char dummy = 0;
 #ifdef _WIN32
-	if (udp_sendto_self(registry_impl->interrupt_sock, NULL, 0) < 0) {
+	if (udp_sendto_self(registry_impl->interrupt_sock, &dummy, 0) < 0) {
 		if (sockerrno != SEAGAIN && sockerrno != SEWOULDBLOCK) {
 			JLOG_WARN("Failed to interrupt poll by triggering socket, errno=%d", sockerrno);
 		}
 		return -1;
 	}
 #else
-	char dummy = 0;
 	if (write(registry_impl->interrupt_pipe_out, &dummy, 1) < 0 && errno != EAGAIN &&
 	    errno != EWOULDBLOCK) {
 		JLOG_WARN("Failed to interrupt poll by writing to pipe, errno=%d", errno);
