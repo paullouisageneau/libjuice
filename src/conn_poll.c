@@ -301,7 +301,7 @@ int conn_poll_run(conn_registry_t *registry) {
 		JLOG_VERBOSE("Leaving poll");
 		if (ret < 0) {
 #ifdef _WIN32
-			if (ret == WSAENOTSOCK)
+			if (sockerrno == WSAENOTSOCK)
 				continue; // prepare again as the fd has been removed
 #endif
 			if (sockerrno == SEINTR || sockerrno == SEAGAIN) {
