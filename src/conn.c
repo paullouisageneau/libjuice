@@ -66,14 +66,14 @@ static conn_registry_t *acquire_registry(conn_mode_entry_t *entry, udp_socket_co
 		registry = calloc(1, sizeof(conn_registry_t));
 		if (!registry) {
 			JLOG_FATAL("Memory allocation failed for connections registry");
-			return NULL;
+			return (void*)-1;
 		}
 
 		registry->agents = malloc(INITIAL_REGISTRY_SIZE * sizeof(juice_agent_t *));
 		if (!registry->agents) {
 			JLOG_FATAL("Memory allocation failed for connections array");
 			free(registry);
-			return NULL;
+			return (void*)-1;
 		}
 
 		registry->agents_size = INITIAL_REGISTRY_SIZE;
@@ -84,10 +84,11 @@ static conn_registry_t *acquire_registry(conn_mode_entry_t *entry, udp_socket_co
 		mutex_lock(&registry->mutex);
 
 		if (entry->registry_init_func(registry, config)) {
+			JLOG_FATAL("Registry initialization failed");
 			mutex_unlock(&registry->mutex);
 			free(registry->agents);
 			free(registry);
-			return NULL;
+			return (void*)-1;
 		}
 
 		entry->registry = registry;
@@ -132,6 +133,9 @@ int conn_create(juice_agent_t *agent, udp_socket_config_t *config) {
 	mutex_lock(&entry->mutex);
 	conn_registry_t *registry = acquire_registry(entry, config); // locks the registry if created
 	mutex_unlock(&entry->mutex);
+	if(registry == (void*)-1) {
+		return -1;
+	}
 
 	JLOG_DEBUG("Creating connection");
 	if (registry) {
