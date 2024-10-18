@@ -158,7 +158,7 @@ int conn_create(juice_agent_t *agent, udp_socket_config_t *config) {
 		}
 
 		if (get_mode_entry(agent)->init_func(agent, registry, config)) {
-			mutex_unlock(&registry->mutex);
+			release_registry(entry); // unlocks the registry
 			return -1;
 		}
 
