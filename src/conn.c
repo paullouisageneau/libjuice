@@ -54,26 +54,26 @@ static conn_mode_entry_t *get_mode_entry(juice_agent_t *agent) {
 	return mode_entries + (int)mode;
 }
 
-static conn_registry_t *acquire_registry(conn_mode_entry_t *entry, udp_socket_config_t *config) {
+static int acquire_registry(conn_mode_entry_t *entry, udp_socket_config_t *config) {
 	// entry must be locked
 	conn_registry_t *registry = entry->registry;
 	if (!registry) {
 		if (!entry->registry_init_func)
-			return NULL;
+			return 0;
 
 		JLOG_DEBUG("Creating connections registry");
 
 		registry = calloc(1, sizeof(conn_registry_t));
 		if (!registry) {
 			JLOG_FATAL("Memory allocation failed for connections registry");
-			return NULL;
+			return -1;
 		}
 
 		registry->agents = malloc(INITIAL_REGISTRY_SIZE * sizeof(juice_agent_t *));
 		if (!registry->agents) {
 			JLOG_FATAL("Memory allocation failed for connections array");
 			free(registry);
-			return NULL;
+			return -1;
 		}
 
 		registry->agents_size = INITIAL_REGISTRY_SIZE;
@@ -84,10 +84,11 @@ static conn_registry_t *acquire_registry(conn_mode_entry_t *entry, udp_socket_co
 		mutex_lock(&registry->mutex);
 
 		if (entry->registry_init_func(registry, config)) {
+			JLOG_FATAL("Registry initialization failed");
 			mutex_unlock(&registry->mutex);
 			free(registry->agents);
 			free(registry);
-			return NULL;
+			return -1;
 		}
 
 		entry->registry = registry;
@@ -97,7 +98,7 @@ static conn_registry_t *acquire_registry(conn_mode_entry_t *entry, udp_socket_co
 	}
 
 	// registry is locked
-	return registry;
+	return 0;
 }
 
 static void release_registry(conn_mode_entry_t *entry) {
@@ -130,7 +131,11 @@ static void release_registry(conn_mode_entry_t *entry) {
 int conn_create(juice_agent_t *agent, udp_socket_config_t *config) {
 	conn_mode_entry_t *entry = get_mode_entry(agent);
 	mutex_lock(&entry->mutex);
-	conn_registry_t *registry = acquire_registry(entry, config); // locks the registry if created
+	if(acquire_registry(entry, config)) { // locks the registry if created
+		mutex_unlock(&entry->mutex);
+		return -1;
+	}
+	conn_registry_t *registry = entry->registry;
 	mutex_unlock(&entry->mutex);
 
 	JLOG_DEBUG("Creating connection");
@@ -158,7 +163,7 @@ int conn_create(juice_agent_t *agent, udp_socket_config_t *config) {
 		}
 
 		if (get_mode_entry(agent)->init_func(agent, registry, config)) {
-			mutex_unlock(&registry->mutex);
+			release_registry(entry); // unlocks the registry
 			return -1;
 		}
 
