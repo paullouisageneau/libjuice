@@ -108,7 +108,6 @@ target_include_directories(juice-static PUBLIC
 target_include_directories(juice-static PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include/juice)
 target_include_directories(juice-static PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_compile_definitions(juice-static PRIVATE $<$<CONFIG:Release>:RELEASE=1>)
-target_compile_definitions(juice-static PUBLIC JUICE_STATIC)
 target_link_libraries(juice-static PRIVATE Threads::Threads)
 
 if(WIN32)
@@ -185,7 +184,11 @@ install(FILES
 
 set_target_properties(juice PROPERTIES C_VISIBILITY_PRESET hidden)
 target_compile_definitions(juice PRIVATE JUICE_EXPORTS)
+if (NOT BUILD_SHARED_LIBS)
+	target_compile_definitions(juice PUBLIC JUICE_STATIC)
+endif()
 target_compile_definitions(juice-static PRIVATE JUICE_EXPORTS)
+target_compile_definitions(juice-static PUBLIC JUICE_STATIC)
 
 if(NOT MSVC)
 	target_compile_options(juice PRIVATE -Wall -Wextra)
