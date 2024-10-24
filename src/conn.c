@@ -136,7 +136,6 @@ int conn_create(juice_agent_t *agent, udp_socket_config_t *config) {
 		return -1;
 	}
 	conn_registry_t *registry = entry->registry;
-	mutex_unlock(&entry->mutex);
 
 	JLOG_DEBUG("Creating connection");
 	if (registry) {
@@ -154,6 +153,7 @@ int conn_create(juice_agent_t *agent, udp_socket_config_t *config) {
 			if (!new_agents) {
 				JLOG_FATAL("Memory reallocation failed for connections array");
 				mutex_unlock(&registry->mutex);
+				mutex_unlock(&entry->mutex);
 				return -1;
 			}
 
@@ -164,6 +164,7 @@ int conn_create(juice_agent_t *agent, udp_socket_config_t *config) {
 
 		if (get_mode_entry(agent)->init_func(agent, registry, config)) {
 			release_registry(entry); // unlocks the registry
+			mutex_unlock(&entry->mutex);
 			return -1;
 		}
 
@@ -175,13 +176,14 @@ int conn_create(juice_agent_t *agent, udp_socket_config_t *config) {
 
 	} else {
 		if (get_mode_entry(agent)->init_func(agent, NULL, config)) {
-			mutex_unlock(&registry->mutex);
+			mutex_unlock(&entry->mutex);
 			return -1;
 		}
 
 		agent->conn_index = -1;
 	}
 
+	mutex_unlock(&entry->mutex);
 	conn_interrupt(agent);
 	return 0;
 }
