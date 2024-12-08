@@ -248,7 +248,7 @@ int conn_get_addrs(juice_agent_t *agent, addr_record_t *records, size_t size) {
 	return get_mode_entry(agent)->get_addrs_func(agent, records, size);
 }
 
-int juice_mux_stop_listen(const char *bind_address, int local_port) {
+static int juice_mux_stop_listen(const char *bind_address, int local_port) {
     (void)bind_address;
     (void)local_port;
 
@@ -277,6 +277,9 @@ int juice_mux_stop_listen(const char *bind_address, int local_port) {
 
 int juice_mux_listen(const char *bind_address, int local_port, juice_cb_mux_incoming_t cb, void *user_ptr)
 {
+	if (!cb)
+		return juice_mux_stop_listen(bind_address, local_port);
+
 	conn_mode_entry_t *entry = &mode_entries[JUICE_CONCURRENCY_MODE_MUX];
 
 	udp_socket_config_t config;

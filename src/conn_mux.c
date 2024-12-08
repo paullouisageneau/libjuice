@@ -305,7 +305,7 @@ static juice_agent_t *lookup_agent(conn_registry_t *registry, char *buf, size_t 
 				return NULL;
 			}
 
-			juice_mux_incoming_t incoming_info;
+			juice_mux_binding_request_t incoming_info;
 
 			incoming_info.local_ufrag = local_ufrag;
 			incoming_info.remote_ufrag = separator + 1;
