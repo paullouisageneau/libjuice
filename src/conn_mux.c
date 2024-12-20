@@ -522,6 +522,7 @@ int conn_mux_send(juice_agent_t *agent, const addr_record_t *dst, const char *da
 
 	int ret = udp_sendto(registry_impl->sock, data, size, dst);
 	if (ret < 0) {
+		ret = -sockerrno;
 		if (sockerrno == SEAGAIN || sockerrno == SEWOULDBLOCK)
 			JLOG_INFO("Send failed, buffer is full");
 		else if (sockerrno == SEMSGSIZE)
