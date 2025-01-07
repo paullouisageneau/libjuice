@@ -46,6 +46,13 @@ static size_t align32(size_t len) {
 	return len;
 }
 
+static void generate_mask(const uint8_t *transaction_id, uint8_t *mask) {
+	// mask is 16 bytes
+	const uint32_t magic = htonl(STUN_MAGIC);
+	memcpy(mask, (const uint8_t*)&magic, 4);
+	memcpy(mask + 4, transaction_id, 12);
+}
+
 static size_t generate_hmac_key(const stun_message_t *msg, const char *password, void *key) {
 	if (*msg->credentials.realm != '\0') {
 		// long-term credentials
@@ -127,8 +134,7 @@ int stun_write(void *buf, size_t size, const stun_message_t *msg, const char *pa
 		JLOG_VERBOSE("Writing XOR mapped address");
 		uint8_t value[32];
 		uint8_t mask[16];
-		*((uint32_t *)mask) = htonl(STUN_MAGIC);
-		memcpy(mask + 4, msg->transaction_id, 12);
+		generate_mask(msg->transaction_id, mask);
 		int value_len = stun_write_value_mapped_address(
 		    value, 32, (const struct sockaddr *)&msg->mapped.addr, msg->mapped.len, mask);
 		if (value_len > 0) {
@@ -188,8 +194,7 @@ int stun_write(void *buf, size_t size, const stun_message_t *msg, const char *pa
 			JLOG_VERBOSE("Writing XOR peer address");
 			uint8_t value[32];
 			uint8_t mask[16];
-			*((uint32_t *)mask) = htonl(STUN_MAGIC);
-			memcpy(mask + 4, msg->transaction_id, 12);
+			generate_mask(msg->transaction_id, mask);
 			int value_len = stun_write_value_mapped_address(
 			    value, 32, (const struct sockaddr *)&peer->addr, peer->len, mask);
 			if (value_len > 0) {
@@ -204,8 +209,7 @@ int stun_write(void *buf, size_t size, const stun_message_t *msg, const char *pa
 		JLOG_VERBOSE("Writing XOR relay address");
 		uint8_t value[32];
 		uint8_t mask[16];
-		*((uint32_t *)mask) = htonl(STUN_MAGIC);
-		memcpy(mask + 4, msg->transaction_id, 12);
+		generate_mask(msg->transaction_id, mask);
 		int value_len = stun_write_value_mapped_address(
 		    value, 32, (const struct sockaddr *)&msg->relayed.addr, msg->relayed.len, mask);
 		if (value_len > 0) {
@@ -650,8 +654,7 @@ int stun_read_attr(const void *data, size_t size, stun_message_t *msg, uint8_t *
 	case STUN_ATTR_XOR_MAPPED_ADDRESS: {
 		JLOG_VERBOSE("Reading XOR mapped address");
 		uint8_t mask[16];
-		*((uint32_t *)mask) = htonl(STUN_MAGIC);
-		memcpy(mask + 4, msg->transaction_id, 12);
+		generate_mask(msg->transaction_id, mask);
 		if (stun_read_value_mapped_address(attr->value, length, &msg->mapped, mask) < 0)
 			return -1;
 		break;
@@ -950,8 +953,7 @@ int stun_read_attr(const void *data, size_t size, stun_message_t *msg, uint8_t *
 		JLOG_VERBOSE("Reading XOR peer address");
 		if (msg->peers_size < STUN_MAX_PEER_ADDRESSES) {
 			uint8_t mask[16];
-			*((uint32_t *)mask) = htonl(STUN_MAGIC);
-			memcpy(mask + 4, msg->transaction_id, 12);
+			generate_mask(msg->transaction_id, mask);
 			addr_record_t *peer = msg->peers + msg->peers_size;
 			if (stun_read_value_mapped_address(attr->value, length, peer, mask) < 0)
 				return -1;
@@ -965,8 +967,7 @@ int stun_read_attr(const void *data, size_t size, stun_message_t *msg, uint8_t *
 	case STUN_ATTR_XOR_RELAYED_ADDRESS: {
 		JLOG_VERBOSE("Reading XOR relayed address");
 		uint8_t mask[16];
-		*((uint32_t *)mask) = htonl(STUN_MAGIC);
-		memcpy(mask + 4, msg->transaction_id, 12);
+		generate_mask(msg->transaction_id, mask);
 		if (stun_read_value_mapped_address(attr->value, length, &msg->relayed, mask) < 0)
 			return -1;
 		break;
