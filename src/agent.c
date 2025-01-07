@@ -679,7 +679,8 @@ int agent_relay_send(juice_agent_t *agent, agent_stun_entry_t *entry, const addr
 	msg.msg_class = STUN_CLASS_INDICATION;
 	msg.msg_method = STUN_METHOD_SEND;
 	juice_random(msg.transaction_id, STUN_TRANSACTION_ID_SIZE);
-	msg.peer = *dst;
+	msg.peers_size = 1;
+	msg.peers[0] = *dst;
 	msg.data = data;
 	msg.data_size = size;
 
@@ -1989,7 +1990,8 @@ int agent_send_turn_create_permission_request(juice_agent_t *agent, agent_stun_e
 		return -1;
 
 	msg.credentials = entry->turn->credentials;
-	msg.peer = *record;
+	msg.peers_size = 1;
+	msg.peers[0] = *record;
 
 	char buffer[BUFFER_SIZE];
 	int size = stun_write(buffer, BUFFER_SIZE, &msg, entry->turn->password);
@@ -2093,7 +2095,8 @@ int agent_send_turn_channel_bind_request(juice_agent_t *agent, agent_stun_entry_
 
 	msg.credentials = entry->turn->credentials;
 	msg.channel_number = channel;
-	msg.peer = *record;
+	msg.peers_size = 1;
+	msg.peers[0] = *record;
 
 	if (out_channel)
 		*out_channel = channel;
@@ -2127,11 +2130,12 @@ int agent_process_turn_data(juice_agent_t *agent, const stun_message_t *msg,
 		JLOG_WARN("Missing data in TURN Data indication");
 		return -1;
 	}
-	if (!msg->peer.len) {
+	if (!msg->peers_size) {
 		JLOG_WARN("Missing peer address in TURN Data indication");
 		return -1;
 	}
-	return agent_input(agent, (char *)msg->data, msg->data_size, &msg->peer, &entry->relayed);
+	const addr_record_t *peer = msg->peers;
+	return agent_input(agent, (char *)msg->data, msg->data_size, peer, &entry->relayed);
 }
 
 int agent_process_channel_data(juice_agent_t *agent, agent_stun_entry_t *entry, char *buf,

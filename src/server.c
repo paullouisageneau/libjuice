@@ -503,7 +503,8 @@ int server_forward(juice_server_t *server, server_turn_alloc_t *alloc) {
 			memset(&msg, 0, sizeof(msg));
 			msg.msg_class = STUN_CLASS_INDICATION;
 			msg.msg_method = STUN_METHOD_DATA;
-			msg.peer = record;
+			msg.peers_size = 1;
+			msg.peers[0] = record;
 			msg.data = buffer;
 			msg.data_size = len;
 			juice_random(msg.transaction_id, STUN_TRANSACTION_ID_SIZE);
@@ -978,9 +979,15 @@ int server_process_turn_create_permission(juice_server_t *server, const stun_mes
 
 	JLOG_DEBUG("Processing STUN CreatePermission request");
 
-	if (!msg->peer.len) {
+	// RFC 5766 9.2. Receiving a CreatePermission Request:
+	// The CreatePermission request MUST contain at least one XOR-PEER-ADDRESS attribute and MAY
+	// contain multiple such attributes. If no such attribute exists, or if any of these attributes
+	// are invalid, then a 400 (Bad Request) error is returned.
+	if (!msg->peers_size) {
 		JLOG_WARN("Missing peer address in TURN CreatePermission request");
-		return -1;
+		return server_answer_stun_error(server, msg->transaction_id, src, msg->msg_method,
+		                                400, // Bad request
+		                                credentials);
 	}
 
 	server_turn_alloc_t *alloc = find_allocation(server->allocs, server->allocs_count, src, false);
@@ -995,10 +1002,13 @@ int server_process_turn_create_permission(juice_server_t *server, const stun_mes
 		                                credentials);
 	}
 
-	if (!turn_set_permission(&alloc->map, msg->transaction_id, &msg->peer, PERMISSION_LIFETIME)) {
-		server_answer_stun_error(server, msg->transaction_id, src, msg->msg_method, 500,
-		                         credentials);
-		return -1;
+	for (size_t i = 0; i < msg->peers_size; ++i) {
+		const addr_record_t *peer = msg->peers + i;
+		if (!turn_set_permission(&alloc->map, msg->transaction_id, peer, PERMISSION_LIFETIME)) {
+			server_answer_stun_error(server, msg->transaction_id, src, msg->msg_method, 500,
+			                         credentials);
+			return -1;
+		}
 	}
 
 	stun_message_t ans;
@@ -1020,13 +1030,17 @@ int server_process_turn_channel_bind(juice_server_t *server, const stun_message_
 
 	JLOG_DEBUG("Processing STUN ChannelBind request");
 
-	if (!msg->peer.len) {
+	if (!msg->peers_size) {
 		JLOG_WARN("Missing peer address in TURN ChannelBind request");
-		return -1;
+		return server_answer_stun_error(server, msg->transaction_id, src, msg->msg_method,
+		                                400, // Bad request
+		                                credentials);
 	}
 	if (!msg->channel_number) {
 		JLOG_WARN("Missing channel number in TURN ChannelBind request");
-		return -1;
+		return server_answer_stun_error(server, msg->transaction_id, src, msg->msg_method,
+		                                400, // Bad request
+		                                credentials);
 	}
 
 	server_turn_alloc_t *alloc = find_allocation(server->allocs, server->allocs_count, src, false);
@@ -1049,7 +1063,8 @@ int server_process_turn_channel_bind(juice_server_t *server, const stun_message_
 		                                credentials);
 	}
 
-	if (!turn_bind_channel(&alloc->map, &msg->peer, msg->transaction_id, channel, BIND_LIFETIME)) {
+	const addr_record_t *peer = msg->peers;
+	if (!turn_bind_channel(&alloc->map, peer, msg->transaction_id, channel, BIND_LIFETIME)) {
 		server_answer_stun_error(server, msg->transaction_id, src, msg->msg_method, 500,
 		                         credentials);
 		return -1;
@@ -1077,7 +1092,7 @@ int server_process_turn_send(juice_server_t *server, const stun_message_t *msg,
 		JLOG_WARN("Missing data in TURN Send indication");
 		return -1;
 	}
-	if (!msg->peer.len) {
+	if (!msg->peers_size) {
 		JLOG_WARN("Missing peer address in TURN Send indication");
 		return -1;
 	}
@@ -1088,14 +1103,15 @@ int server_process_turn_send(juice_server_t *server, const stun_message_t *msg,
 		return -1;
 	}
 
-	if (!turn_has_permission(&alloc->map, &msg->peer)) {
+	const addr_record_t *peer = msg->peers;
+	if (!turn_has_permission(&alloc->map, peer)) {
 		JLOG_WARN("No permission for peer address");
 		return -1;
 	}
 
 	JLOG_VERBOSE("Forwarding datagram to peer, size=%zu", msg->data_size);
 
-	int ret = udp_sendto(alloc->sock, msg->data, msg->data_size, &msg->peer);
+	int ret = udp_sendto(alloc->sock, msg->data, msg->data_size, peer);
 	if (ret < 0 && sockerrno != SEAGAIN && sockerrno != SEWOULDBLOCK)
 		JLOG_WARN("Forwarding failed, errno=%d", sockerrno);
 
