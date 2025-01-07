@@ -182,19 +182,22 @@ int stun_write(void *buf, size_t size, const stun_message_t *msg, const char *pa
 			goto overflow;
 		pos += len;
 	}
-	if (msg->peer.len) {
-		JLOG_VERBOSE("Writing XOR peer address");
-		uint8_t value[32];
-		uint8_t mask[16];
-		*((uint32_t *)mask) = htonl(STUN_MAGIC);
-		memcpy(mask + 4, msg->transaction_id, 12);
-		int value_len = stun_write_value_mapped_address(
-		    value, 32, (const struct sockaddr *)&msg->peer.addr, msg->peer.len, mask);
-		if (value_len > 0) {
-			len = stun_write_attr(pos, end - pos, STUN_ATTR_XOR_PEER_ADDRESS, value, value_len);
-			if (len <= 0)
-				goto overflow;
-			pos += len;
+	for (size_t i = 0; i < msg->peers_size; ++i) {
+		const addr_record_t *peer = msg->peers + i;
+		if (peer->len) {
+			JLOG_VERBOSE("Writing XOR peer address");
+			uint8_t value[32];
+			uint8_t mask[16];
+			*((uint32_t *)mask) = htonl(STUN_MAGIC);
+			memcpy(mask + 4, msg->transaction_id, 12);
+			int value_len = stun_write_value_mapped_address(
+			    value, 32, (const struct sockaddr *)&peer->addr, peer->len, mask);
+			if (value_len > 0) {
+				len = stun_write_attr(pos, end - pos, STUN_ATTR_XOR_PEER_ADDRESS, value, value_len);
+				if (len <= 0)
+					goto overflow;
+				pos += len;
+			}
 		}
 	}
 	if (msg->relayed.len) {
@@ -908,7 +911,7 @@ int stun_read_attr(const void *data, size_t size, stun_message_t *msg, uint8_t *
 			JLOG_DEBUG("STUN ICE controlling attribute length invalid, length=%zu", length);
 			return -1;
 		}
-		uint32_t* value32 = (uint32_t *)attr->value;
+		uint32_t *value32 = (uint32_t *)attr->value;
 		msg->ice_controlling = ((uint64_t)ntohl(value32[0]) << 32) | ntohl(value32[1]);
 		break;
 	}
@@ -918,7 +921,7 @@ int stun_read_attr(const void *data, size_t size, stun_message_t *msg, uint8_t *
 			JLOG_DEBUG("STUN ICE controlled attribute length invalid, length=%zu", length);
 			return -1;
 		}
-		uint32_t* value32 = (uint32_t *)attr->value;
+		uint32_t *value32 = (uint32_t *)attr->value;
 		msg->ice_controlled = ((uint64_t)ntohl(value32[0]) << 32) | ntohl(value32[1]);
 		break;
 	}
@@ -945,11 +948,18 @@ int stun_read_attr(const void *data, size_t size, stun_message_t *msg, uint8_t *
 	}
 	case STUN_ATTR_XOR_PEER_ADDRESS: {
 		JLOG_VERBOSE("Reading XOR peer address");
-		uint8_t mask[16];
-		*((uint32_t *)mask) = htonl(STUN_MAGIC);
-		memcpy(mask + 4, msg->transaction_id, 12);
-		if (stun_read_value_mapped_address(attr->value, length, &msg->peer, mask) < 0)
-			return -1;
+		if (msg->peers_size < STUN_MAX_PEER_ADDRESSES) {
+			uint8_t mask[16];
+			*((uint32_t *)mask) = htonl(STUN_MAGIC);
+			memcpy(mask + 4, msg->transaction_id, 12);
+			addr_record_t *peer = msg->peers + msg->peers_size;
+			if (stun_read_value_mapped_address(attr->value, length, peer, mask) < 0)
+				return -1;
+			if (peer->len)
+				++msg->peers_size;
+		} else {
+			JLOG_WARN("Too many STUN XOR-PEER-ADDRESS attributes, ignoring");
+		}
 		break;
 	}
 	case STUN_ATTR_XOR_RELAYED_ADDRESS: {
@@ -1004,7 +1014,7 @@ int stun_read_attr(const void *data, size_t size, stun_message_t *msg, uint8_t *
 			JLOG_DEBUG("STUN reservation token length invalid, length=%zu", length);
 			return -1;
 		}
-		uint32_t* value32 = (uint32_t *)attr->value;
+		uint32_t *value32 = (uint32_t *)attr->value;
 		msg->reservation_token = ((uint64_t)ntohl(value32[0]) << 32) | ntohl(value32[1]);
 		break;
 	}
