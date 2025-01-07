@@ -478,6 +478,21 @@ int server_forward(juice_server_t *server, server_turn_alloc_t *alloc) {
 		}
 		addr_unmap_inet6_v4mapped((struct sockaddr *)&record.addr, &record.len);
 
+		// RFC 5766 8. Permissions:
+		// When a UDP datagram arrives at the relayed transport address for the allocation, the
+		// server extracts the source IP address from the IP header. The server then compares this
+		// address with the IP address associated with each permission in the list of permissions
+		// for the allocation. If no match is found, relaying is not permitted, and the server
+		// silently discards the UDP datagram.
+		if (!turn_has_permission(&alloc->map, &record)) {
+			if (JLOG_DEBUG_ENABLED) {
+				char record_str[ADDR_MAX_STRING_LEN];
+				addr_record_to_string(&record, record_str, ADDR_MAX_STRING_LEN);
+				JLOG_DEBUG("No permission for remote address %s, discarding", record_str);
+			}
+			return -1;
+		}
+
 		uint16_t channel;
 		if (turn_get_bound_channel(&alloc->map, &record, &channel)) {
 			// Use ChannelData
@@ -1063,8 +1078,17 @@ int server_process_turn_channel_bind(juice_server_t *server, const stun_message_
 		                                credentials);
 	}
 
+	// RFC 5766 11.3. Receiving a ChannelBind Response
+	// When the client receives a ChannelBind success response, it updates its data structures to
+	// record that the channel binding is now active. It also updates its data structures to record
+	// that the corresponding permission has been installed or refreshed.
 	const addr_record_t *peer = msg->peers;
 	if (!turn_bind_channel(&alloc->map, peer, msg->transaction_id, channel, BIND_LIFETIME)) {
+		server_answer_stun_error(server, msg->transaction_id, src, msg->msg_method, 500,
+		                         credentials);
+		return -1;
+	}
+	if (!turn_set_permission(&alloc->map, msg->transaction_id, peer, PERMISSION_LIFETIME)) {
 		server_answer_stun_error(server, msg->transaction_id, src, msg->msg_method, 500,
 		                         credentials);
 		return -1;
@@ -1105,7 +1129,11 @@ int server_process_turn_send(juice_server_t *server, const stun_message_t *msg,
 
 	const addr_record_t *peer = msg->peers;
 	if (!turn_has_permission(&alloc->map, peer)) {
-		JLOG_WARN("No permission for peer address");
+		if (JLOG_WARN_ENABLED) {
+			char peer_str[ADDR_MAX_STRING_LEN];
+			addr_record_to_string(peer, peer_str, ADDR_MAX_STRING_LEN);
+			JLOG_WARN("No permission for peer address %s", peer_str);
+		}
 		return -1;
 	}
 
