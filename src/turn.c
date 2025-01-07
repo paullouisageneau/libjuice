@@ -156,12 +156,14 @@ static void delete_entry(turn_map_t *map, turn_entry_t *entry) {
 */
 static turn_entry_t *find_entry(turn_map_t *map, const addr_record_t *record,
                                 turn_entry_type_t type, bool allow_deleted) {
-	unsigned long key = (addr_record_hash(record, false) + (int)type) % map->map_size;
+	// RFC 5766: only addresses are compared and port numbers are not considered.
+	unsigned long key = (addr_record_hash(record, false /*no port*/) + (int)type) % map->map_size;
 	unsigned long pos = key;
 	while (true) {
 		turn_entry_t *entry = map->map + pos;
 		if (entry->type == TURN_ENTRY_TYPE_EMPTY ||
-		    (entry->type == type && addr_record_is_equal(&entry->record, record, false)))
+		    (entry->type == type &&
+		     addr_record_is_equal(&entry->record, record, false /*no port*/)))
 			break;
 
 		if (allow_deleted && entry->type == TURN_ENTRY_TYPE_DELETED)
@@ -241,6 +243,13 @@ void turn_destroy_map(turn_map_t *map) {
 
 bool turn_set_permission(turn_map_t *map, const uint8_t *transaction_id,
                          const addr_record_t *record, timediff_t duration) {
+	if (record) {
+		if (JLOG_DEBUG_ENABLED) {
+			char record_str[ADDR_MAX_STRING_LEN];
+			addr_record_to_string(record, record_str, ADDR_MAX_STRING_LEN);
+			JLOG_DEBUG("Updating TURN permission for address %s", record_str);
+		}
+	}
 	return update_timestamp(map, TURN_ENTRY_TYPE_PERMISSION, transaction_id, record, duration);
 }
 
@@ -254,6 +263,15 @@ bool turn_has_permission(turn_map_t *map, const addr_record_t *record) {
 
 bool turn_bind_channel(turn_map_t *map, const addr_record_t *record, const uint8_t *transaction_id,
                        uint16_t channel, timediff_t duration) {
+	if(!record)
+		return false;
+
+	if (JLOG_DEBUG_ENABLED) {
+		char record_str[ADDR_MAX_STRING_LEN];
+		addr_record_to_string(record, record_str, ADDR_MAX_STRING_LEN);
+		JLOG_DEBUG("Binding TURN channel %hu to address %s", channel, record_str);
+	}
+
 	if (!is_valid_channel(channel)) {
 		JLOG_ERROR("Invalid channel number: 0x%hX", channel);
 		return false;
