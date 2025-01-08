@@ -1299,21 +1299,21 @@ int agent_dispatch_stun(juice_agent_t *agent, void *buf, size_t size, stun_messa
 	case STUN_METHOD_ALLOCATE:
 	case STUN_METHOD_REFRESH:
 		if (agent_verify_credentials(agent, entry, buf, size, msg)) {
-			JLOG_WARN("Ignoring invalid TURN Allocate message");
+			JLOG_WARN("Ignoring TURN Allocate message with invalid credentials (Is server authentication disabled?)");
 			return -1;
 		}
 		return agent_process_turn_allocate(agent, msg, entry);
 
 	case STUN_METHOD_CREATE_PERMISSION:
 		if (agent_verify_credentials(agent, entry, buf, size, msg)) {
-			JLOG_WARN("Ignoring invalid TURN CreatePermission message");
+			JLOG_WARN("Ignoring TURN CreatePermission message with invalid credentials");
 			return -1;
 		}
 		return agent_process_turn_create_permission(agent, msg, entry);
 
 	case STUN_METHOD_CHANNEL_BIND:
 		if (agent_verify_credentials(agent, entry, buf, size, msg)) {
-			JLOG_WARN("Ignoring invalid TURN ChannelBind message");
+			JLOG_WARN("Ignoring TURN ChannelBind message with invalid credentials");
 			return -1;
 		}
 		return agent_process_turn_channel_bind(agent, msg, entry);
