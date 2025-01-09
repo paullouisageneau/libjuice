@@ -135,6 +135,7 @@ int conn_create(juice_agent_t *agent, udp_socket_config_t *config) {
 		mutex_unlock(&entry->mutex);
 		return -1;
 	}
+
 	conn_registry_t *registry = entry->registry;
 
 	JLOG_DEBUG("Creating connection");
@@ -301,15 +302,21 @@ int juice_mux_listen(const char *bind_address, int local_port, juice_cb_mux_inco
 		return -1;
 	}
 
-	conn_registry_t *registry = acquire_registry(entry, &config);
-	mutex_unlock(&entry->mutex);
+	if(acquire_registry(entry, &config)) { // locks the registry if created
+		mutex_unlock(&entry->mutex);
+		return -1;
+	}
 
-	if (!registry)
-		return -2;
+	conn_registry_t *registry = entry->registry;
+	if(!registry) {
+		mutex_unlock(&entry->mutex);
+		return -1;
+	}
 
 	registry->cb_mux_incoming = cb;
 	registry->mux_incoming_user_ptr = user_ptr;
-	mutex_unlock(&registry->mutex);
 
+	mutex_unlock(&registry->mutex);
+	mutex_unlock(&entry->mutex);
 	return 0;
 }
