@@ -412,6 +412,7 @@ int conn_poll_send(juice_agent_t *agent, const addr_record_t *dst, const char *d
 
 	int ret = udp_sendto(conn_impl->sock, data, size, dst);
 	if (ret < 0) {
+		ret = -sockerrno;
 		if (sockerrno == SEAGAIN || sockerrno == SEWOULDBLOCK)
 			JLOG_INFO("Send failed, buffer is full");
 		else if (sockerrno == SEMSGSIZE)

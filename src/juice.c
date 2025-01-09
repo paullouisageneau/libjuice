@@ -85,23 +85,21 @@ JUICE_EXPORT int juice_set_remote_gathering_done(juice_agent_t *agent) {
 }
 
 JUICE_EXPORT int juice_send(juice_agent_t *agent, const char *data, size_t size) {
-	if (!agent || (!data && size))
-		return JUICE_ERR_INVALID;
-
-	if (agent_send(agent, data, size, 0) < 0)
-		return JUICE_ERR_FAILED;
-
-	return JUICE_ERR_SUCCESS;
+	return juice_send_diffserv(agent, data, size, 0);
 }
 
 JUICE_EXPORT int juice_send_diffserv(juice_agent_t *agent, const char *data, size_t size, int ds) {
 	if (!agent || (!data && size))
 		return JUICE_ERR_INVALID;
 
-	if (agent_send(agent, data, size, ds) < 0)
-		return JUICE_ERR_FAILED;
-
-	return JUICE_ERR_SUCCESS;
+	int ret = agent_send(agent, data, size, ds);
+	if(ret >= 0)
+		return JUICE_ERR_SUCCESS;
+	if(ret == -SEAGAIN || ret == -SEWOULDBLOCK)
+		return JUICE_ERR_AGAIN;
+	if(ret == -SEMSGSIZE)
+		return JUICE_ERR_TOO_LARGE;
+	return JUICE_ERR_FAILED;
 }
 
 JUICE_EXPORT juice_state_t juice_get_state(juice_agent_t *agent) { return agent_get_state(agent); }

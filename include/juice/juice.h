@@ -41,6 +41,8 @@ extern "C" {
 #define JUICE_ERR_FAILED -2    // runtime error
 #define JUICE_ERR_NOT_AVAIL -3 // element not available
 #define JUICE_ERR_IGNORED -4   // ignored
+#define JUICE_ERR_AGAIN -5     // buffer full
+#define JUICE_ERR_TOO_LARGE -6 // datagram too large
 
 // ICE Agent
 
