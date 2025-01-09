@@ -109,7 +109,7 @@ static void release_registry(conn_mode_entry_t *entry) {
 
 	// registry must be locked
 
-	if (registry->agents_count == 0) {
+	if (registry->agents_count == 0 && registry->cb_mux_incoming == NULL) {
 		JLOG_DEBUG("No connection left, destroying connections registry");
 		mutex_unlock(&registry->mutex);
 
@@ -253,4 +253,63 @@ int conn_get_addrs(juice_agent_t *agent, addr_record_t *records, size_t size) {
 		return -1;
 
 	return get_mode_entry(agent)->get_addrs_func(agent, records, size);
+}
+
+static int juice_mux_stop_listen(const char *bind_address, int local_port) {
+    (void)bind_address;
+    (void)local_port;
+
+	conn_mode_entry_t *entry = &mode_entries[JUICE_CONCURRENCY_MODE_MUX];
+
+	mutex_lock(&entry->mutex);
+
+	conn_registry_t *registry = entry->registry;
+	if (!registry) {
+		mutex_unlock(&entry->mutex);
+		return -1;
+	}
+
+	mutex_lock(&registry->mutex);
+
+	registry->cb_mux_incoming = NULL;
+	registry->mux_incoming_user_ptr = NULL;
+	conn_mux_interrupt_registry(registry);
+
+	release_registry(entry);
+
+	mutex_unlock(&entry->mutex);
+
+	return 0;
+}
+
+int juice_mux_listen(const char *bind_address, int local_port, juice_cb_mux_incoming_t cb, void *user_ptr)
+{
+	if (!cb)
+		return juice_mux_stop_listen(bind_address, local_port);
+
+	conn_mode_entry_t *entry = &mode_entries[JUICE_CONCURRENCY_MODE_MUX];
+
+	udp_socket_config_t config;
+	config.bind_address = bind_address;
+	config.port_begin = config.port_end = local_port;
+
+	mutex_lock(&entry->mutex);
+
+	if (entry->registry) {
+		mutex_unlock(&entry->mutex);
+		JLOG_DEBUG("juice_mux_listen needs to be called before establishing any mux connection.");
+		return -1;
+	}
+
+	conn_registry_t *registry = acquire_registry(entry, &config);
+	mutex_unlock(&entry->mutex);
+
+	if (!registry)
+		return -2;
+
+	registry->cb_mux_incoming = cb;
+	registry->mux_incoming_user_ptr = user_ptr;
+	mutex_unlock(&registry->mutex);
+
+	return 0;
 }

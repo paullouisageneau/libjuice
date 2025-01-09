@@ -24,6 +24,7 @@ int conn_mux_init(juice_agent_t *agent, conn_registry_t *registry, udp_socket_co
 void conn_mux_cleanup(juice_agent_t *agent);
 void conn_mux_lock(juice_agent_t *agent);
 void conn_mux_unlock(juice_agent_t *agent);
+int conn_mux_interrupt_registry(conn_registry_t *registry);
 int conn_mux_interrupt(juice_agent_t *agent);
 int conn_mux_send(juice_agent_t *agent, const addr_record_t *dst, const char *data, size_t size,
                         int ds);
