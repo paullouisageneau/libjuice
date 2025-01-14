@@ -256,7 +256,7 @@ int conn_get_addrs(juice_agent_t *agent, addr_record_t *records, size_t size) {
 	return get_mode_entry(agent)->get_addrs_func(agent, records, size);
 }
 
-static int juice_mux_stop_listen(const char *bind_address, int local_port) {
+int juice_mux_stop_listen(const char *bind_address, int local_port) {
     (void)bind_address;
     (void)local_port;
 

@@ -132,6 +132,7 @@ JUICE_EXPORT int juice_get_selected_addresses(juice_agent_t *agent, char *local,
 JUICE_EXPORT int juice_set_local_ice_attributes(juice_agent_t *agent, const char *ufrag, const char *pwd);
 JUICE_EXPORT const char *juice_state_to_string(juice_state_t state);
 JUICE_EXPORT int juice_mux_listen(const char *bind_address, int local_port, juice_cb_mux_incoming_t cb, void *user_ptr);
+JUICE_EXPORT int juice_mux_stop_listen(const char *bind_address, int local_port);
 
 // ICE server
 
