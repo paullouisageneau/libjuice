@@ -25,6 +25,8 @@ typedef struct juice_agent juice_agent_t;
 // See include/juice/juice.h for implemented concurrency modes
 
 typedef struct conn_registry {
+	int registry_index;
+	char *address;
 	void *impl;
 	mutex_t mutex;
 	juice_agent_t **agents;
