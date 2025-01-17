@@ -15,6 +15,7 @@
 
 #include <assert.h>
 #include <string.h>
+#include <stdio.h>
 
 #define INITIAL_REGISTRY_SIZE 16
 
@@ -33,7 +34,9 @@ typedef struct conn_mode_entry {
 	int (*get_addrs_func)(juice_agent_t *agent, addr_record_t *records, size_t size);
 
 	mutex_t mutex;
-	conn_registry_t *registry;
+	conn_registry_t **registries;
+	int registries_size;
+	int registries_count;
 } conn_mode_entry_t;
 
 #define MODE_ENTRIES_SIZE 3
@@ -41,12 +44,12 @@ typedef struct conn_mode_entry {
 static conn_mode_entry_t mode_entries[MODE_ENTRIES_SIZE] = {
     {conn_poll_registry_init, conn_poll_registry_cleanup, conn_poll_init, conn_poll_cleanup,
      conn_poll_lock, conn_poll_unlock, conn_poll_interrupt, conn_poll_send, conn_poll_get_addrs,
-     MUTEX_INITIALIZER, NULL},
+     MUTEX_INITIALIZER, NULL, 0, 0},
     {conn_mux_registry_init, conn_mux_registry_cleanup, conn_mux_init, conn_mux_cleanup,
      conn_mux_lock, conn_mux_unlock, conn_mux_interrupt, conn_mux_send, conn_mux_get_addrs,
-     MUTEX_INITIALIZER, NULL},
+     MUTEX_INITIALIZER, NULL, 0, 0},
     {NULL, NULL, conn_thread_init, conn_thread_cleanup, conn_thread_lock, conn_thread_unlock,
-     conn_thread_interrupt, conn_thread_send, conn_thread_get_addrs, MUTEX_INITIALIZER, NULL}};
+     conn_thread_interrupt, conn_thread_send, conn_thread_get_addrs, MUTEX_INITIALIZER, NULL, 0, 0}};
 
 static conn_mode_entry_t *get_mode_entry(juice_agent_t *agent) {
 	juice_concurrency_mode_t mode = agent->config.concurrency_mode;
@@ -54,9 +57,84 @@ static conn_mode_entry_t *get_mode_entry(juice_agent_t *agent) {
 	return mode_entries + (int)mode;
 }
 
+static char *get_address (const char *bind_address, uint16_t port) {
+	if (!bind_address) {
+		bind_address = "0.0.0.0";
+	}
+
+	// search for '.' in bind_address, treat as IPv4 if found
+	char *result = strchr(bind_address, '.');
+	int index = (int)(result - bind_address);
+	int maxAddrSize = 48; // ip6 is 39 chars + [ + ] + : + 5 for the port + \0
+	char *address = (char*) calloc(1, maxAddrSize * sizeof(char));
+
+	// ip6
+	char *format = "[%s]:%d";
+
+	if (index > -1) {
+		// ip4
+		format = "%s:%d";
+	}
+
+	sprintf(address, format, bind_address, port);
+
+	return address;
+}
+
+static conn_registry_t *get_port_registry(conn_mode_entry_t *entry, const char *bind_address, uint16_t port) {
+	char *address = get_address(bind_address, port);
+
+	for (int i = 0; i < entry->registries_size; i++) {
+		if (!entry->registries[i]) {
+			continue;
+		}
+
+		if (strcmp(entry->registries[i]->address, address) == 0) {
+			return entry->registries[i];
+		}
+	}
+
+	return NULL;
+}
+
+static int add_registry(conn_mode_entry_t *entry, conn_registry_t *registry) {
+	int i = 0;
+		while (i < entry->registries_size && entry->registries[i])
+			++i;
+
+	if (i == entry->registries_size) {
+		int new_size = entry->registries_size * 2;
+
+		if (new_size == 0) {
+			new_size = 1;
+		}
+
+		JLOG_DEBUG("Reallocating registries array, new_size=%d", new_size);
+		assert(new_size > 0);
+
+		conn_registry_t **new_registries =
+				realloc(entry->registries, new_size * sizeof(conn_registry_t *));
+		if (!new_registries) {
+			JLOG_FATAL("Memory reallocation failed for registries array");
+			return -1;
+		}
+
+		entry->registries = new_registries;
+		entry->registries_size = new_size;
+		memset(entry->registries + i, 0, (new_size - i) * sizeof(conn_registry_t *));
+	}
+
+	entry->registries[i] = registry;
+	registry->registry_index = i;
+	++entry->registries_count;
+
+	return 0;
+}
+
 static int acquire_registry(conn_mode_entry_t *entry, udp_socket_config_t *config) {
 	// entry must be locked
-	conn_registry_t *registry = entry->registry;
+	conn_registry_t *registry = get_port_registry(entry, config->bind_address, config->port_begin);
+
 	if (!registry) {
 		if (!entry->registry_init_func)
 			return 0;
@@ -83,16 +161,25 @@ static int acquire_registry(conn_mode_entry_t *entry, udp_socket_config_t *confi
 		mutex_init(&registry->mutex, MUTEX_RECURSIVE);
 		mutex_lock(&registry->mutex);
 
+		registry->address = get_address(config->bind_address, config->port_begin);
+
 		if (entry->registry_init_func(registry, config)) {
 			JLOG_FATAL("Registry initialization failed");
 			mutex_unlock(&registry->mutex);
 			free(registry->agents);
+			free(registry->address);
 			free(registry);
 			return -1;
 		}
 
-		entry->registry = registry;
-
+		if (add_registry(entry, registry)) {
+			JLOG_FATAL("Adding registry to entry failed");
+			mutex_unlock(&registry->mutex);
+			free(registry->agents);
+			free(registry->address);
+			free(registry);
+			return -1;
+		}
 	} else {
 		mutex_lock(&registry->mutex);
 	}
@@ -101,9 +188,8 @@ static int acquire_registry(conn_mode_entry_t *entry, udp_socket_config_t *confi
 	return 0;
 }
 
-static void release_registry(conn_mode_entry_t *entry) {
+static void release_registry(conn_mode_entry_t *entry, conn_registry_t *registry) {
 	// entry must be locked
-	conn_registry_t *registry = entry->registry;
 	if (!registry)
 		return;
 
@@ -116,9 +202,19 @@ static void release_registry(conn_mode_entry_t *entry) {
 		if (entry->registry_cleanup_func)
 			entry->registry_cleanup_func(registry);
 
+		if (registry->registry_index > -1) {
+			int i = registry->registry_index;
+			assert(entry->registries[i] == registry);
+			entry->registries[i] = NULL;
+			registry->registry_index = -1;
+		}
+
+		assert(entry->registries_count > 0);
+		--entry->registries_count;
+
 		free(registry->agents);
+		free(registry->address);
 		free(registry);
-		entry->registry = NULL;
 		return;
 	}
 
@@ -136,7 +232,8 @@ int conn_create(juice_agent_t *agent, udp_socket_config_t *config) {
 		return -1;
 	}
 
-	conn_registry_t *registry = entry->registry;
+	conn_registry_t *registry = get_port_registry(entry, config->bind_address, config->port_begin);
+	agent->registry = registry;
 
 	JLOG_DEBUG("Creating connection");
 	if (registry) {
@@ -164,7 +261,7 @@ int conn_create(juice_agent_t *agent, udp_socket_config_t *config) {
 		}
 
 		if (get_mode_entry(agent)->init_func(agent, registry, config)) {
-			release_registry(entry); // unlocks the registry
+			release_registry(entry, registry); // unlocks the registry
 			mutex_unlock(&entry->mutex);
 			return -1;
 		}
@@ -194,7 +291,7 @@ void conn_destroy(juice_agent_t *agent) {
 	mutex_lock(&entry->mutex);
 
 	JLOG_DEBUG("Destroying connection");
-	conn_registry_t *registry = entry->registry;
+	conn_registry_t *registry = agent->registry;
 	if (registry) {
 		mutex_lock(&registry->mutex);
 
@@ -205,12 +302,13 @@ void conn_destroy(juice_agent_t *agent) {
 			assert(registry->agents[i] == agent);
 			registry->agents[i] = NULL;
 			agent->conn_index = -1;
+			agent->registry = NULL;
 		}
 
 		assert(registry->agents_count > 0);
 		--registry->agents_count;
 
-		release_registry(entry); // unlocks the registry
+		release_registry(entry, registry); // unlocks the registry
 
 	} else {
 		entry->cleanup_func(agent);
@@ -264,7 +362,7 @@ static int juice_mux_stop_listen(const char *bind_address, int local_port) {
 
 	mutex_lock(&entry->mutex);
 
-	conn_registry_t *registry = entry->registry;
+	conn_registry_t *registry = get_port_registry(entry, bind_address, local_port);
 	if (!registry) {
 		mutex_unlock(&entry->mutex);
 		return -1;
@@ -276,7 +374,7 @@ static int juice_mux_stop_listen(const char *bind_address, int local_port) {
 	registry->mux_incoming_user_ptr = NULL;
 	conn_mux_interrupt_registry(registry);
 
-	release_registry(entry);
+	release_registry(entry, registry);
 
 	mutex_unlock(&entry->mutex);
 
@@ -296,7 +394,7 @@ int juice_mux_listen(const char *bind_address, int local_port, juice_cb_mux_inco
 
 	mutex_lock(&entry->mutex);
 
-	if (entry->registry) {
+	if (get_port_registry(entry, bind_address, local_port)) {
 		mutex_unlock(&entry->mutex);
 		JLOG_DEBUG("juice_mux_listen needs to be called before establishing any mux connection.");
 		return -1;
@@ -307,7 +405,7 @@ int juice_mux_listen(const char *bind_address, int local_port, juice_cb_mux_inco
 		return -1;
 	}
 
-	conn_registry_t *registry = entry->registry;
+	conn_registry_t *registry = get_port_registry(entry, bind_address, local_port);
 	if(!registry) {
 		mutex_unlock(&entry->mutex);
 		return -1;

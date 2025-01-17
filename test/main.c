@@ -22,6 +22,9 @@ int test_turn(void);
 int test_conflict(void);
 int test_bind(void);
 int test_ufrag(void);
+int test_stun_unhandled(void);
+int test_stun_unhandled_multiple(void);
+int test_stun_unhandled_unhandle(void);
 
 #ifndef NO_SERVER
 int test_server(void);
@@ -103,6 +106,26 @@ int main(int argc, char **argv) {
 		fprintf(stderr, "Ufrag test failed\n");
 		return -1;
 	}
+
+#ifndef _WIN32
+	// windows fails to read STUN message from listen socket:
+	// udp.c:196: Ignoring ECONNRESET returned by recvfrom
+	printf("\nRunning unhandled STUN message test...\n");
+	if (test_stun_unhandled()) {
+		fprintf(stderr, "Unhandled STUN message test failed\n");
+		return -1;
+	}
+	printf("\nRunning mutiple handler unhandled STUN message test...\n");
+	if (test_stun_unhandled_multiple()) {
+		fprintf(stderr, "Mutiple handler unhandled STUN message test failed\n");
+		return -1;
+	}
+	printf("\nRunning unhandled, unhandled STUN message test...\n");
+	if (test_stun_unhandled_unhandle()) {
+		fprintf(stderr, "Unhandled, unhandled STUN message test failed\n");
+		return -1;
+	}
+#endif
 
 #ifndef NO_SERVER
 	printf("\nRunning server test...\n");
