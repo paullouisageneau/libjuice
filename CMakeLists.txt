@@ -70,7 +70,7 @@ set(TESTS_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/test/base64.c
     ${CMAKE_CURRENT_SOURCE_DIR}/test/stun-unhandled.c
     ${CMAKE_CURRENT_SOURCE_DIR}/test/stun-unhandled-multiple.c
-		${CMAKE_CURRENT_SOURCE_DIR}/test/stun-unhandled-no-host.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/test/stun-unhandled-no-host.c
     ${CMAKE_CURRENT_SOURCE_DIR}/test/stun-unhandled-unhandle.c
     ${CMAKE_CURRENT_SOURCE_DIR}/test/stun.c
     ${CMAKE_CURRENT_SOURCE_DIR}/test/gathering.c
