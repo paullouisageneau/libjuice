@@ -57,46 +57,13 @@ static conn_mode_entry_t *get_mode_entry(juice_agent_t *agent) {
 	return mode_entries + (int)mode;
 }
 
-// accepts a host name and a port and returns a token that can be used to
-// distinguish one mux request handler from another. E.g.
-//
-// '127.0.0.1', 8080 -> '127.0.0.1:8080'
-// '::', 8080 -> '[::]:8080'
-// NULL, 8080 -> 'any:8080'
-// '', 8080 -> 'any:8080'
-static char *get_address (const char *bind_address, uint16_t port) {
-	if (!bind_address || strcmp(bind_address, "") == 0) {
-		bind_address = "any";
-	}
-
-	// search for '.' in bind_address, treat as IPv4 if found
-	char *result = strchr(bind_address, '.');
-	int index = (int)(result - bind_address);
-	int maxAddrSize = 48; // ip6 is 39 chars + [ + ] + : + 5 for the port + \0
-	char *address = (char*) calloc(1, maxAddrSize * sizeof(char));
-
-	// ip6
-	char *format = "[%s]:%d";
-
-	if (index > -1) {
-		// ip4
-		format = "%s:%d";
-	}
-
-	sprintf(address, format, bind_address, port);
-
-	return address;
-}
-
-static conn_registry_t *get_port_registry(conn_mode_entry_t *entry, const char *bind_address, uint16_t port) {
-	char *address = get_address(bind_address, port);
-
+static conn_registry_t *get_port_registry(conn_mode_entry_t *entry, uint16_t port) {
 	for (int i = 0; i < entry->registries_size; i++) {
 		if (!entry->registries[i]) {
 			continue;
 		}
 
-		if (strcmp(entry->registries[i]->address, address) == 0) {
+		if (entry->registries[i]->port == port) {
 			return entry->registries[i];
 		}
 	}
@@ -140,7 +107,7 @@ static int add_registry(conn_mode_entry_t *entry, conn_registry_t *registry) {
 
 static int acquire_registry(conn_mode_entry_t *entry, udp_socket_config_t *config) {
 	// entry must be locked
-	conn_registry_t *registry = get_port_registry(entry, config->bind_address, config->port_begin);
+	conn_registry_t *registry = get_port_registry(entry, config->port_begin);
 
 	if (!registry) {
 		if (!entry->registry_init_func)
@@ -168,13 +135,12 @@ static int acquire_registry(conn_mode_entry_t *entry, udp_socket_config_t *confi
 		mutex_init(&registry->mutex, MUTEX_RECURSIVE);
 		mutex_lock(&registry->mutex);
 
-		registry->address = get_address(config->bind_address, config->port_begin);
+		registry->port = config->port_begin;
 
 		if (entry->registry_init_func(registry, config)) {
 			JLOG_FATAL("Registry initialization failed");
 			mutex_unlock(&registry->mutex);
 			free(registry->agents);
-			free(registry->address);
 			free(registry);
 			return -1;
 		}
@@ -183,7 +149,6 @@ static int acquire_registry(conn_mode_entry_t *entry, udp_socket_config_t *confi
 			JLOG_FATAL("Adding registry to entry failed");
 			mutex_unlock(&registry->mutex);
 			free(registry->agents);
-			free(registry->address);
 			free(registry);
 			return -1;
 		}
@@ -220,7 +185,6 @@ static void release_registry(conn_mode_entry_t *entry, conn_registry_t *registry
 		--entry->registries_count;
 
 		free(registry->agents);
-		free(registry->address);
 		free(registry);
 		return;
 	}
@@ -239,7 +203,7 @@ int conn_create(juice_agent_t *agent, udp_socket_config_t *config) {
 		return -1;
 	}
 
-	conn_registry_t *registry = get_port_registry(entry, config->bind_address, config->port_begin);
+	conn_registry_t *registry = get_port_registry(entry, config->port_begin);
 	agent->registry = registry;
 
 	JLOG_DEBUG("Creating connection");
@@ -369,7 +333,7 @@ static int juice_mux_stop_listen(const char *bind_address, int local_port) {
 
 	mutex_lock(&entry->mutex);
 
-	conn_registry_t *registry = get_port_registry(entry, bind_address, local_port);
+	conn_registry_t *registry = get_port_registry(entry, local_port);
 	if (!registry) {
 		mutex_unlock(&entry->mutex);
 		return -1;
@@ -401,7 +365,7 @@ int juice_mux_listen(const char *bind_address, int local_port, juice_cb_mux_inco
 
 	mutex_lock(&entry->mutex);
 
-	if (get_port_registry(entry, bind_address, local_port)) {
+	if (get_port_registry(entry, local_port)) {
 		mutex_unlock(&entry->mutex);
 		JLOG_DEBUG("juice_mux_listen there is already a listener for this host/port combination.");
 		return -1;
@@ -412,7 +376,7 @@ int juice_mux_listen(const char *bind_address, int local_port, juice_cb_mux_inco
 		return -1;
 	}
 
-	conn_registry_t *registry = get_port_registry(entry, bind_address, local_port);
+	conn_registry_t *registry = get_port_registry(entry, local_port);
 	if(!registry) {
 		mutex_unlock(&entry->mutex);
 		return -1;

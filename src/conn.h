@@ -26,7 +26,7 @@ typedef struct juice_agent juice_agent_t;
 
 typedef struct conn_registry {
 	int registry_index;
-	char *address;
+	uint16_t port;
 	void *impl;
 	mutex_t mutex;
 	juice_agent_t **agents;
