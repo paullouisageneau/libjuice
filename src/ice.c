@@ -32,7 +32,7 @@ static bool match_prefix(const char *str, const char *prefix, const char **end) 
 	return *end != str || !*prefix;
 }
 
-static int parse_sdp_line(const char *line, ice_description_t *description) {
+static int parse_sdp_line(const char *line, ice_description_t *description, bool ice_tcp_enabled) {
 	const char *arg;
 	if (match_prefix(line, "a=ice-ufrag:", &arg)) {
 		sscanf(arg, "%256s", description->ice_ufrag);
@@ -52,6 +52,21 @@ static int parse_sdp_line(const char *line, ice_description_t *description) {
 	}
 	ice_candidate_t candidate;
 	if (ice_parse_candidate_sdp(line, &candidate) == 0) {
+		bool is_tcp = strcmp(candidate.transport, "TCP") == 0;
+		if (is_tcp && !ice_tcp_enabled) {
+			JLOG_DEBUG("ICE-TCP is disabled ignoring Candidate: %s", line);
+			return ICE_PARSE_IGNORED;
+		}
+
+		if (is_tcp) {
+			for (int i = 0; i < description->candidates_count; ++i) {
+				if (strcmp(description->candidates[i].transport, "TCP") == 0) {
+					JLOG_DEBUG("Only one ICE-TCP remote candidate is supported ignoring Candidate: %s", line);
+					return ICE_PARSE_IGNORED;
+				}
+			}
+		}
+
 		ice_add_candidate(&candidate, description);
 		return 0;
 	}
@@ -64,17 +79,16 @@ static int parse_sdp_candidate(const char *line, ice_candidate_t *candidate) {
 	line = skip_prefix(line, "a=");
 	line = skip_prefix(line, "candidate:");
 
-	char transport[32 + 1];
 	char type[32 + 1];
 	if (sscanf(line, "%32s %d %32s %u %256s %32s typ %32s", candidate->foundation,
-	           &candidate->component, transport, &candidate->priority, candidate->hostname,
+	           &candidate->component, candidate->transport, &candidate->priority, candidate->hostname,
 	           candidate->service, type) != 7) {
 		JLOG_WARN("Failed to parse candidate: %s", line);
 		return ICE_PARSE_ERROR;
 	}
 
-	for (int i = 0; transport[i]; ++i)
-		transport[i] = toupper((unsigned char)transport[i]);
+	for (int i = 0; candidate->transport[i]; ++i)
+		candidate->transport[i] = toupper((unsigned char)candidate->transport[i]);
 
 	for (int i = 0; type[i]; ++i)
 		type[i] = tolower((unsigned char)type[i]);
@@ -90,15 +104,15 @@ static int parse_sdp_candidate(const char *line, ice_candidate_t *candidate) {
 		return ICE_PARSE_IGNORED;
 	}
 
-	if (strcmp(transport, "UDP") != 0) {
-		JLOG_WARN("Ignoring candidate with transport %s", transport);
+	if (strcmp(candidate->transport, "UDP") != 0 && strcmp(candidate->transport, "TCP") != 0) {
+		JLOG_WARN("Ignoring candidate with transport %s", candidate->transport);
 		return ICE_PARSE_IGNORED;
 	}
 
 	return 0;
 }
 
-int ice_parse_sdp(const char *sdp, ice_description_t *description) {
+int ice_parse_sdp(const char *sdp, ice_description_t *description, bool ice_tcp_enabled) {
 	memset(description, 0, sizeof(*description));
 	description->ice_lite = false;
 	description->candidates_count = 0;
@@ -110,7 +124,7 @@ int ice_parse_sdp(const char *sdp, ice_description_t *description) {
 		if (*sdp == '\n') {
 			if (size) {
 				buffer[size++] = '\0';
-				if (parse_sdp_line(buffer, description) == ICE_PARSE_ERROR)
+				if (parse_sdp_line(buffer, description, ice_tcp_enabled) == ICE_PARSE_ERROR)
 					return ICE_PARSE_ERROR;
 
 				size = 0;
@@ -181,8 +195,12 @@ int ice_resolve_candidate(ice_candidate_t *candidate, ice_resolve_mode_t mode) {
 	struct addrinfo hints;
 	memset(&hints, 0, sizeof(hints));
 	hints.ai_family = AF_UNSPEC;
-	hints.ai_socktype = SOCK_DGRAM;
-	hints.ai_protocol = IPPROTO_UDP;
+	if (strcmp(candidate->transport, "TCP") == 0) {
+		hints.ai_socktype = SOCK_STREAM;
+	} else {
+		hints.ai_socktype = SOCK_DGRAM;
+		hints.ai_protocol = IPPROTO_UDP;
+	}
 	hints.ai_flags = AI_ADDRCONFIG;
 	if (mode != ICE_RESOLVE_MODE_LOOKUP)
 		hints.ai_flags |= AI_NUMERICHOST | AI_NUMERICSERV;
@@ -196,6 +214,7 @@ int ice_resolve_candidate(ice_candidate_t *candidate, ice_resolve_mode_t mode) {
 		if (ai->ai_family == AF_INET || ai->ai_family == AF_INET6) {
 			candidate->resolved.len = (socklen_t)ai->ai_addrlen;
 			memcpy(&candidate->resolved.addr, ai->ai_addr, ai->ai_addrlen);
+			candidate->resolved.socktype = strcmp(candidate->transport, "TCP") == 0 ? SOCK_STREAM : SOCK_DGRAM;
 			break;
 		}
 	}

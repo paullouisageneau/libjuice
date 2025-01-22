@@ -80,7 +80,7 @@ typedef enum ice_resolve_mode {
 #define ICE_PARSE_MISSING_UFRAG -3
 #define ICE_PARSE_MISSING_PWD -4
 
-int ice_parse_sdp(const char *sdp, ice_description_t *description);
+int ice_parse_sdp(const char *sdp, ice_description_t *description, bool ice_tcp_enabled);
 int ice_parse_candidate_sdp(const char *line, ice_candidate_t *candidate);
 int ice_create_local_description(ice_description_t *description);
 int ice_create_local_candidate(ice_candidate_type_t type, int component, int index,
