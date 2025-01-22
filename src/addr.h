@@ -33,9 +33,10 @@ unsigned long addr_hash(const struct sockaddr *sa, bool with_port);
 typedef struct addr_record {
 	struct sockaddr_storage addr;
 	socklen_t len;
+	int socktype;
 } addr_record_t;
 
-int addr_resolve(const char *hostname, const char *service, addr_record_t *records, size_t count);
+int addr_resolve(const char *hostname, const char *service, int socktype, addr_record_t *records, size_t count);
 bool addr_is_numeric_hostname(const char *hostname);
 
 bool addr_record_is_equal(const addr_record_t *a, const addr_record_t *b, bool compare_ports);

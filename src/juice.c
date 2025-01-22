@@ -216,3 +216,11 @@ JUICE_EXPORT int juice_server_add_credentials(juice_server_t *server,
 	return JUICE_ERR_INVALID;
 #endif
 }
+
+int juice_set_ice_tcp_mode(juice_agent_t *agent, juice_ice_tcp_mode_t ice_tcp_mode)
+{
+	if (!agent)
+		return JUICE_ERR_INVALID;
+
+	return agent_set_ice_tcp_mode(agent, ice_tcp_mode);
+}

@@ -925,7 +925,7 @@ int server_process_turn_allocate(juice_server_t *server, const stun_message_t *m
 		if (server->config.external_address) {
 			char service[8];
 			snprintf(service, 8, "%hu", udp_get_port(alloc->sock));
-			count = addr_resolve(server->config.external_address, service, records,
+			count = addr_resolve(server->config.external_address, service, SOCK_DGRAM, records,
 			                     MAX_RELAYED_RECORDS_COUNT);
 			if (count <= 0) {
 				JLOG_ERROR("Specified external address is invalid");

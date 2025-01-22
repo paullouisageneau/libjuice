@@ -250,14 +250,14 @@ unsigned long addr_hash(const struct sockaddr *sa, bool with_port) {
 	return hash;
 }
 
-int addr_resolve(const char *hostname, const char *service, addr_record_t *records, size_t count) {
+int addr_resolve(const char *hostname, const char *service, int socktype, addr_record_t *records, size_t count) {
 	addr_record_t *end = records + count;
 
 	struct addrinfo hints;
 	memset(&hints, 0, sizeof(hints));
 	hints.ai_family = AF_UNSPEC;
-	hints.ai_socktype = SOCK_DGRAM;
-	hints.ai_protocol = IPPROTO_UDP;
+	hints.ai_socktype = socktype;
+	hints.ai_protocol = socktype == SOCK_STREAM ? IPPROTO_TCP : IPPROTO_UDP;
 	hints.ai_flags = AI_ADDRCONFIG;
 	struct addrinfo *ai_list = NULL;
 	if (getaddrinfo(hostname, service, &hints, &ai_list)) {
