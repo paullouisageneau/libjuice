@@ -64,11 +64,15 @@ static int parse_sdp_candidate(const char *line, ice_candidate_t *candidate) {
 	line = skip_prefix(line, "a=");
 	line = skip_prefix(line, "candidate:");
 
-	char transport[32 + 1];
 	char type[32 + 1];
-	if (sscanf(line, "%32s %d %32s %u %256s %32s typ %32s", candidate->foundation,
-	           &candidate->component, transport, &candidate->priority, candidate->hostname,
-	           candidate->service, type) != 7) {
+	char transport[32 + 1];
+	char tcp_type_ext[7 + 1] = {0};
+	char tcp_type[7 + 1] = {0};
+
+	int res = sscanf(line, "%32s %d %32s %u %256s %32s typ %32s %7s %7s", candidate->foundation,
+	           &candidate->component, transport, &candidate->priority,
+	           candidate->hostname, candidate->service, type, tcp_type_ext, tcp_type);
+	if (res != 7 && res != 9) {
 		JLOG_WARN("Failed to parse candidate: %s", line);
 		return ICE_PARSE_ERROR;
 	}
@@ -89,8 +93,20 @@ static int parse_sdp_candidate(const char *line, ice_candidate_t *candidate) {
 		JLOG_WARN("Ignoring candidate with unknown type \"%s\"", type);
 		return ICE_PARSE_IGNORED;
 	}
-
-	if (strcmp(transport, "UDP") != 0) {
+	if (strcmp(transport, "TCP") == 0) {
+		if (strcmp(tcp_type, "active") == 0) {
+			candidate->transport = ICE_CANDIDATE_TRANSPORT_TCP_TYPE_ACTIVE;
+		} else if (strcmp(tcp_type, "passive") == 0) {
+			candidate->transport = ICE_CANDIDATE_TRANSPORT_TCP_TYPE_PASSIVE;
+		} else if (strcmp(tcp_type, "so") == 0) {
+			candidate->transport = ICE_CANDIDATE_TRANSPORT_TCP_TYPE_SO;
+		} else {
+			JLOG_WARN("Ignoring candidate with unknown tcptype \"%s\"", tcp_type);
+			return ICE_PARSE_IGNORED;
+		}
+	} else if (strcmp(transport, "UDP") == 0)  {
+		candidate->transport = ICE_CANDIDATE_TRANSPORT_UDP;
+	} else {
 		JLOG_WARN("Ignoring candidate with transport %s", transport);
 		return ICE_PARSE_IGNORED;
 	}
@@ -159,15 +175,16 @@ int ice_create_local_description(ice_description_t *description) {
 }
 
 int ice_create_local_candidate(ice_candidate_type_t type, int component, int index,
-                               const addr_record_t *record, ice_candidate_t *candidate) {
+                               const addr_record_t *record, ice_candidate_t *candidate, ice_candidate_transport_t transport) {
 	memset(candidate, 0, sizeof(*candidate));
 	candidate->type = type;
 	candidate->component = component;
 	candidate->resolved = *record;
+	candidate->transport = transport;
 	strcpy(candidate->foundation, "-");
 
 	candidate->priority = ice_compute_priority(candidate->type, candidate->resolved.addr.ss_family,
-	                                           candidate->component, index);
+	                                           candidate->component, index, true);
 
 	if (getnameinfo((struct sockaddr *)&record->addr, record->len, candidate->hostname, 256,
 	                candidate->service, 32, NI_NUMERICHOST | NI_NUMERICSERV | NI_DGRAM)) {
@@ -181,8 +198,13 @@ int ice_resolve_candidate(ice_candidate_t *candidate, ice_resolve_mode_t mode) {
 	struct addrinfo hints;
 	memset(&hints, 0, sizeof(hints));
 	hints.ai_family = AF_UNSPEC;
-	hints.ai_socktype = SOCK_DGRAM;
-	hints.ai_protocol = IPPROTO_UDP;
+	if (candidate->transport != ICE_CANDIDATE_TRANSPORT_UDP) {
+		hints.ai_socktype = SOCK_STREAM;
+		hints.ai_protocol = IPPROTO_TCP;
+	} else {
+		hints.ai_socktype = SOCK_DGRAM;
+		hints.ai_protocol = IPPROTO_UDP;
+	}
 	hints.ai_flags = AI_ADDRCONFIG;
 	if (mode != ICE_RESOLVE_MODE_LOOKUP)
 		hints.ai_flags |= AI_NUMERICHOST | AI_NUMERICSERV;
@@ -196,6 +218,7 @@ int ice_resolve_candidate(ice_candidate_t *candidate, ice_resolve_mode_t mode) {
 		if (ai->ai_family == AF_INET || ai->ai_family == AF_INET6) {
 			candidate->resolved.len = (socklen_t)ai->ai_addrlen;
 			memcpy(&candidate->resolved.addr, ai->ai_addr, ai->ai_addrlen);
+			candidate->resolved.socktype = ai->ai_socktype;
 			break;
 		}
 	}
@@ -304,6 +327,8 @@ int ice_generate_sdp(const ice_description_t *description, char *buffer, size_t 
 int ice_generate_candidate_sdp(const ice_candidate_t *candidate, char *buffer, size_t size) {
 	const char *type = NULL;
 	const char *suffix = NULL;
+	const char *transport = NULL;
+
 	switch (candidate->type) {
 	case ICE_CANDIDATE_TYPE_HOST:
 		type = "host";
@@ -323,8 +348,22 @@ int ice_generate_candidate_sdp(const ice_candidate_t *candidate, char *buffer, s
 		JLOG_ERROR("Unknown candidate type");
 		return -1;
 	}
-	return snprintf(buffer, size, "a=candidate:%s %u UDP %u %s %s typ %s%s%s",
-	                candidate->foundation, candidate->component, candidate->priority,
+
+	switch (candidate->transport) {
+		case  ICE_CANDIDATE_TRANSPORT_UDP:
+			transport = "UDP";
+			break;
+		case  ICE_CANDIDATE_TRANSPORT_TCP_TYPE_ACTIVE:
+			transport = "TCP";
+			suffix = "tcptype active";
+			break;
+		default:
+			JLOG_ERROR("Unknown candidate transport");
+			return -1;
+	}
+
+	return snprintf(buffer, size, "a=candidate:%s %u %s %u %s %s typ %s%s%s",
+	                candidate->foundation, candidate->component, transport, candidate->priority,
 	                candidate->hostname, candidate->service, type, suffix ? " " : "",
 	                suffix ? suffix : "");
 }
@@ -352,12 +391,12 @@ int ice_update_candidate_pair(ice_candidate_pair_t *pair, bool is_controlling) {
 	    pair->local
 	        ? pair->local->priority
 	        : ice_compute_priority(ICE_CANDIDATE_TYPE_HOST, pair->remote->resolved.addr.ss_family,
-	                               pair->remote->component, 0);
+	                               pair->remote->component, 0, pair->remote->transport != ICE_CANDIDATE_TRANSPORT_UDP);
 	uint64_t remote_priority =
 	    pair->remote
 	        ? pair->remote->priority
 	        : ice_compute_priority(ICE_CANDIDATE_TYPE_HOST, pair->local->resolved.addr.ss_family,
-	                               pair->local->component, 0);
+	                               pair->local->component, 0, pair->local->transport != ICE_CANDIDATE_TRANSPORT_UDP);
 	uint64_t g = is_controlling ? local_priority : remote_priority;
 	uint64_t d = is_controlling ? remote_priority : local_priority;
 	uint64_t min = g < d ? g : d;
@@ -376,7 +415,7 @@ int ice_candidates_count(const ice_description_t *description, ice_candidate_typ
 	return count;
 }
 
-uint32_t ice_compute_priority(ice_candidate_type_t type, int family, int component, int index) {
+uint32_t ice_compute_priority(ice_candidate_type_t type, int family, int component, int index, bool is_udp) {
 	// Compute candidate priority according to RFC 8445
 	// See https://www.rfc-editor.org/rfc/rfc8445.html#section-5.1.2.1
 	uint32_t p = 0;
@@ -398,6 +437,14 @@ uint32_t ice_compute_priority(ice_candidate_type_t type, int family, int compone
 		break;
 	}
 	p <<= 16;
+
+	// RFC 6544
+	// For RTP-based media streams, it is RECOMMENDED that UDP
+	// candidates are preferred over TCP candidates. The other-pref MUST
+	// be between 0 and 8191 (both inclusive), with 8191 being the most preferred.
+	if (is_udp) {
+		p += 4095 << 13;
+	}
 
 	switch (family) {
 	case AF_INET:
