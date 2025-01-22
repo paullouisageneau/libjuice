@@ -250,7 +250,7 @@ unsigned long addr_hash(const struct sockaddr *sa, bool with_port) {
 	return hash;
 }
 
-int addr_resolve(const char *hostname, const char *service, addr_record_t *records, size_t count) {
+int addr_resolve(const char *hostname, const char *service, int socktype, addr_record_t *records, size_t count) {
 	addr_record_t *end = records + count;
 
 	struct addrinfo hints;
@@ -272,6 +272,7 @@ int addr_resolve(const char *hostname, const char *service, addr_record_t *recor
 			if (records != end) {
 				memcpy(&records->addr, ai->ai_addr, ai->ai_addrlen);
 				records->len = (socklen_t)ai->ai_addrlen;
+				records->socktype = socktype;
 				++records;
 			}
 		}
