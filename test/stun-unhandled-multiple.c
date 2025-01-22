@@ -36,20 +36,29 @@ void stun_unhandled_multiple_callback2 (const juice_mux_binding_request_t *info,
 int test_stun_unhandled_multiple() {
 	juice_set_log_level(JUICE_LOG_LEVEL_DEBUG);
 
-	uint16_t port = 60002;
+	uint16_t port = 60000;
 
 	// Generate local description
 	char * localSdp = "a=ice-ufrag:G4DJ\n\
 a=ice-pwd:ok3ytD4tG2MCJ+9MrELhjO\n\
-a=candidate:1 1 UDP 2130706431 127.0.0.1 60002 typ host\n\
-a=candidate:2 1 UDP 2130706431 127.0.0.1 60003 typ host\n\
+a=candidate:1 1 UDP 2130706431 127.0.0.1 60000 typ host\n\
+a=candidate:2 1 UDP 2130706431 127.0.0.1 60001 typ host\n\
 a=end-of-candidates\n\
 a=ice-options:ice2\n\
 ";
 
 	// Set up callbacks
-	juice_mux_listen("127.0.0.1", port, &stun_unhandled_multiple_callback1, NULL);
-	juice_mux_listen("127.0.0.1", port + 1, &stun_unhandled_multiple_callback2, NULL);
+	if (juice_mux_listen("127.0.0.1", port, &stun_unhandled_multiple_callback1, NULL)) {
+		printf("Did not register first unhandled mux callback\n");
+		printf("Failure\n");
+		return -1;
+	}
+
+	if (juice_mux_listen("127.0.0.1", port + 1, &stun_unhandled_multiple_callback2, NULL)) {
+		printf("Did not register second unhandled mux callback\n");
+		printf("Failure\n");
+		return -1;
+	}
 
 	// Create remote agent
 	juice_config_t remoteConfig;
@@ -70,8 +79,17 @@ a=ice-options:ice2\n\
 	juice_destroy(remoteAgent);
 
 	// Unhandle mux listeners
-	juice_mux_listen("127.0.0.1", port, NULL, NULL);
-	juice_mux_listen("127.0.0.1", port + 1, NULL, NULL);
+	if (juice_mux_listen("127.0.0.1", port, NULL, NULL)) {
+		printf("Did not unregister first unhandled mux callback\n");
+		printf("Failure\n");
+		return -1;
+	}
+
+	if (juice_mux_listen("127.0.0.1", port + 1, NULL, NULL)) {
+		printf("Did not unregister second unhandled mux callback\n");
+		printf("Failure\n");
+		return -1;
+	}
 
 	if (success1 && success2) {
 		printf("Success\n");

@@ -36,19 +36,23 @@ void stun_unhandled_no_host_callback2 (const juice_mux_binding_request_t *info, 
 int test_stun_unhandled_no_host() {
 	juice_set_log_level(JUICE_LOG_LEVEL_DEBUG);
 
-	uint16_t port = 60001;
+	uint16_t port = 60010;
 
 	// Generate local description
 	char * localSdp = "a=ice-ufrag:G4DJ\n\
 a=ice-pwd:ok3ytD4tG2MCJ+9MrELhjO\n\
-a=candidate:1 1 UDP 2130706431 127.0.0.1 60001 typ host\n\
-a=candidate:2 1 UDP 2130706431 192.168.1.45 60001 typ host\n\
+a=candidate:1 1 UDP 2130706431 127.0.0.1 60010 typ host\n\
+a=candidate:2 1 UDP 2130706431 192.168.1.45 60010 typ host\n\
 a=end-of-candidates\n\
 a=ice-options:ice2\n\
 ";
 
 	// Set up callbacks
-	juice_mux_listen(NULL, port, &stun_unhandled_no_host_callback1, NULL);
+	if (juice_mux_listen(NULL, port, &stun_unhandled_no_host_callback1, NULL)) {
+		printf("Did not register unhandled mux callback\n");
+		printf("Failure\n");
+		return -1;
+	}
 
 	if (juice_mux_listen("", port, &stun_unhandled_no_host_callback2, NULL) == 0) {
 		printf("Accepted two listeners for the same host/port combination\n");

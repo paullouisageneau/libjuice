@@ -12,6 +12,7 @@
 #include "socket.h"
 #include "thread.h"
 #include "udp.h"
+#include "conn.h"
 
 #include <assert.h>
 #include <string.h>
@@ -38,6 +39,12 @@ static thread_return_t THREAD_CALL conn_thread_entry(void *arg) {
 	juice_agent_t *agent = (juice_agent_t *)arg;
 	conn_thread_run(agent);
 	return (thread_return_t)0;
+}
+
+conn_registry_t *conn_thread_get_registry([[maybe_unused]] udp_socket_config_t *config) {
+	conn_mode_entry_t *entry = conn_get_mode_entry(JUICE_CONCURRENCY_MODE_THREAD);
+
+	return entry->registry;
 }
 
 int conn_thread_prepare(juice_agent_t *agent, struct pollfd *pfd, timestamp_t *next_timestamp) {
