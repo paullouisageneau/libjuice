@@ -64,17 +64,16 @@ static int parse_sdp_candidate(const char *line, ice_candidate_t *candidate) {
 	line = skip_prefix(line, "a=");
 	line = skip_prefix(line, "candidate:");
 
-	char transport[32 + 1];
 	char type[32 + 1];
 	if (sscanf(line, "%32s %d %32s %u %256s %32s typ %32s", candidate->foundation,
-	           &candidate->component, transport, &candidate->priority, candidate->hostname,
+	           &candidate->component, candidate->transport, &candidate->priority, candidate->hostname,
 	           candidate->service, type) != 7) {
 		JLOG_WARN("Failed to parse candidate: %s", line);
 		return ICE_PARSE_ERROR;
 	}
 
-	for (int i = 0; transport[i]; ++i)
-		transport[i] = toupper((unsigned char)transport[i]);
+	for (int i = 0; candidate->transport[i]; ++i)
+		candidate->transport[i] = toupper((unsigned char)candidate->transport[i]);
 
 	for (int i = 0; type[i]; ++i)
 		type[i] = tolower((unsigned char)type[i]);
@@ -90,8 +89,8 @@ static int parse_sdp_candidate(const char *line, ice_candidate_t *candidate) {
 		return ICE_PARSE_IGNORED;
 	}
 
-	if (strcmp(transport, "UDP") != 0) {
-		JLOG_WARN("Ignoring candidate with transport %s", transport);
+	if (strcmp(candidate->transport, "UDP") != 0 && strcmp(candidate->transport, "TCP") != 0) {
+		JLOG_WARN("Ignoring candidate with transport %s", candidate->transport);
 		return ICE_PARSE_IGNORED;
 	}
 
@@ -196,6 +195,7 @@ int ice_resolve_candidate(ice_candidate_t *candidate, ice_resolve_mode_t mode) {
 		if (ai->ai_family == AF_INET || ai->ai_family == AF_INET6) {
 			candidate->resolved.len = (socklen_t)ai->ai_addrlen;
 			memcpy(&candidate->resolved.addr, ai->ai_addr, ai->ai_addrlen);
+			candidate->resolved.socktype = strcmp(candidate->transport, "TCP") == 0 ? SOCK_STREAM : SOCK_DGRAM;
 			break;
 		}
 	}
