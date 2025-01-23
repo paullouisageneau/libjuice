@@ -251,8 +251,7 @@ int conn_get_addrs(juice_agent_t *agent, addr_record_t *records, size_t size) {
 	return get_agent_mode_entry(agent)->get_addrs_func(agent, records, size);
 }
 
-int juice_mux_listen(const char *bind_address, int local_port, juice_cb_mux_incoming_t cb, void *user_ptr)
-{
+int juice_mux_listen(const char *bind_address, int local_port, juice_cb_mux_incoming_t cb, void *user_ptr) {
 	conn_mode_entry_t *entry = &mode_entries[JUICE_CONCURRENCY_MODE_MUX];
 
 	if (!entry->mux_listen_func) {
@@ -286,15 +285,13 @@ int juice_mux_listen(const char *bind_address, int local_port, juice_cb_mux_inco
 	}
 
 	if (entry->mux_listen_func(registry, cb, user_ptr)) {
-		mutex_unlock(&registry->mutex);
-		mutex_unlock(&entry->mutex);
 		JLOG_DEBUG("juice_mux_listen failed to call mux_listen_func for %s:%d", bind_address, local_port);
+		release_registry(entry, registry);
+		mutex_unlock(&entry->mutex);
 		return -1;
 	}
 
-	JLOG_DEBUG("try unlock registry\n");
-
-	mutex_unlock(&registry->mutex);
+	release_registry(entry, registry);
 	mutex_unlock(&entry->mutex);
 	return 0;
 }
