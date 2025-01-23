@@ -56,7 +56,8 @@ static thread_return_t THREAD_CALL conn_thread_entry(void *arg) {
 	return (thread_return_t)0;
 }
 
-conn_registry_t *conn_poll_get_registry([[maybe_unused]] udp_socket_config_t *config) {
+conn_registry_t *conn_poll_get_registry(udp_socket_config_t *config) {
+	(void)config;
 	conn_mode_entry_t *entry = conn_get_mode_entry(JUICE_CONCURRENCY_MODE_POLL);
 
 	return entry->registry;
