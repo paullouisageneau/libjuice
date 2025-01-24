@@ -149,6 +149,8 @@ struct juice_agent {
 
 	thread_t resolver_thread;
 	bool resolver_thread_started;
+
+	conn_registry_t *registry;
 };
 
 juice_agent_t *agent_create(const juice_config_t *config);
