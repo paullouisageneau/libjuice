@@ -30,12 +30,12 @@ void stun_unhandled_callback (const juice_mux_binding_request_t *info, void *use
 int test_stun_unhandled() {
 	juice_set_log_level(JUICE_LOG_LEVEL_DEBUG);
 
-	uint16_t port = 60030;
+	uint16_t port = 60000;
 
 	// Generate local description
 	const char * localSdp = "a=ice-ufrag:G4DJ\n\
 a=ice-pwd:ok3ytD4tG2MCJ+9MrELhjO\n\
-a=candidate:1 1 UDP 2130706431 127.0.0.1 60030 typ host\n\
+a=candidate:1 1 UDP 2130706431 127.0.0.1 60000 typ host\n\
 a=end-of-candidates\n\
 a=ice-options:ice2\n\
 ";
