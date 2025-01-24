@@ -61,6 +61,12 @@ typedef enum juice_state {
 	JUICE_STATE_FAILED
 } juice_state_t;
 
+typedef enum juice_ice_mode {
+	JUICE_ICE_MODE_UNKNOWN,
+	JUICE_ICE_MODE_CONTROLLED,
+	JUICE_ICE_MODE_CONTROLLING
+} juice_ice_mode_t;
+
 typedef void (*juice_cb_state_changed_t)(juice_agent_t *agent, juice_state_t state, void *user_ptr);
 typedef void (*juice_cb_candidate_t)(juice_agent_t *agent, const char *sdp, void *user_ptr);
 typedef void (*juice_cb_gathering_done_t)(juice_agent_t *agent, void *user_ptr);
@@ -129,7 +135,7 @@ JUICE_EXPORT int juice_get_selected_candidates(juice_agent_t *agent, char *local
                                                char *remote, size_t remote_size);
 JUICE_EXPORT int juice_get_selected_addresses(juice_agent_t *agent, char *local, size_t local_size,
                                               char *remote, size_t remote_size);
-JUICE_EXPORT int juice_set_local_ice_attributes(juice_agent_t *agent, const char *ufrag, const char *pwd);
+JUICE_EXPORT int juice_set_local_ice_attributes(juice_agent_t *agent, const char *ufrag, const char *pwd, juice_ice_mode_t ice_mode);
 JUICE_EXPORT const char *juice_state_to_string(juice_state_t state);
 JUICE_EXPORT int juice_mux_listen(const char *bind_address, int local_port, juice_cb_mux_incoming_t cb, void *user_ptr);
 

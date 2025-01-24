@@ -127,7 +127,7 @@ juice_agent_t *agent_create(const juice_config_t *config) {
 	}
 
 	agent->state = JUICE_STATE_DISCONNECTED;
-	agent->mode = AGENT_MODE_UNKNOWN;
+	agent->mode = JUICE_ICE_MODE_UNKNOWN;
 	agent->selected_entry = NULL;
 
 	agent->conn_index = -1;
@@ -218,9 +218,9 @@ int agent_gather_candidates(juice_agent_t *agent) {
 		return 0;
 	}
 
-	if (agent->mode == AGENT_MODE_UNKNOWN) {
+	if (agent->mode == JUICE_ICE_MODE_UNKNOWN) {
 		JLOG_DEBUG("Assuming controlling mode");
-		agent->mode = AGENT_MODE_CONTROLLING;
+		agent->mode = JUICE_ICE_MODE_CONTROLLING;
 	}
 
 	agent_change_state(agent, JUICE_STATE_GATHERING);
@@ -471,9 +471,9 @@ int agent_get_local_description(juice_agent_t *agent, char *buffer, size_t size)
 	}
 	JLOG_VERBOSE("Generated local SDP description: %s", buffer);
 
-	if (agent->mode == AGENT_MODE_UNKNOWN) {
+	if (agent->mode == JUICE_ICE_MODE_UNKNOWN) {
 		JLOG_DEBUG("Assuming controlling mode");
-		agent->mode = AGENT_MODE_CONTROLLING;
+		agent->mode = JUICE_ICE_MODE_CONTROLLING;
 	}
 
 	conn_unlock(agent);
@@ -520,15 +520,15 @@ int agent_set_remote_description(juice_agent_t *agent, const char *sdp) {
 
 	agent_update_pac_timer(agent);
 
-	if (agent->remote.ice_lite && agent->mode != AGENT_MODE_CONTROLLING) {
+	if (agent->remote.ice_lite && agent->mode != JUICE_ICE_MODE_CONTROLLING) {
 		// RFC 8445 6.1.1. Determining Role:
 		// The full agent MUST take the controlling role, and the lite agent MUST take the
 		// controlled role.
 		JLOG_DEBUG("Remote ICE agent is lite, assuming controlling mode");
-		agent->mode = AGENT_MODE_CONTROLLING;
-	} else if (agent->mode == AGENT_MODE_UNKNOWN) {
+		agent->mode = JUICE_ICE_MODE_CONTROLLING;
+	} else if (agent->mode == JUICE_ICE_MODE_UNKNOWN) {
 		JLOG_DEBUG("Assuming controlled mode");
-		agent->mode = AGENT_MODE_CONTROLLED;
+		agent->mode = JUICE_ICE_MODE_CONTROLLED;
 	}
 
 	// There is only one component, therefore we can unfreeze already existing pairs now
@@ -586,7 +586,7 @@ int agent_add_remote_candidate(juice_agent_t *agent, const char *sdp) {
 	return JUICE_ERR_SUCCESS;
 }
 
-int agent_set_local_ice_attributes(juice_agent_t *agent, const char *ufrag, const char *pwd) {
+int agent_set_local_ice_attributes(juice_agent_t *agent, const char *ufrag, const char *pwd, juice_ice_mode_t ice_mode) {
 	if (agent->conn_impl) {
 		JLOG_WARN("Unable to set ICE attributes, candidates gathering already started");
 		return JUICE_ERR_FAILED;
@@ -600,6 +600,9 @@ int agent_set_local_ice_attributes(juice_agent_t *agent, const char *ufrag, cons
 
 	snprintf(agent->local.ice_ufrag, sizeof(agent->local.ice_ufrag), "%s", ufrag);
 	snprintf(agent->local.ice_pwd, sizeof(agent->local.ice_pwd), "%s", pwd);
+
+	agent->mode = ice_mode;
+
 	return JUICE_ERR_SUCCESS;
 }
 
@@ -989,7 +992,7 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 			if (!selected_pair)
 				selected_pair = pair;
 		} else if (pair->state == ICE_CANDIDATE_PAIR_STATE_PENDING) {
-			if (agent->mode == AGENT_MODE_CONTROLLING && selected_pair) {
+			if (agent->mode == JUICE_ICE_MODE_CONTROLLING && selected_pair) {
 				// A higher-priority pair will be used, we can stop checking.
 				// Entries will be synchronized after the current loop.
 				JLOG_VERBOSE("Cancelling check for lower-priority pair");
@@ -1000,7 +1003,7 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 		}
 	}
 
-	if (agent->mode == AGENT_MODE_CONTROLLING && nominated_pair) {
+	if (agent->mode == JUICE_ICE_MODE_CONTROLLING && nominated_pair) {
 		// RFC 8445 8.1.1. Nominating Pairs:
 		// Once the controlling agent has successfully nominated a candidate pair, the agent MUST
 		// NOT nominate another pair for same component of the data stream within the ICE session.
@@ -1042,7 +1045,7 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 			agent->selected_pair = selected_pair;
 
 			// Start nomination timer if controlling
-			if (agent->mode == AGENT_MODE_CONTROLLING)
+			if (agent->mode == JUICE_ICE_MODE_CONTROLLING)
 				agent->nomination_timestamp = now + NOMINATION_TIMEOUT;
 
 			for (int i = 0; i < agent->entries_count; ++i) {
@@ -1099,7 +1102,7 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 			// Connected
 			agent_change_state(agent, JUICE_STATE_CONNECTED);
 
-			if (agent->mode == AGENT_MODE_CONTROLLING && !selected_pair->nomination_requested) {
+			if (agent->mode == JUICE_ICE_MODE_CONTROLLING && !selected_pair->nomination_requested) {
 				if (pending_count == 0 ||
 				    (agent->nomination_timestamp && now >= agent->nomination_timestamp)) {
 					// Nominate selected
@@ -1356,7 +1359,7 @@ int agent_process_stun_binding(juice_agent_t *agent, const stun_message_t *msg,
 		//  ERROR-CODE attribute with a value of 487 (Role Conflict) but retains its role.
 		//  * If the agent's tiebreaker value is less than the contents of the ICE-CONTROLLING
 		//  attribute, the agent switches to the controlled role.
-		if (agent->mode == AGENT_MODE_CONTROLLING && msg->ice_controlling) {
+		if (agent->mode == JUICE_ICE_MODE_CONTROLLING && msg->ice_controlling) {
 			JLOG_WARN("ICE role conflict (both controlling)");
 			if (agent->ice_tiebreaker >= msg->ice_controlling) {
 				JLOG_DEBUG("Asking remote peer to switch roles");
@@ -1364,7 +1367,7 @@ int agent_process_stun_binding(juice_agent_t *agent, const stun_message_t *msg,
 				                        msg->transaction_id, NULL);
 			} else {
 				JLOG_DEBUG("Switching to controlled role");
-				agent->mode = AGENT_MODE_CONTROLLED;
+				agent->mode = JUICE_ICE_MODE_CONTROLLED;
 				agent_update_candidate_pairs(agent);
 			}
 			break;
@@ -1376,11 +1379,11 @@ int agent_process_stun_binding(juice_agent_t *agent, const stun_message_t *msg,
 		//  * If the agent's tiebreaker value is less than the contents of the ICE-CONTROLLED
 		//  attribute, the agent generates a Binding error response and includes an ERROR-CODE
 		//  attribute with a value of 487 (Role Conflict) but retains its role.
-		if (agent->mode == AGENT_MODE_CONTROLLED && msg->ice_controlled) {
+		if (agent->mode == JUICE_ICE_MODE_CONTROLLED && msg->ice_controlled) {
 			JLOG_WARN("ICE role conflict (both controlled)");
 			if (agent->ice_tiebreaker >= msg->ice_controlling) {
 				JLOG_DEBUG("Switching to controlling role");
-				agent->mode = AGENT_MODE_CONTROLLING;
+				agent->mode = JUICE_ICE_MODE_CONTROLLING;
 				agent_update_candidate_pairs(agent);
 			} else {
 				JLOG_DEBUG("Asking remote peer to switch roles");
@@ -1500,7 +1503,7 @@ int agent_process_stun_binding(juice_agent_t *agent, const stun_message_t *msg,
 			// generates a valid pair, the agent sets the nominated flag of the pair to true.
 			if (pair->nomination_requested) {
 				JLOG_DEBUG("Got a nominated pair (%s)",
-				           agent->mode == AGENT_MODE_CONTROLLING ? "controlling" : "controlled");
+				           agent->mode == JUICE_ICE_MODE_CONTROLLING ? "controlling" : "controlled");
 				pair->nominated = true;
 			}
 		} else if (entry->type == AGENT_STUN_ENTRY_TYPE_SERVER) {
@@ -1530,10 +1533,10 @@ int agent_process_stun_binding(juice_agent_t *agent, const stun_message_t *msg,
 					// state to Waiting [and] change the tiebreaker value.
 					JLOG_WARN("ICE role conflict");
 					JLOG_DEBUG("Switching roles to %s as requested",
-					           entry->mode == AGENT_MODE_CONTROLLING ? "controlled"
+					           entry->mode == JUICE_ICE_MODE_CONTROLLING ? "controlled"
 					                                                 : "controlling");
-					agent->mode = entry->mode == AGENT_MODE_CONTROLLING ? AGENT_MODE_CONTROLLED
-					                                                    : AGENT_MODE_CONTROLLING;
+					agent->mode = entry->mode == JUICE_ICE_MODE_CONTROLLING ? JUICE_ICE_MODE_CONTROLLED
+					                                                    : JUICE_ICE_MODE_CONTROLLING;
 					juice_random(&agent->ice_tiebreaker, sizeof(agent->ice_tiebreaker));
 					agent_update_candidate_pairs(agent); // expires transaction IDs
 
@@ -1543,7 +1546,7 @@ int agent_process_stun_binding(juice_agent_t *agent, const stun_message_t *msg,
 					}
 				} else {
 					JLOG_DEBUG("Already switched roles to %s as requested",
-					           agent->mode == AGENT_MODE_CONTROLLING ? "controlling"
+					           agent->mode == JUICE_ICE_MODE_CONTROLLING ? "controlling"
 					                                                 : "controlled");
 				}
 			} else {
@@ -1619,8 +1622,8 @@ int agent_send_stun_binding(juice_agent_t *agent, agent_stun_entry_t *entry, stu
 			snprintf(msg.credentials.username, STUN_MAX_USERNAME_LEN, "%s:%s",
 			         agent->remote.ice_ufrag, agent->local.ice_ufrag);
 			password = agent->remote.ice_pwd;
-			msg.ice_controlling = agent->mode == AGENT_MODE_CONTROLLING ? agent->ice_tiebreaker : 0;
-			msg.ice_controlled = agent->mode == AGENT_MODE_CONTROLLED ? agent->ice_tiebreaker : 0;
+			msg.ice_controlling = agent->mode == JUICE_ICE_MODE_CONTROLLING ? agent->ice_tiebreaker : 0;
+			msg.ice_controlled = agent->mode == JUICE_ICE_MODE_CONTROLLED ? agent->ice_tiebreaker : 0;
 
 			// RFC 8445 7.1.1. PRIORITY
 			// The PRIORITY attribute MUST be included in a Binding request and be set to the value
@@ -1637,7 +1640,7 @@ int agent_send_stun_binding(juice_agent_t *agent, agent_stun_entry_t *entry, stu
 			// Once the controlling agent has picked a valid pair for nomination, it repeats the
 			// connectivity check that produced this valid pair [...], this time with the
 			// USE-CANDIDATE attribute.
-			msg.use_candidate = agent->mode == AGENT_MODE_CONTROLLING && entry->pair &&
+			msg.use_candidate = agent->mode == JUICE_ICE_MODE_CONTROLLING && entry->pair &&
 			                    entry->pair->nomination_requested && !entry->pair->nominated;
 
 			entry->mode = agent->mode; // save current mode in case of conflict
@@ -2285,7 +2288,7 @@ int agent_add_remote_reflexive_candidate(juice_agent_t *agent, ice_candidate_typ
 int agent_add_candidate_pair(juice_agent_t *agent, ice_candidate_t *local, // local may be NULL
                              ice_candidate_t *remote) {
 	ice_candidate_pair_t pair;
-	bool is_controlling = agent->mode == AGENT_MODE_CONTROLLING;
+	bool is_controlling = agent->mode == JUICE_ICE_MODE_CONTROLLING;
 	if (ice_create_candidate_pair(local, remote, is_controlling, &pair)) {
 		JLOG_ERROR("Failed to create candidate pair");
 		return -1;
@@ -2330,7 +2333,7 @@ int agent_add_candidate_pair(juice_agent_t *agent, ice_candidate_t *local, // lo
 	agent_stun_entry_t *entry = agent->entries + agent->entries_count;
 	entry->type = AGENT_STUN_ENTRY_TYPE_CHECK;
 	entry->state = AGENT_STUN_ENTRY_STATE_IDLE;
-	entry->mode = AGENT_MODE_UNKNOWN;
+	entry->mode = JUICE_ICE_MODE_UNKNOWN;
 	entry->pair = pos;
 	entry->record = pos->remote->resolved;
 	entry->relay_entry = relay_entry;
@@ -2341,7 +2344,7 @@ int agent_add_candidate_pair(juice_agent_t *agent, ice_candidate_t *local, // lo
 	if (remote->type == ICE_CANDIDATE_TYPE_HOST)
 		agent_translate_host_candidate_entry(agent, entry);
 
-	if (agent->mode == AGENT_MODE_CONTROLLING) {
+	if (agent->mode == JUICE_ICE_MODE_CONTROLLING) {
 		for (int i = 0; i < agent->candidate_pairs_count; ++i) {
 			ice_candidate_pair_t *ordered_pair = agent->ordered_pairs[i];
 			if (ordered_pair == pos) {
@@ -2499,7 +2502,7 @@ void agent_update_gathering_done(juice_agent_t *agent) {
 }
 
 void agent_update_candidate_pairs(juice_agent_t *agent) {
-	bool is_controlling = agent->mode == AGENT_MODE_CONTROLLING;
+	bool is_controlling = agent->mode == JUICE_ICE_MODE_CONTROLLING;
 	for (int i = 0; i < agent->candidate_pairs_count; ++i) {
 		ice_candidate_pair_t *pair = agent->candidate_pairs + i;
 		ice_update_candidate_pair(pair, is_controlling);

@@ -7,6 +7,7 @@
  */
 
 #include "juice/juice.h"
+#include "agent.h"
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -26,29 +27,32 @@ int test_ufrag() {
 
 	agent = juice_create(&config);
 
-	if (juice_set_local_ice_attributes(agent, NULL, NULL) != JUICE_ERR_INVALID)
+	if (juice_set_local_ice_attributes(agent, NULL, NULL, 0) != JUICE_ERR_INVALID)
 		success = false;
 
-	if (juice_set_local_ice_attributes(agent, "ufrag", NULL) != JUICE_ERR_INVALID)
+	if (juice_set_local_ice_attributes(agent, "ufrag", NULL, 0) != JUICE_ERR_INVALID)
 		success = false;
 
-	if (juice_set_local_ice_attributes(agent, NULL, "pw01234567890123456789") != JUICE_ERR_INVALID)
+	if (juice_set_local_ice_attributes(agent, NULL, "pw01234567890123456789", 0) != JUICE_ERR_INVALID)
 		success = false;
 
-	if (juice_set_local_ice_attributes(agent, "ufrag", "pw0123456789012345678") != JUICE_ERR_INVALID)
+	if (juice_set_local_ice_attributes(agent, "ufrag", "pw0123456789012345678", 0) != JUICE_ERR_INVALID)
 		success = false;
 
-	if (juice_set_local_ice_attributes(agent, "usr", "pw01234567890123456789") != JUICE_ERR_INVALID)
+	if (juice_set_local_ice_attributes(agent, "usr", "pw01234567890123456789", 0) != JUICE_ERR_INVALID)
 		success = false;
 
-	if (juice_set_local_ice_attributes(agent, "ufrag:", "pw01234567890123456789") != JUICE_ERR_INVALID)
+	if (juice_set_local_ice_attributes(agent, "ufrag:", "pw01234567890123456789", 0) != JUICE_ERR_INVALID)
 		success = false;
 
-	if (juice_set_local_ice_attributes(agent, "ufrag", "pw0123456789012345678?") != JUICE_ERR_INVALID)
+	if (juice_set_local_ice_attributes(agent, "ufrag", "pw0123456789012345678?", 0) != JUICE_ERR_INVALID)
+		success = false;
+
+	if (agent->mode != JUICE_ICE_MODE_UNKNOWN)
 		success = false;
 
 	// Set local ICE attributes
-	juice_set_local_ice_attributes(agent, "ufrag", "pw01234567890123456789");
+	juice_set_local_ice_attributes(agent, "ufrag", "pw01234567890123456789", JUICE_ICE_MODE_CONTROLLED);
 
 	// Generate local description
 	char sdp[JUICE_MAX_SDP_STRING_LEN];
@@ -59,6 +63,9 @@ int test_ufrag() {
 		success = false;
 
 	if (strstr(sdp, "a=ice-pwd:pw01234567890123456789\r\n") == NULL)
+		success = false;
+
+	if (agent->mode != JUICE_ICE_MODE_CONTROLLED)
 		success = false;
 
 	// Destroy
