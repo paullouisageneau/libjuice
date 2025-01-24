@@ -74,12 +74,6 @@
 
 #define AGENT_TURN_MAP_SIZE ICE_MAX_CANDIDATES_COUNT
 
-typedef enum agent_mode {
-	AGENT_MODE_UNKNOWN,
-	AGENT_MODE_CONTROLLED,
-	AGENT_MODE_CONTROLLING
-} agent_mode_t;
-
 typedef enum agent_stun_entry_type {
 	AGENT_STUN_ENTRY_TYPE_EMPTY,
 	AGENT_STUN_ENTRY_TYPE_SERVER,
@@ -105,7 +99,7 @@ typedef struct agent_turn_state {
 typedef struct agent_stun_entry {
 	agent_stun_entry_type_t type;
 	agent_stun_entry_state_t state;
-	agent_mode_t mode;
+	juice_ice_mode_t mode;
 	ice_candidate_pair_t *pair;
 	addr_record_t record;
 	addr_record_t relayed;
@@ -125,7 +119,7 @@ typedef struct agent_stun_entry {
 struct juice_agent {
 	juice_config_t config;
 	juice_state_t state;
-	agent_mode_t mode;
+	juice_ice_mode_t mode;
 
 	ice_description_t local;
 	ice_description_t remote;
@@ -159,7 +153,7 @@ int agent_resolve_servers(juice_agent_t *agent);
 int agent_get_local_description(juice_agent_t *agent, char *buffer, size_t size);
 int agent_set_remote_description(juice_agent_t *agent, const char *sdp);
 int agent_add_remote_candidate(juice_agent_t *agent, const char *sdp);
-int agent_set_local_ice_attributes(juice_agent_t *agent, const char *ufrag, const char *pwd);
+int agent_set_local_ice_attributes(juice_agent_t *agent, const char *ufrag, const char *pwd, juice_ice_mode_t ice_mode);
 int agent_add_turn_server(juice_agent_t *agent, const juice_turn_server_t *turn_server);
 int agent_set_remote_gathering_done(juice_agent_t *agent);
 int agent_send(juice_agent_t *agent, const char *data, size_t size, int ds);

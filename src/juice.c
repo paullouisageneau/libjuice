@@ -140,12 +140,12 @@ JUICE_EXPORT int juice_get_selected_addresses(juice_agent_t *agent, char *local,
 	return JUICE_ERR_SUCCESS;
 }
 
-int juice_set_local_ice_attributes(juice_agent_t *agent, const char *ufrag, const char *pwd)
+int juice_set_local_ice_attributes(juice_agent_t *agent, const char *ufrag, const char *pwd, juice_ice_mode_t ice_mode)
 {
 	if (!ufrag || !pwd)
 		return JUICE_ERR_INVALID;
 
-	return agent_set_local_ice_attributes(agent, ufrag, pwd);
+	return agent_set_local_ice_attributes(agent, ufrag, pwd, ice_mode);
 }
 
 JUICE_EXPORT const char *juice_state_to_string(juice_state_t state) {
