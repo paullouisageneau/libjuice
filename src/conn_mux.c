@@ -242,7 +242,6 @@ int conn_mux_registry_init(conn_registry_t *registry, udp_socket_config_t *confi
 	}
 	registry_impl->map_size = INITIAL_MAP_SIZE;
 	registry_impl->map_count = 0;
-	registry_impl->port = config->port_begin;
 
 	registry_impl->sock = udp_create_socket(config);
 	if (registry_impl->sock == INVALID_SOCKET) {
@@ -251,6 +250,8 @@ int conn_mux_registry_init(conn_registry_t *registry, udp_socket_config_t *confi
 		free(registry_impl);
 		return -1;
 	}
+
+	registry_impl->port = udp_get_port(registry_impl->sock);
 
 	mutex_init(&registry_impl->send_mutex, 0);
 	registry->impl = registry_impl;
