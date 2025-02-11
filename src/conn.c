@@ -24,13 +24,13 @@
 static conn_mode_entry_t mode_entries[MODE_ENTRIES_SIZE] = {
     {conn_poll_registry_init, conn_poll_registry_cleanup, conn_poll_init, conn_poll_cleanup,
      conn_poll_lock, conn_poll_unlock, conn_poll_interrupt, conn_poll_send, conn_poll_get_addrs,
-     NULL, conn_poll_get_registry, NULL, MUTEX_INITIALIZER, NULL},
+     NULL, NULL, NULL, MUTEX_INITIALIZER, NULL},
     {conn_mux_registry_init, conn_mux_registry_cleanup, conn_mux_init, conn_mux_cleanup,
      conn_mux_lock, conn_mux_unlock, conn_mux_interrupt, conn_mux_send, conn_mux_get_addrs,
      conn_mux_listen, conn_mux_get_registry, conn_mux_can_release_registry, MUTEX_INITIALIZER, NULL},
     {NULL, NULL, conn_thread_init, conn_thread_cleanup,
      conn_thread_lock, conn_thread_unlock, conn_thread_interrupt, conn_thread_send, conn_thread_get_addrs,
-     NULL, conn_thread_get_registry, NULL, MUTEX_INITIALIZER, NULL}
+     NULL, NULL, NULL, MUTEX_INITIALIZER, NULL}
 };
 
 #define MODE_ENTRIES_SIZE 3
@@ -49,7 +49,13 @@ static conn_mode_entry_t *get_agent_mode_entry(juice_agent_t *agent) {
 
 static int acquire_registry(conn_mode_entry_t *entry, udp_socket_config_t *config) {
 	// entry must be locked
-	conn_registry_t *registry = entry->get_registry_func(config);
+	conn_registry_t *registry;
+
+	if (entry->get_registry_func) {
+		registry = entry->get_registry_func(config);
+	} else {
+		registry = entry->registry;
+	}
 
 	if (!registry) {
 		if (!entry->registry_init_func)
@@ -129,7 +135,14 @@ int conn_create(juice_agent_t *agent, udp_socket_config_t *config) {
 		return -1;
 	}
 
-	conn_registry_t *registry = entry->get_registry_func(config);
+	conn_registry_t *registry;
+
+	if (entry->get_registry_func) {
+		registry = entry->get_registry_func(config);
+	} else {
+		registry = entry->registry;
+	}
+
 	agent->registry = registry;
 
 	JLOG_DEBUG("Creating connection");

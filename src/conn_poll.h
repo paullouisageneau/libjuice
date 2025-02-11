@@ -28,6 +28,5 @@ int conn_poll_interrupt(juice_agent_t *agent);
 int conn_poll_send(juice_agent_t *agent, const addr_record_t *dst, const char *data, size_t size,
                         int ds);
 int conn_poll_get_addrs(juice_agent_t *agent, addr_record_t *records, size_t size);
-conn_registry_t *conn_poll_get_registry(udp_socket_config_t *config);
 
 #endif
