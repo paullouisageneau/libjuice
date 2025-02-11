@@ -65,7 +65,7 @@ conn_registry_t *conn_mux_get_registry(udp_socket_config_t *config) {
 		conn_registry_t *registry = conn_mux_registries[i];
 		registry_impl_t *impl = registry->impl;
 
-		if (impl->port == config->port_begin || config->port_begin == 0) {
+		if (impl->port >= config->port_begin && (config->port_end == 0 || impl->port <= config->port_end)) {
 			return registry;
 		}
 	}
