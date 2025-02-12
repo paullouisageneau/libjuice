@@ -47,7 +47,7 @@ static conn_mode_entry_t *get_agent_mode_entry(juice_agent_t *agent) {
 	return conn_get_mode_entry(mode);
 }
 
-static int acquire_registry(conn_mode_entry_t *entry, udp_socket_config_t *config) {
+static int acquire_registry(conn_mode_entry_t *entry, udp_socket_config_t *config, conn_registry_t **acquired) {
 	// entry must be locked
 	conn_registry_t *registry;
 
@@ -58,8 +58,10 @@ static int acquire_registry(conn_mode_entry_t *entry, udp_socket_config_t *confi
 	}
 
 	if (!registry) {
-		if (!entry->registry_init_func)
+		if (!entry->registry_init_func) {
+			*acquired = NULL;
 			return 0;
+		}
 
 		JLOG_DEBUG("Creating connections registry");
 
@@ -96,6 +98,8 @@ static int acquire_registry(conn_mode_entry_t *entry, udp_socket_config_t *confi
 		mutex_lock(&registry->mutex);
 	}
 
+	*acquired = registry;
+
 	// registry is locked
 	return 0;
 }
@@ -129,18 +133,11 @@ static void release_registry(conn_mode_entry_t *entry, conn_registry_t *registry
 
 int conn_create(juice_agent_t *agent, udp_socket_config_t *config) {
 	conn_mode_entry_t *entry = get_agent_mode_entry(agent);
+	conn_registry_t *registry;
 	mutex_lock(&entry->mutex);
-	if (acquire_registry(entry, config)) { // locks the registry if created
+	if (acquire_registry(entry, config, &registry)) { // locks the registry if created
 		mutex_unlock(&entry->mutex);
 		return -1;
-	}
-
-	conn_registry_t *registry;
-
-	if (entry->get_registry_func) {
-		registry = entry->get_registry_func(config);
-	} else {
-		registry = entry->registry;
 	}
 
 	agent->registry = registry;
@@ -283,14 +280,15 @@ int juice_mux_listen(const char *bind_address, int local_port, juice_cb_mux_inco
 	config.bind_address = bind_address;
 	config.port_begin = config.port_end = local_port;
 
+	conn_registry_t *registry;
+
 	// locks the registry, creating it first if required
-	if(acquire_registry(entry, &config)) {
+	if(acquire_registry(entry, &config, &registry)) {
 		JLOG_DEBUG("juice_mux_listen acquiring registry failed");
 		mutex_unlock(&entry->mutex);
 		return -1;
 	}
 
-	conn_registry_t *registry = entry->get_registry_func(&config);
 	if (!registry) {
 		JLOG_DEBUG("juice_mux_listen registry not found after creating it");
 		mutex_unlock(&entry->mutex);
