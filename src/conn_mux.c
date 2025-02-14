@@ -33,6 +33,8 @@ typedef struct map_entry {
 } map_entry_t;
 
 typedef struct registry_impl {
+	int conn_mux_registries_index;
+	uint16_t port;
 	thread_t thread;
 	socket_t sock;
 	mutex_t send_mutex;
@@ -40,6 +42,8 @@ typedef struct registry_impl {
 	map_entry_t *map;
 	int map_size;
 	int map_count;
+	juice_cb_mux_incoming_t cb_mux_incoming;
+	void *mux_incoming_user_ptr;
 } registry_impl_t;
 
 typedef struct conn_impl {
@@ -47,6 +51,63 @@ typedef struct conn_impl {
 	timestamp_t next_timestamp;
 	bool finished;
 } conn_impl_t;
+
+static conn_registry_t **conn_mux_registries;
+static int conn_mux_registries_size;
+static int conn_mux_registries_count;
+
+conn_registry_t *conn_mux_get_registry(udp_socket_config_t *config) {
+	for (int i = 0; i < conn_mux_registries_size; i++) {
+		if (!conn_mux_registries[i]) {
+			continue;
+		}
+
+		conn_registry_t *registry = conn_mux_registries[i];
+		registry_impl_t *impl = registry->impl;
+
+		if (impl->port >= config->port_begin && (config->port_end == 0 || impl->port <= config->port_end)) {
+			return registry;
+		}
+	}
+
+	return NULL;
+}
+
+static int conn_mux_add_registry(conn_registry_t *registry) {
+	int i = 0;
+		while (i < conn_mux_registries_size && conn_mux_registries[i])
+			++i;
+
+	if (i == conn_mux_registries_size) {
+		int new_size = conn_mux_registries_size * 2;
+
+		if (new_size == 0) {
+			new_size = 1;
+		}
+
+		JLOG_DEBUG("Reallocating registries array, new_size=%d", new_size);
+		assert(new_size > 0);
+
+		conn_registry_t **new_registries =
+				realloc(conn_mux_registries, new_size * sizeof(conn_registry_t *));
+		if (!new_registries) {
+			JLOG_FATAL("Memory reallocation failed for registries array");
+			return -1;
+		}
+
+		conn_mux_registries = new_registries;
+		conn_mux_registries_size = new_size;
+		memset(conn_mux_registries + i, 0, (new_size - i) * sizeof(conn_registry_t *));
+	}
+
+	conn_mux_registries[i] = registry;
+	++conn_mux_registries_count;
+
+	registry_impl_t *impl = registry->impl;
+	impl->conn_mux_registries_index = i;
+
+	return 0;
+}
 
 static bool is_ready(const juice_agent_t *agent) {
 	if (!agent)
@@ -190,6 +251,8 @@ int conn_mux_registry_init(conn_registry_t *registry, udp_socket_config_t *confi
 		return -1;
 	}
 
+	registry_impl->port = udp_get_port(registry_impl->sock);
+
 	mutex_init(&registry_impl->send_mutex, 0);
 	registry->impl = registry_impl;
 
@@ -198,6 +261,13 @@ int conn_mux_registry_init(conn_registry_t *registry, udp_socket_config_t *confi
 	if (ret) {
 		JLOG_FATAL("Thread creation failed, error=%d", ret);
 		goto error;
+	}
+
+	if (conn_mux_add_registry(registry)) {
+		JLOG_FATAL("Could not add registry");
+		free(registry_impl->map);
+		free(registry_impl);
+		return -1;
 	}
 
 	return 0;
@@ -216,6 +286,16 @@ void conn_mux_registry_cleanup(conn_registry_t *registry) {
 
 	JLOG_VERBOSE("Waiting for connections thread");
 	thread_join(registry_impl->thread, NULL);
+
+	if (registry_impl->conn_mux_registries_index > -1) {
+		int i = registry_impl->conn_mux_registries_index;
+		assert(conn_mux_registries[i] == registry);
+		conn_mux_registries[i] = NULL;
+		registry_impl->conn_mux_registries_index = -1;
+	}
+
+	assert(conn_mux_registries_count > 0);
+	--conn_mux_registries_count;
 
 	mutex_destroy(&registry_impl->send_mutex);
 	closesocket(registry_impl->sock);
@@ -243,7 +323,8 @@ int conn_mux_prepare(conn_registry_t *registry, struct pollfd *pfd, timestamp_t 
 	}
 
 	int count = registry->agents_count;
-	if (registry->cb_mux_incoming)
+	registry_impl_t *impl = registry->impl;
+	if (impl->cb_mux_incoming)
 		++count;
 	mutex_unlock(&registry->mutex);
 	return count;
@@ -297,7 +378,9 @@ static juice_agent_t *lookup_agent(conn_registry_t *registry, char *buf, size_t 
 			}
 		}
 
-		if (registry->cb_mux_incoming) {
+		registry_impl_t *impl = registry->impl;
+
+		if (impl->cb_mux_incoming) {
 			JLOG_DEBUG("Found STUN request with unknown ICE ufrag");
 			char host[ADDR_MAX_NUMERICHOST_LEN];
 			if (getnameinfo((const struct sockaddr *)&src->addr, src->len, host, ADDR_MAX_NUMERICHOST_LEN, NULL, 0, NI_NUMERICHOST)) {
@@ -312,7 +395,7 @@ static juice_agent_t *lookup_agent(conn_registry_t *registry, char *buf, size_t 
 			incoming_info.address = host;
 			incoming_info.port = addr_get_port((struct sockaddr *)src);
 
-			registry->cb_mux_incoming(&incoming_info, registry->mux_incoming_user_ptr);
+			impl->cb_mux_incoming(&incoming_info, impl->mux_incoming_user_ptr);
 
 			return NULL;
 		}
@@ -565,4 +648,51 @@ int conn_mux_get_addrs(juice_agent_t *agent, addr_record_t *records, size_t size
 	registry_impl_t *registry_impl = conn_impl->registry->impl;
 
 	return udp_get_addrs(registry_impl->sock, records, size);
+}
+
+int conn_mux_stop_listen(conn_registry_t *registry) {
+	registry_impl_t *registry_impl = registry->impl;
+	if (!registry_impl) {
+		JLOG_VERBOSE("conn_mux_stop_listen No registry impl found");
+		return -1;
+	}
+
+	JLOG_VERBOSE("conn_mux_stop_listen Removing mux handler callback");
+	registry_impl->cb_mux_incoming = NULL;
+	registry_impl->mux_incoming_user_ptr = NULL;
+
+	return conn_mux_interrupt_registry(registry);
+}
+
+int conn_mux_listen(conn_registry_t *registry, juice_cb_mux_incoming_t cb, void *user_ptr) {
+	if (!cb) {
+		return conn_mux_stop_listen(registry);
+	}
+
+	registry_impl_t *registry_impl = registry->impl;
+	if (!registry_impl) {
+		JLOG_VERBOSE("conn_mux_listen No registry impl found");
+		return -1;
+	}
+
+	if (registry_impl->cb_mux_incoming) {
+		JLOG_VERBOSE("conn_mux_listen Callback already registered\n");
+		return -1;
+	}
+
+	registry_impl->cb_mux_incoming = cb;
+	registry_impl->mux_incoming_user_ptr = user_ptr;
+
+	return 0;
+}
+
+bool conn_mux_can_release_registry(conn_registry_t *registry) {
+	registry_impl_t *registry_impl = registry->impl;
+
+	if (!registry_impl) {
+		JLOG_VERBOSE("conn_mux_can_release_registry No registry impl found");
+		return true;
+	}
+
+	return registry_impl->cb_mux_incoming == NULL;
 }

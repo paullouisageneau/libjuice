@@ -12,6 +12,7 @@
 #include "socket.h"
 #include "thread.h"
 #include "udp.h"
+#include "conn.h"
 
 #include <assert.h>
 #include <string.h>
