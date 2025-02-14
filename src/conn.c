@@ -15,7 +15,6 @@
 
 #include <assert.h>
 #include <string.h>
-#include <stdio.h>
 
 #define INITIAL_REGISTRY_SIZE 16
 
@@ -37,14 +36,14 @@ static conn_mode_entry_t mode_entries[MODE_ENTRIES_SIZE] = {
 
 static conn_mode_entry_t mode_entries[MODE_ENTRIES_SIZE];
 
-conn_mode_entry_t *conn_get_mode_entry(juice_concurrency_mode_t mode) {
+conn_mode_entry_t *get_mode_entry(juice_concurrency_mode_t mode) {
 	assert(mode >= 0 && mode < MODE_ENTRIES_SIZE);
 	return mode_entries + (int)mode;
 }
 
 static conn_mode_entry_t *get_agent_mode_entry(juice_agent_t *agent) {
 	juice_concurrency_mode_t mode = agent->config.concurrency_mode;
-	return conn_get_mode_entry(mode);
+	return get_mode_entry(mode);
 }
 
 static int acquire_registry(conn_mode_entry_t *entry, udp_socket_config_t *config, conn_registry_t **acquired) {
@@ -110,9 +109,9 @@ static void release_registry(conn_mode_entry_t *entry, conn_registry_t *registry
 		return;
 
 	// registry must be locked
-	bool canRelease = entry->can_release_registry_func ? entry->can_release_registry_func(registry) : true;
+	bool can_release = entry->can_release_registry_func ? entry->can_release_registry_func(registry) : true;
 
-	if (registry->agents_count == 0 && canRelease) {
+	if (registry->agents_count == 0 && can_release) {
 		JLOG_DEBUG("No connection left, destroying connections registry");
 		mutex_unlock(&registry->mutex);
 
