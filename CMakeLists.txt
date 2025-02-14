@@ -79,6 +79,7 @@ set(TESTS_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/test/conflict.c
     ${CMAKE_CURRENT_SOURCE_DIR}/test/bind.c
 	${CMAKE_CURRENT_SOURCE_DIR}/test/ufrag.c
+	${CMAKE_CURRENT_SOURCE_DIR}/test/tcp.c
 )
 source_group("Test Files" FILES "${TESTS_SOURCES}")
 

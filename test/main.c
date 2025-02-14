@@ -22,6 +22,7 @@ int test_turn(void);
 int test_conflict(void);
 int test_bind(void);
 int test_ufrag(void);
+int test_tcp(void);
 
 #ifndef NO_SERVER
 int test_server(void);
@@ -29,6 +30,12 @@ int test_server(void);
 
 int main(int argc, char **argv) {
 	juice_set_log_level(JUICE_LOG_LEVEL_WARN);
+
+	printf("\nRunning TCP test...\n");
+	if (test_tcp()) {
+		fprintf(stderr, "TCP test failed\n");
+		return -2;
+	}
 
 	printf("\nRunning CRC32 implementation test...\n");
 	if (test_crc32()) {
