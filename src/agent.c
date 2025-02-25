@@ -1890,7 +1890,6 @@ int agent_send_turn_allocate_request(juice_agent_t *agent, const agent_stun_entr
 	msg.msg_method = method;
 	memcpy(msg.transaction_id, entry->transaction_id, STUN_TRANSACTION_ID_SIZE);
 
-	msg.credentials = entry->turn->credentials;
 	msg.lifetime = TURN_LIFETIME / 1000; // seconds
 
 	// Include allocation attributes in Allocate request only
@@ -1898,7 +1897,11 @@ int agent_send_turn_allocate_request(juice_agent_t *agent, const agent_stun_entr
 		msg.requested_transport = true;
 	}
 
-	const char *password = *msg.credentials.nonce != '\0' ? entry->turn->password : NULL;
+	const char *password = NULL;
+	if(*entry->turn->credentials.nonce != '\0') {
+		msg.credentials = entry->turn->credentials;
+		password = entry->turn->password;
+	}
 
 	char buffer[BUFFER_SIZE];
 	int size = stun_write(buffer, BUFFER_SIZE, &msg, password);
