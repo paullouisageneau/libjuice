@@ -1261,11 +1261,9 @@ int agent_dispatch_stun(juice_agent_t *agent, void *buf, size_t size, stun_messa
 			JLOG_WARN("STUN message verification failed");
 			return -1;
 		}
-		if (!relayed) {
-			if (agent_add_remote_reflexive_candidate(agent, ICE_CANDIDATE_TYPE_PEER_REFLEXIVE,
-			                                         msg->priority, src)) {
-				JLOG_WARN("Failed to add remote peer reflexive candidate from STUN message");
-			}
+		if (agent_add_remote_reflexive_candidate(agent, ICE_CANDIDATE_TYPE_PEER_REFLEXIVE,
+		                                         msg->priority, src)) {
+			JLOG_WARN("Failed to add remote peer reflexive candidate from STUN message");
 		}
 	}
 
