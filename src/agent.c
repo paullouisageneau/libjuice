@@ -92,6 +92,7 @@ juice_agent_t *agent_create(const juice_config_t *config) {
 	}
 
 	bool alloc_failed = false;
+	agent->config.ice_tcp_mode = config->ice_tcp_mode;
 	agent->config.concurrency_mode = config->concurrency_mode;
 	agent->config.stun_server_host = alloc_string_copy(config->stun_server_host, &alloc_failed);
 	agent->config.stun_server_port = config->stun_server_port;
@@ -341,7 +342,7 @@ int agent_resolve_servers(juice_agent_t *agent) {
 			conn_unlock(agent);
 
 			addr_record_t records[DEFAULT_MAX_RECORDS_COUNT];
-			int records_count = addr_resolve(hostname, service, records, DEFAULT_MAX_RECORDS_COUNT);
+			int records_count = addr_resolve(hostname, service, SOCK_DGRAM, records, DEFAULT_MAX_RECORDS_COUNT);
 
 			conn_lock(agent);
 
@@ -426,7 +427,7 @@ int agent_resolve_servers(juice_agent_t *agent) {
 		conn_unlock(agent);
 
 		addr_record_t records[MAX_STUN_SERVER_RECORDS_COUNT];
-		int records_count = addr_resolve(hostname, service, records, MAX_STUN_SERVER_RECORDS_COUNT);
+		int records_count = addr_resolve(hostname, service, SOCK_DGRAM, records, MAX_STUN_SERVER_RECORDS_COUNT);
 
 		conn_lock(agent);
 
@@ -485,7 +486,7 @@ int agent_set_remote_description(juice_agent_t *agent, const char *sdp) {
 	JLOG_VERBOSE("Setting remote SDP description: %s", sdp);
 
 	ice_description_t remote;
-	int ret = ice_parse_sdp(sdp, &remote);
+	int ret = ice_parse_sdp(sdp, &remote, agent->config.ice_tcp_mode == JUICE_ICE_TCP_MODE_ACTIVE);
 	if (ret < 0) {
 		switch (ret) {
 		case ICE_PARSE_MISSING_UFRAG:
@@ -561,6 +562,12 @@ int agent_add_remote_candidate(juice_agent_t *agent, const char *sdp) {
 	if (ret < 0) {
 		if (ret == ICE_PARSE_IGNORED) {
 			JLOG_DEBUG("Ignored SDP candidate: %s", sdp);
+			conn_unlock(agent);
+			return JUICE_ERR_IGNORED;
+		}
+
+		if (strcmp(candidate.transport, "TCP") == 0 && agent->config.ice_tcp_mode != JUICE_ICE_TCP_MODE_ACTIVE) {
+			JLOG_DEBUG("ICE-TCP is disabled ignoring Candidate: %s", sdp);
 			conn_unlock(agent);
 			return JUICE_ERR_IGNORED;
 		}

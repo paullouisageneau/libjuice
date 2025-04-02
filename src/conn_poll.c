@@ -10,6 +10,7 @@
 #include "agent.h"
 #include "log.h"
 #include "socket.h"
+#include "tcp.h"
 #include "thread.h"
 #include "udp.h"
 
@@ -33,7 +34,10 @@ typedef enum conn_state { CONN_STATE_NEW = 0, CONN_STATE_READY, CONN_STATE_FINIS
 typedef struct conn_impl {
 	conn_registry_t *registry;
 	conn_state_t state;
-	socket_t sock;
+	socket_t udp_sock;
+	socket_t tcp_sock;
+	addr_record_t tcp_dst;
+	uint16_t ice_tcp_len;
 	mutex_t send_mutex;
 	int send_ds;
 	timestamp_t next_timestamp;
@@ -46,7 +50,7 @@ typedef struct pfds_record {
 
 int conn_poll_prepare(conn_registry_t *registry, pfds_record_t *pfds, timestamp_t *next_timestamp);
 int conn_poll_process(conn_registry_t *registry, pfds_record_t *pfds);
-int conn_poll_recv(socket_t sock, char *buffer, size_t size, addr_record_t *src);
+int conn_poll_recv_udp(socket_t sock, char *buffer, size_t size, addr_record_t *src);
 int conn_poll_run(conn_registry_t *registry);
 
 static thread_return_t THREAD_CALL conn_thread_entry(void *arg) {
@@ -151,20 +155,22 @@ int conn_poll_prepare(conn_registry_t *registry, pfds_record_t *pfds, timestamp_
 #endif
 	interrupt_pfd->events = POLLIN;
 
-	for (nfds_t i = 1; i < pfds->size; ++i) {
+	for (nfds_t i = 1; i < pfds->size; i += 2) {
 		struct pollfd *pfd = pfds->pfds + i;
-		juice_agent_t *agent = registry->agents[i - 1];
+		struct pollfd *pfd_tcp = pfds->pfds + i + 1;
+
+		juice_agent_t *agent = registry->agents[(i - 1) / 2];
 		if (!agent) {
-			pfd->fd = INVALID_SOCKET;
-			pfd->events = 0;
+			pfd_tcp->fd = pfd->fd = INVALID_SOCKET;
+			pfd_tcp->events = pfd->events = 0;
 			continue;
 		}
 
 		conn_impl_t *conn_impl = agent->conn_impl;
 		if (!conn_impl ||
 		    (conn_impl->state != CONN_STATE_NEW && conn_impl->state != CONN_STATE_READY)) {
-			pfd->fd = INVALID_SOCKET;
-			pfd->events = 0;
+			pfd_tcp->fd = pfd->fd = INVALID_SOCKET;
+			pfd_tcp->events = pfd->events = 0;
 			continue;
 		}
 
@@ -174,8 +180,11 @@ int conn_poll_prepare(conn_registry_t *registry, pfds_record_t *pfds, timestamp_
 		if (*next_timestamp > conn_impl->next_timestamp)
 			*next_timestamp = conn_impl->next_timestamp;
 
-		pfd->fd = conn_impl->sock;
+		pfd->fd = conn_impl->udp_sock;
 		pfd->events = POLLIN;
+
+		pfd_tcp->fd = conn_impl->tcp_sock;
+		pfd_tcp->events = POLLIN;
 	}
 
 	int count = registry->agents_count;
@@ -187,7 +196,7 @@ error:
 	return -1;
 }
 
-int conn_poll_recv(socket_t sock, char *buffer, size_t size, addr_record_t *src) {
+int conn_poll_recv_udp(socket_t sock, char *buffer, size_t size, addr_record_t *src) {
 	JLOG_VERBOSE("Receiving datagram");
 	int len;
 	while ((len = udp_recvfrom(sock, buffer, size, src)) == 0) {
@@ -230,13 +239,25 @@ int conn_poll_process(conn_registry_t *registry, pfds_record_t *pfds) {
 		if (pfd->fd == INVALID_SOCKET)
 			continue;
 
-		juice_agent_t *agent = registry->agents[i - 1];
+		bool is_tcp = i % 2 == 0;
+		int agent_index = 0;
+		if (is_tcp) {
+			agent_index = (i - 2) / 2;
+		} else {
+			agent_index = (i - 1) / 2;
+		}
+
+		juice_agent_t *agent = registry->agents[agent_index];
 		if (!agent)
 			continue;
 
 		conn_impl_t *conn_impl = agent->conn_impl;
-		if (!conn_impl || conn_impl->sock != pfd->fd || conn_impl->state != CONN_STATE_READY)
+		if (!conn_impl || conn_impl->state != CONN_STATE_READY)
 			continue;
+
+		if (conn_impl->tcp_sock != pfd->fd && conn_impl->udp_sock != pfd->fd) {
+			continue;
+		}
 
 		if (pfd->revents & POLLNVAL || pfd->revents & POLLERR) {
 			JLOG_WARN("Error when polling socket");
@@ -250,14 +271,29 @@ int conn_poll_process(conn_registry_t *registry, pfds_record_t *pfds) {
 			addr_record_t src;
 			int ret = 0;
 			int left = 1000; // limit for fairness between sockets
-			while (left-- &&
-			       (ret = conn_poll_recv(conn_impl->sock, buffer, BUFFER_SIZE, &src)) > 0) {
+			while (left--) {
+				if (is_tcp) {
+					if ((ret = tcp_ice_read(conn_impl->tcp_sock, buffer, BUFFER_SIZE, &conn_impl->ice_tcp_len)) <= 0)  {
+						break;
+					}
+					memcpy(&src, &conn_impl->tcp_dst, sizeof(conn_impl->tcp_dst));
+				} else {
+					if ((ret = conn_poll_recv_udp(conn_impl->udp_sock, buffer, BUFFER_SIZE, &src)) <= 0)  {
+						break;
+					}
+				}
+
 				if (agent_conn_recv(agent, buffer, (size_t)ret, &src) != 0) {
 					JLOG_WARN("Agent receive failed");
 					conn_impl->state = CONN_STATE_FINISHED;
 					break;
 				}
+
+				if (is_tcp) {
+					break;
+				}
 			}
+
 			if (conn_impl->state == CONN_STATE_FINISHED)
 				continue;
 
@@ -329,8 +365,8 @@ int conn_poll_init(juice_agent_t *agent, conn_registry_t *registry, udp_socket_c
 		return -1;
 	}
 
-	conn_impl->sock = udp_create_socket(config);
-	if (conn_impl->sock == INVALID_SOCKET) {
+	conn_impl->udp_sock = udp_create_socket(config);
+	if (conn_impl->udp_sock == INVALID_SOCKET) {
 		JLOG_ERROR("UDP socket creation failed");
 		free(conn_impl);
 		return -1;
@@ -338,6 +374,7 @@ int conn_poll_init(juice_agent_t *agent, conn_registry_t *registry, udp_socket_c
 
 	mutex_init(&conn_impl->send_mutex, 0);
 	conn_impl->registry = registry;
+	conn_impl->tcp_sock = INVALID_SOCKET;
 
 	agent->conn_impl = conn_impl;
 	return 0;
@@ -349,7 +386,8 @@ void conn_poll_cleanup(juice_agent_t *agent) {
 	conn_poll_interrupt(agent);
 
 	mutex_destroy(&conn_impl->send_mutex);
-	closesocket(conn_impl->sock);
+	closesocket(conn_impl->udp_sock);
+	closesocket(conn_impl->tcp_sock);
 	free(agent->conn_impl);
 	agent->conn_impl = NULL;
 }
@@ -402,7 +440,7 @@ int conn_poll_send(juice_agent_t *agent, const addr_record_t *dst, const char *d
 
 	if (conn_impl->send_ds >= 0 && conn_impl->send_ds != ds) {
 		JLOG_VERBOSE("Setting Differentiated Services field to 0x%X", ds);
-		if (udp_set_diffserv(conn_impl->sock, ds) == 0)
+		if (udp_set_diffserv(conn_impl->udp_sock, ds) == 0)
 			conn_impl->send_ds = ds;
 		else
 			conn_impl->send_ds = -1; // disable for next time
@@ -410,13 +448,26 @@ int conn_poll_send(juice_agent_t *agent, const addr_record_t *dst, const char *d
 
 	JLOG_VERBOSE("Sending datagram, size=%d", size);
 
-	int ret = udp_sendto(conn_impl->sock, data, size, dst);
+	int ret = 0;
+	if (dst->socktype == SOCK_STREAM) {
+		if (conn_impl->tcp_sock == INVALID_SOCKET) {
+			conn_impl->tcp_sock = tcp_create_socket(dst);
+			memcpy(&conn_impl->tcp_dst, dst, sizeof(conn_impl->tcp_dst));
+		}
+
+		ret = tcp_ice_write(conn_impl->tcp_sock, data, size);
+	} else {
+		ret = udp_sendto(conn_impl->udp_sock, data, size, dst);
+	}
+
 	if (ret < 0) {
 		ret = -sockerrno;
 		if (sockerrno == SEAGAIN || sockerrno == SEWOULDBLOCK)
 			JLOG_INFO("Send failed, buffer is full");
 		else if (sockerrno == SEMSGSIZE)
 			JLOG_WARN("Send failed, datagram is too large");
+		else if (sockerrno == SEENOTCONN) // TCP not connected yet
+			ret = 0;
 		else
 			JLOG_WARN("Send failed, errno=%d", sockerrno);
 	}
@@ -428,5 +479,5 @@ int conn_poll_send(juice_agent_t *agent, const addr_record_t *dst, const char *d
 int conn_poll_get_addrs(juice_agent_t *agent, addr_record_t *records, size_t size) {
 	conn_impl_t *conn_impl = agent->conn_impl;
 
-	return udp_get_addrs(conn_impl->sock, records, size);
+	return udp_get_addrs(conn_impl->udp_sock, records, size);
 }

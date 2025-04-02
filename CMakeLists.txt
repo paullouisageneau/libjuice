@@ -83,6 +83,7 @@ set(TESTS_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/test/conflict.c
     ${CMAKE_CURRENT_SOURCE_DIR}/test/bind.c
 	${CMAKE_CURRENT_SOURCE_DIR}/test/ufrag.c
+	${CMAKE_CURRENT_SOURCE_DIR}/test/tcp.c
 )
 source_group("Test Files" FILES "${TESTS_SOURCES}")
 
@@ -238,6 +239,10 @@ if(NOT NO_TESTS)
 		XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER com.github.paullouisageneau.libjuice.tests)
 
 	target_link_libraries(juice-tests juice Threads::Threads)
+
+	if(WIN32)
+		target_link_libraries(juice-tests ws2_32)
+	endif()
 endif()
 
 # Fuzzer
