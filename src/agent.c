@@ -1467,21 +1467,20 @@ int agent_process_stun_binding(juice_agent_t *agent, const stun_message_t *msg,
 				return -1;
 			}
 
-			// 7.2.5.2.1. Non-Symmetric Transport Addresses:
-			// The ICE agent MUST check that the source and destination transport addresses in the
-			// Binding request and response are symmetric. [...] If the addresses are not symmetric,
-			// the agent MUST set the candidate pair state to Failed.
-			if (!addr_record_is_equal(src, &entry->record, true)) {
-				JLOG_DEBUG(
-				    "Candidate pair check failed (non-symmetric source address in response)");
-				entry->state = AGENT_STUN_ENTRY_STATE_FAILED;
-				entry->next_transmission = 0;
-				if (pair)
-					pair->state = ICE_CANDIDATE_PAIR_STATE_FAILED;
-				break;
-			}
-
 			if (pair->state != ICE_CANDIDATE_PAIR_STATE_SUCCEEDED) {
+				// 7.2.5.2.1. Non-Symmetric Transport Addresses:
+				// The ICE agent MUST check that the source and destination transport addresses in
+				// the Binding request and response are symmetric. [...] If the addresses are not
+				// symmetric, the agent MUST set the candidate pair state to Failed.
+				if (!addr_record_is_equal(src, &entry->record, true)) {
+					JLOG_DEBUG(
+					    "Candidate pair check failed (non-symmetric source address in response)");
+					entry->state = AGENT_STUN_ENTRY_STATE_FAILED;
+					entry->next_transmission = 0;
+					pair->state = ICE_CANDIDATE_PAIR_STATE_FAILED;
+					break;
+				}
+
 				JLOG_DEBUG("Candidate pair check succeeded");
 				pair->state = ICE_CANDIDATE_PAIR_STATE_SUCCEEDED;
 			}
