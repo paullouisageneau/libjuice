@@ -1078,6 +1078,7 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 			    nominated_entry->state != AGENT_STUN_ENTRY_STATE_SUCCEEDED_KEEPALIVE) {
 				nominated_entry->state = AGENT_STUN_ENTRY_STATE_SUCCEEDED_KEEPALIVE;
 				agent_arm_keepalive(agent, nominated_entry);
+				atomic_store(&agent->selected_entry, nominated_entry); // for consistency
 			}
 
 			// If the entry of the nominated candidate is relayed locally, we need also to
