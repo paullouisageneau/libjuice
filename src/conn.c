@@ -22,13 +22,13 @@
 
 static conn_mode_entry_t mode_entries[MODE_ENTRIES_SIZE] = {
     {conn_poll_registry_init, conn_poll_registry_cleanup, conn_poll_init, conn_poll_cleanup,
-     conn_poll_lock, conn_poll_unlock, conn_poll_interrupt, conn_poll_send, conn_poll_get_addrs,
+     conn_poll_lock, conn_poll_unlock, conn_poll_interrupt, conn_poll_send, conn_poll_tcp_connect_func, conn_poll_get_addrs,
      NULL, NULL, NULL, MUTEX_INITIALIZER, NULL},
     {conn_mux_registry_init, conn_mux_registry_cleanup, conn_mux_init, conn_mux_cleanup,
-     conn_mux_lock, conn_mux_unlock, conn_mux_interrupt, conn_mux_send, conn_mux_get_addrs,
+     conn_mux_lock, conn_mux_unlock, conn_mux_interrupt, conn_mux_send, NULL, conn_mux_get_addrs,
      conn_mux_listen, conn_mux_get_registry, conn_mux_can_release_registry, MUTEX_INITIALIZER, NULL},
     {NULL, NULL, conn_thread_init, conn_thread_cleanup,
-     conn_thread_lock, conn_thread_unlock, conn_thread_interrupt, conn_thread_send, conn_thread_get_addrs,
+     conn_thread_lock, conn_thread_unlock, conn_thread_interrupt, conn_thread_send, NULL, conn_thread_get_addrs,
      NULL, NULL, NULL, MUTEX_INITIALIZER, NULL}
 };
 
@@ -251,6 +251,17 @@ int conn_send(juice_agent_t *agent, const addr_record_t *dst, const char *data, 
 		return -1;
 
 	return get_agent_mode_entry(agent)->send_func(agent, dst, data, size, ds);
+}
+
+void conn_tcp_connect(juice_agent_t *agent, const addr_record_t *dst, void (*callback)(juice_agent_t*)) {
+	if (!agent->conn_impl)
+		return;
+
+	tcp_connect_func *tcp_connect_func = get_agent_mode_entry(agent)->tcp_connect_func;
+	if (tcp_connect_func == NULL)
+		return;
+
+	tcp_connect_func(agent, dst, callback);
 }
 
 int conn_get_addrs(juice_agent_t *agent, addr_record_t *records, size_t size) {
