@@ -54,6 +54,7 @@ set(LIBJUICE_SOURCES
 	${CMAKE_CURRENT_SOURCE_DIR}/src/server.c
 	${CMAKE_CURRENT_SOURCE_DIR}/src/stun.c
 	${CMAKE_CURRENT_SOURCE_DIR}/src/timestamp.c
+	${CMAKE_CURRENT_SOURCE_DIR}/src/tcp.c
 	${CMAKE_CURRENT_SOURCE_DIR}/src/turn.c
 	${CMAKE_CURRENT_SOURCE_DIR}/src/udp.c
 )
@@ -83,6 +84,7 @@ set(TESTS_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/test/conflict.c
     ${CMAKE_CURRENT_SOURCE_DIR}/test/bind.c
 	${CMAKE_CURRENT_SOURCE_DIR}/test/ufrag.c
+	${CMAKE_CURRENT_SOURCE_DIR}/test/tcp.c
 )
 source_group("Test Files" FILES "${TESTS_SOURCES}")
 
@@ -238,6 +240,10 @@ if(NOT NO_TESTS)
 		XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER com.github.paullouisageneau.libjuice.tests)
 
 	target_link_libraries(juice-tests juice Threads::Threads)
+
+	if(WIN32)
+		target_link_libraries(juice-tests ws2_32)
+	endif()
 endif()
 
 # Fuzzer
