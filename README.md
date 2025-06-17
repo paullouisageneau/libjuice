@@ -31,7 +31,7 @@ The library implements a simplified full ICE agent ([RFC5245](https://www.rfc-ed
 The limitations compared to a fully-featured ICE agent are:
 - Only UDP is supported as transport protocol and other protocols are ignored.
 - Only one component is supported, which is sufficient for WebRTC Data Channels and multiplexed RTP+RTCP.
-- Candidates are gathered without binding to each network interface, which behaves identically to the full implementation on most client systems.
+- Only [RFC8828](https://www.rfc-editor.org/rfc/rfc8828) mode 2 is supported (default route + all local addresses).
 
 It also implements a lightweight STUN/TURN server ([RFC8489](https://www.rfc-editor.org/rfc/rfc8489.html) and [RFC8656](https://www.rfc-editor.org/rfc/rfc8656.html)). The server can be disabled at compile-time with the `NO_SERVER` flag.
 
