@@ -374,6 +374,7 @@ const char *stun_get_error_reason(unsigned int code);
 // Export for tests
 JUICE_EXPORT bool _juice_is_stun_datagram(const void *data, size_t size);
 JUICE_EXPORT int _juice_stun_read(void *data, size_t size, stun_message_t *msg);
+JUICE_EXPORT int _juice_stun_write(void *buf, size_t size, const stun_message_t *msg, const char *password);
 JUICE_EXPORT bool _juice_stun_check_integrity(void *buf, size_t size, const stun_message_t *msg,
                                               const char *password);
 

@@ -32,6 +32,8 @@ typedef struct conn_registry {
 	int agents_count;
 } conn_registry_t;
 
+typedef void tcp_connect_func(juice_agent_t *agent, const addr_record_t *dst, void (*callback)(juice_agent_t*));
+
 typedef struct conn_mode_entry {
 	int (*registry_init_func)(conn_registry_t *registry, udp_socket_config_t *config);
 	void (*registry_cleanup_func)(conn_registry_t *registry);
@@ -44,6 +46,7 @@ typedef struct conn_mode_entry {
 	int (*interrupt_func)(juice_agent_t *agent);
 	int (*send_func)(juice_agent_t *agent, const addr_record_t *dst, const char *data, size_t size,
 	                 int ds);
+	tcp_connect_func *tcp_connect_func;
 	int (*get_addrs_func)(juice_agent_t *agent, addr_record_t *records, size_t size);
 	int (*mux_listen_func)(conn_registry_t *registry, juice_cb_mux_incoming_t cb, void *user_ptr);
 	conn_registry_t *(*get_registry_func)(udp_socket_config_t *config);
@@ -61,6 +64,7 @@ void conn_unlock(juice_agent_t *agent);
 int conn_interrupt(juice_agent_t *agent);
 int conn_send(juice_agent_t *agent, const addr_record_t *dst, const char *data, size_t size,
               int ds);
+void conn_tcp_connect(juice_agent_t *agent, const addr_record_t *dst, void (*callback)(juice_agent_t*));
 int conn_get_addrs(juice_agent_t *agent, addr_record_t *records, size_t size);
 
 #endif

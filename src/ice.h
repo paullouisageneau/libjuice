@@ -18,6 +18,8 @@
 
 #define ICE_MAX_CANDIDATES_COUNT 20 // ~ 500B * 20 = 10KB
 
+#define ICE_CANDIDATE_PENALTY_TCP 50
+
 typedef enum ice_candidate_type {
 	ICE_CANDIDATE_TYPE_UNKNOWN,
 	ICE_CANDIDATE_TYPE_HOST,
@@ -25,6 +27,13 @@ typedef enum ice_candidate_type {
 	ICE_CANDIDATE_TYPE_PEER_REFLEXIVE,
 	ICE_CANDIDATE_TYPE_RELAYED,
 } ice_candidate_type_t;
+
+typedef enum ice_candidate_transport {
+	ICE_CANDIDATE_TRANSPORT_UDP,
+	ICE_CANDIDATE_TRANSPORT_TCP_TYPE_ACTIVE,
+	ICE_CANDIDATE_TRANSPORT_TCP_TYPE_PASSIVE,
+	ICE_CANDIDATE_TRANSPORT_TCP_TYPE_SO,
+} ice_candidate_transport_t;
 
 // RFC 8445: The RECOMMENDED values for type preferences are 126 for host candidates, 110 for
 // peer-reflexive candidates, 100 for server-reflexive candidates, and 0 for relayed candidates.
@@ -38,7 +47,7 @@ typedef struct ice_candidate {
 	uint32_t priority;
 	int component;
 	char foundation[32 + 1]; // 1 to 32 characters
-	char transport[32 + 1];
+	ice_candidate_transport_t transport;
 	char hostname[256 + 1];
 	char service[32 + 1];
 	addr_record_t resolved;
@@ -67,6 +76,7 @@ typedef struct ice_candidate_pair {
 	ice_candidate_pair_state_t state;
 	bool nominated;
 	bool nomination_requested;
+	bool tcp_connected;
 	timestamp_t consent_expiry;
 } ice_candidate_pair_t;
 
@@ -84,7 +94,7 @@ int ice_parse_sdp(const char *sdp, ice_description_t *description);
 int ice_parse_candidate_sdp(const char *line, ice_candidate_t *candidate);
 int ice_create_local_description(ice_description_t *description);
 int ice_create_local_candidate(ice_candidate_type_t type, int component, int index,
-                               const addr_record_t *record, ice_candidate_t *candidate);
+                               const addr_record_t *record, ice_candidate_t *candidate, ice_candidate_transport_t transport);
 int ice_resolve_candidate(ice_candidate_t *candidate, ice_resolve_mode_t mode);
 int ice_add_candidate(ice_candidate_t *candidate, ice_description_t *description);
 void ice_sort_candidates(ice_description_t *description);
@@ -99,7 +109,7 @@ int ice_update_candidate_pair(ice_candidate_pair_t *pair, bool is_controlling);
 
 int ice_candidates_count(const ice_description_t *description, ice_candidate_type_t type);
 
-uint32_t ice_compute_priority(ice_candidate_type_t type, int family, int component, int index);
+uint32_t ice_compute_priority(ice_candidate_type_t type, int family, int component, int index, ice_candidate_transport_t transport);
 
 bool ice_is_valid_string(const char *str);
 

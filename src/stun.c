@@ -1248,3 +1248,7 @@ JUICE_EXPORT bool _juice_stun_check_integrity(void *buf, size_t size, const stun
                                               const char *password) {
 	return stun_check_integrity(buf, size, msg, password);
 }
+
+JUICE_EXPORT int _juice_stun_write(void *buf, size_t size, const stun_message_t *msg, const char *password) {
+	return stun_write(buf, size, msg, password);
+}
