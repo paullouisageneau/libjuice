@@ -219,6 +219,7 @@ int agent_add_local_reflexive_candidate(juice_agent_t *agent, ice_candidate_type
                                         const addr_record_t *record);
 int agent_add_remote_reflexive_candidate(juice_agent_t *agent, ice_candidate_type_t type,
                                          uint32_t priority, const addr_record_t *record);
+int agent_add_local_tcp_active_candidate(juice_agent_t *agent, addr_record_t *record);
 int agent_add_candidate_pair(juice_agent_t *agent, ice_candidate_t *local,
                              ice_candidate_t *remote); // local may be NULL
 int agent_add_candidate_pairs_for_remote(juice_agent_t *agent, ice_candidate_t *remote);
