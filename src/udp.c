@@ -206,6 +206,7 @@ int udp_sendto(socket_t sock, const char *data, size_t size, const addr_record_t
 	addr_record_t tmp = *dst;
 	addr_record_t name;
 	name.len = sizeof(name.addr);
+	name.socktype = SOCK_DGRAM;
 	if (getsockname(sock, (struct sockaddr *)&name.addr, &name.len) == 0) {
 		if (name.addr.ss_family == AF_INET6)
 			addr_map_inet6_v4mapped(&tmp.addr, &tmp.len);
@@ -257,6 +258,7 @@ int udp_set_diffserv(socket_t sock, int ds) {
 #else
 	addr_record_t name;
 	name.len = sizeof(name.addr);
+	name.socktype = SOCK_DGRAM;
 	if (getsockname(sock, (struct sockaddr *)&name.addr, &name.len) < 0) {
 		JLOG_WARN("getsockname failed, errno=%d", sockerrno);
 		return -1;
@@ -305,6 +307,7 @@ uint16_t udp_get_port(socket_t sock) {
 
 int udp_get_bound_addr(socket_t sock, addr_record_t *record) {
 	record->len = sizeof(record->addr);
+	record->socktype = SOCK_DGRAM;
 	if (getsockname(sock, (struct sockaddr *)&record->addr, &record->len)) {
 		JLOG_WARN("getsockname failed, errno=%d", sockerrno);
 		return -1;
@@ -336,6 +339,7 @@ int udp_get_local_addr(socket_t sock, int family_hint, addr_record_t *record) {
 		sin->sin_family = AF_INET;
 		sin->sin_port = htons(port);
 		record->len = sizeof(*sin);
+		record->socktype = SOCK_DGRAM;
 	}
 
 	switch (record->addr.ss_family) {
@@ -505,6 +509,7 @@ int udp_get_addrs(socket_t sock, addr_record_t *records, size_t count) {
 				if (current != end) {
 					memcpy(&current->addr, sa, len);
 					current->len = len;
+					current->socktype = SOCK_DGRAM;
 					addr_unmap_inet6_v4mapped((struct sockaddr *)&current->addr, &current->len);
 					addr_set_port((struct sockaddr *)&current->addr, port);
 					++current;
@@ -538,6 +543,7 @@ int udp_get_addrs(socket_t sock, addr_record_t *records, size_t count) {
 				if (current != end) {
 					memcpy(&current->addr, sa, len);
 					current->len = len;
+					current->socktype = SOCK_DGRAM;
 					addr_set_port((struct sockaddr *)&current->addr, port);
 					++current;
 				}
@@ -576,6 +582,7 @@ int udp_get_addrs(socket_t sock, addr_record_t *records, size_t count) {
 				if (current != end) {
 					memcpy(&current->addr, sa, len);
 					current->len = len;
+					current->socktype = SOCK_DGRAM;
 					addr_set_port((struct sockaddr *)&current->addr, port);
 					++current;
 				}
@@ -591,6 +598,7 @@ int udp_get_addrs(socket_t sock, addr_record_t *records, size_t count) {
 				if (current != end) {
 					memcpy(&current->addr, &sin6, sizeof(sin6));
 					current->len = sizeof(sin6);
+					current->socktype = SOCK_DGRAM;
 					++current;
 				}
 			}

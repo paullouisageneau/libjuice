@@ -274,6 +274,7 @@ int addr_resolve(const char *hostname, const char *service, int socktype, addr_r
 			if (records != end) {
 				memcpy(&records->addr, ai->ai_addr, ai->ai_addrlen);
 				records->len = (socklen_t)ai->ai_addrlen;
+				records->socktype = socktype;
 				++records;
 			}
 		}
