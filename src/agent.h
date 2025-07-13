@@ -14,6 +14,7 @@
 #include "ice.h"
 #include "juice.h"
 #include "stun.h"
+#include "tcp.h"
 #include "thread.h"
 #include "timestamp.h"
 #include "turn.h"
@@ -177,6 +178,7 @@ int agent_get_selected_candidate_pair(juice_agent_t *agent, ice_candidate_t *loc
 
 int agent_conn_recv(juice_agent_t *agent, char *buf, size_t len, const addr_record_t *src);
 int agent_conn_update(juice_agent_t *agent, timestamp_t *next_timestamp);
+int agent_conn_tcp_state(juice_agent_t *agent, const addr_record_t *dst, tcp_state_t state);
 int agent_conn_fail(juice_agent_t *agent);
 
 int agent_input(juice_agent_t *agent, char *buf, size_t len, const addr_record_t *src,

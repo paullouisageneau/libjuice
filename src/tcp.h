@@ -13,6 +13,13 @@
 #include "juice.h"
 #include "socket.h"
 
+typedef enum tcp_state {
+	TCP_STATE_DISCONNECTED,
+	TCP_STATE_CONNECTING,
+	TCP_STATE_CONNECTED,
+	TCP_STATE_FAILED
+} tcp_state_t;
+
 socket_t tcp_create_socket(const addr_record_t *dst);
 int tcp_ice_write(socket_t sock, const char *data, size_t size);
 int tcp_ice_read(socket_t sock, char *buffer, size_t size, uint16_t *ice_tcp_len);
@@ -20,4 +27,5 @@ int tcp_ice_read(socket_t sock, char *buffer, size_t size, uint16_t *ice_tcp_len
 // Export for tests
 JUICE_EXPORT int _juice_tcp_ice_write(socket_t sock, const char *data, size_t size);
 JUICE_EXPORT int _juice_tcp_ice_read(socket_t sock, char *buffer, size_t size, uint16_t *ice_tcp_len);
+
 #endif
