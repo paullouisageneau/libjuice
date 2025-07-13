@@ -872,23 +872,31 @@ void agent_register_entry_for_candidate_pair(juice_agent_t *agent, ice_candidate
 		agent_translate_host_candidate_entry(agent, entry);
 }
 
-void agent_tcp_conn_connected(juice_agent_t *agent, bool success) {
+int agent_conn_tcp_state(juice_agent_t *agent, const addr_record_t *dst, tcp_state_t state) {
 	for (int i = 0; i < agent->entries_count; ++i) {
 		agent_stun_entry_t *entry = agent->entries + i;
-		if (entry->pair && entry->pair->remote->transport != ICE_CANDIDATE_TRANSPORT_UDP) {
-
-			if (success) {
+		if (entry->pair && entry->pair->remote->transport != ICE_CANDIDATE_TRANSPORT_UDP && addr_record_is_equal(&entry->record, dst, true)) {
+			entry->pair->tcp_state = state;
+			switch(state) {
+			case TCP_STATE_CONNECTED:
 				entry->next_transmission = current_timestamp();
-				entry->pair->tcp_conn_state = ICE_TCP_CONN_STATE_CONNECTED;
-			} else {
-				JLOG_DEBUG("ice-tcp failed to connected, marking as failed");
+				break;
+			case TCP_STATE_DISCONNECTED:
+			case TCP_STATE_FAILED:
 				entry->pair->state = ICE_CANDIDATE_PAIR_STATE_FAILED;
 				entry->state = AGENT_STUN_ENTRY_STATE_FAILED;
 				entry->next_transmission = 0;
+				break;
+			default:
+				break;
 			}
+			conn_interrupt(agent);
+			return 0;
 		}
 	}
-	conn_interrupt(agent);
+
+	JLOG_WARN("No entry found for TCP address");
+	return -1;
 }
 
 int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
@@ -903,12 +911,10 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 	for (int i = 0; i < agent->entries_count; ++i) {
 		agent_stun_entry_t *entry = agent->entries + i;
 
-		if (entry->pair && entry->pair->remote->transport != ICE_CANDIDATE_TRANSPORT_UDP && 
-        entry->pair->tcp_conn_state != ICE_TCP_CONN_STATE_CONNECTED) {
-			if (entry->pair->tcp_conn_state == ICE_TCP_CONN_STATE_NEW) {
-				conn_tcp_connect(agent, &entry->pair->remote->resolved, agent_tcp_conn_connected);
-				entry->pair->tcp_conn_state = ICE_TCP_CONN_STATE_CONNECTING;
-			}
+		if (entry->pair && entry->pair->remote->transport != ICE_CANDIDATE_TRANSPORT_UDP &&
+		    entry->pair->tcp_state == TCP_STATE_DISCONNECTED) {
+			conn_tcp_connect(agent, &entry->record);
+			entry->next_transmission = now + LAST_STUN_RETRANSMISSION_TIMEOUT;
 		} else if (entry->state == AGENT_STUN_ENTRY_STATE_PENDING) { // STUN requests transmission or retransmission
 			if (entry->next_transmission > now)
 				continue;
