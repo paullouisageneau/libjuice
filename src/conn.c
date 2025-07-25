@@ -253,7 +253,7 @@ int conn_send(juice_agent_t *agent, const addr_record_t *dst, const char *data, 
 	return get_agent_mode_entry(agent)->send_func(agent, dst, data, size, ds);
 }
 
-void conn_tcp_connect(juice_agent_t *agent, const addr_record_t *dst, void (*callback)(juice_agent_t*)) {
+void conn_tcp_connect(juice_agent_t *agent, const addr_record_t *dst, void (*callback)(juice_agent_t*, bool)) {
 	if (!agent->conn_impl)
 		return;
 

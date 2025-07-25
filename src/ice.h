@@ -69,6 +69,12 @@ typedef enum ice_candidate_pair_state {
 	ICE_CANDIDATE_PAIR_STATE_FROZEN,
 } ice_candidate_pair_state_t;
 
+typedef enum ice_tcp_conn_state {
+	ICE_TCP_CONN_STATE_NEW,
+	ICE_TCP_CONN_STATE_CONNECTING,
+	ICE_TCP_CONN_STATE_CONNECTED,
+} ice_tcp_conn_state_t;
+
 typedef struct ice_candidate_pair {
 	ice_candidate_t *local;
 	ice_candidate_t *remote;
@@ -76,7 +82,7 @@ typedef struct ice_candidate_pair {
 	ice_candidate_pair_state_t state;
 	bool nominated;
 	bool nomination_requested;
-	bool tcp_connected;
+	ice_tcp_conn_state_t tcp_conn_state;
 	timestamp_t consent_expiry;
 } ice_candidate_pair_t;
 

@@ -36,7 +36,7 @@ typedef struct conn_impl {
 	conn_state_t state;
 	socket_t udp_sock;
 	socket_t tcp_sock;
-	void (*tcp_sock_connected)(juice_agent_t*);
+	void (*tcp_sock_callback)(juice_agent_t*, bool);
 	addr_record_t tcp_dst;
 	uint16_t ice_tcp_len;
 	mutex_t send_mutex;
@@ -200,7 +200,7 @@ int conn_poll_prepare(conn_registry_t *registry, pfds_record_t *pfds, timestamp_
 		if (conn_impl->tcp_sock != INVALID_SOCKET) {
 			pfds->pfds[i].fd = conn_impl->tcp_sock;
 			pfds->pfds[i].events = POLLIN;
-			if (conn_impl->tcp_sock_connected != NULL) {
+			if (conn_impl->tcp_sock_callback != NULL) {
 				pfds->pfds[i].events |= POLLOUT;
 			}
 			i++;
@@ -284,6 +284,13 @@ void conn_poll_process_udp(juice_agent_t *agent, conn_impl_t *conn_impl, struct 
 
 }
 
+void conn_poll_call_tcp_callback(juice_agent_t *agent, conn_impl_t *conn_impl, bool status) {
+	if (conn_impl->tcp_sock_callback) {
+		conn_impl->tcp_sock_callback(agent, status);
+		conn_impl->tcp_sock_callback = NULL;
+	}
+}
+
 void conn_poll_process_tcp(juice_agent_t *agent, conn_impl_t *conn_impl, struct pollfd *pfd) {
 	if (pfd->revents & POLLNVAL) {
 		JLOG_WARN("Error when polling socket");
@@ -291,14 +298,14 @@ void conn_poll_process_tcp(juice_agent_t *agent, conn_impl_t *conn_impl, struct 
 	}
 
 	if (pfd->revents & POLLHUP || pfd->revents & POLLERR) {
-		agent_conn_fail(agent);
-		conn_impl->state = CONN_STATE_FINISHED;
+		JLOG_WARN("ice-tcp poll returned error, closing socket");
+		closesocket(conn_impl->tcp_sock);
+		conn_impl->tcp_sock = INVALID_SOCKET;
 		return;
 	}
 
-	if (pfd->revents & POLLOUT && conn_impl->tcp_sock_connected) {
-		conn_impl->tcp_sock_connected(agent);
-		conn_impl->tcp_sock_connected = NULL;
+	if (pfd->revents & POLLOUT && conn_impl->tcp_sock_callback) {
+		conn_poll_call_tcp_callback(agent, conn_impl, true);
 	}
 
 	if (pfd->revents & POLLIN) {
@@ -321,8 +328,9 @@ void conn_poll_process_tcp(juice_agent_t *agent, conn_impl_t *conn_impl, struct 
 			return;
 
 		if (ret < 0) {
-			agent_conn_fail(agent);
-			conn_impl->state = CONN_STATE_FINISHED;
+			JLOG_WARN("ice-tcp read returned error, closing socket");
+			closesocket(conn_impl->tcp_sock);
+			conn_impl->tcp_sock = INVALID_SOCKET;
 			return;
 		}
 
@@ -447,7 +455,7 @@ int conn_poll_init(juice_agent_t *agent, conn_registry_t *registry, udp_socket_c
 	mutex_init(&conn_impl->send_mutex, 0);
 	conn_impl->registry = registry;
 	conn_impl->tcp_sock = INVALID_SOCKET;
-	conn_impl->tcp_sock_connected = NULL;
+	conn_impl->tcp_sock_callback = NULL;
 
 	agent->conn_impl = conn_impl;
 	return 0;
@@ -542,15 +550,15 @@ int conn_poll_send(juice_agent_t *agent, const addr_record_t *dst, const char *d
 	return ret;
 }
 
-void conn_poll_tcp_connect_func(juice_agent_t *agent, const addr_record_t *dst, void (*callback)(juice_agent_t *)) {
+void conn_poll_tcp_connect_func(juice_agent_t *agent, const addr_record_t *dst, void (*callback)(juice_agent_t *, bool)) {
 	conn_impl_t *conn_impl = agent->conn_impl;
 
 	mutex_lock(&conn_impl->registry->mutex);
 	mutex_lock(&conn_impl->send_mutex);
-	if (conn_impl->tcp_sock == INVALID_SOCKET) {
+	if (conn_impl->tcp_sock == INVALID_SOCKET && conn_impl->tcp_sock_callback == NULL) {
 		conn_impl->tcp_sock = tcp_create_socket(dst);
 		memcpy(&conn_impl->tcp_dst, dst, sizeof(conn_impl->tcp_dst));
-		conn_impl->tcp_sock_connected = callback;
+		conn_impl->tcp_sock_callback = callback;
 	}
 	mutex_unlock(&conn_impl->send_mutex);
 	mutex_unlock(&conn_impl->registry->mutex);
