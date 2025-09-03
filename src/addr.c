@@ -258,7 +258,9 @@ int addr_resolve(const char *hostname, const char *service, int socktype, addr_r
 	hints.ai_family = AF_UNSPEC;
 	hints.ai_socktype = socktype;
 	hints.ai_protocol = socktype == SOCK_STREAM ? IPPROTO_TCP : IPPROTO_UDP;
+#ifdef AI_ADDRCONFIG
 	hints.ai_flags = AI_ADDRCONFIG;
+#endif
 	struct addrinfo *ai_list = NULL;
 	if (getaddrinfo(hostname, service, &hints, &ai_list)) {
 		JLOG_WARN("Address resolution failed for %s:%s", hostname, service);

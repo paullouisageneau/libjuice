@@ -205,7 +205,9 @@ int ice_resolve_candidate(ice_candidate_t *candidate, ice_resolve_mode_t mode) {
 		hints.ai_socktype = SOCK_DGRAM;
 		hints.ai_protocol = IPPROTO_UDP;
 	}
+#ifdef AI_ADDRCONFIG
 	hints.ai_flags = AI_ADDRCONFIG;
+#endif
 	if (mode != ICE_RESOLVE_MODE_LOOKUP)
 		hints.ai_flags |= AI_NUMERICHOST | AI_NUMERICSERV;
 	struct addrinfo *ai_list = NULL;
