@@ -26,7 +26,7 @@ static void sleep(unsigned int secs) { Sleep(secs * 1000); }
 #include <unistd.h> // for sleep
 #endif
 
-#define ICE_TCP_SERVER_BUFFER_SIZE 150
+#define STUN_WRITE_BUFFER_SIZE 150
 #define ICE_PWD "pw01234567890123456789"
 
 atomic(bool) local_gathered_ice_tcp_candidate = false;
@@ -67,22 +67,25 @@ error:
 }
 
 void run_passive_ice_tcp(socket_t server_socket) {
-	stun_message_t msg;
-	memset(&msg, 0, sizeof(msg));
-
 	socket_t client_socket = accept(server_socket, NULL, NULL);
-	uint16_t ice_tcp_len = 0;
-	int n;
-	char server_buffer[ICE_TCP_SERVER_BUFFER_SIZE];
+	if(client_socket == INVALID_SOCKET)
+		return;
+
+	tcp_ice_read_context_t context;
+	memset(&context, 0, sizeof(context));
+
 	for (int i = 0; i < 2;) {
-		if ((n = _juice_tcp_ice_read(client_socket, server_buffer, ICE_TCP_SERVER_BUFFER_SIZE,
-		                             &ice_tcp_len)) < 0)
+		int len;
+		if ((len = _juice_tcp_ice_read(client_socket, &context)) < 0)
 			return;
 
-		if (n == 0)
+		if (len == 0)
 			continue;
 
-		if (_juice_stun_read(server_buffer, n, &msg) < 0)
+		stun_message_t msg;
+		memset(&msg, 0, sizeof(msg));
+
+		if (_juice_stun_read(context.buffer, len, &msg) < 0)
 			return;
 
 		if (msg.msg_class != STUN_CLASS_REQUEST)
@@ -93,10 +96,12 @@ void run_passive_ice_tcp(socket_t server_socket) {
 		msg.priority = 0;
 		msg.ice_controlling = 0;
 
-		if ((n = _juice_stun_write(server_buffer, ICE_TCP_SERVER_BUFFER_SIZE, &msg, ICE_PWD)) < 0)
+		char buffer[STUN_WRITE_BUFFER_SIZE];
+		if ((len = _juice_stun_write(buffer, STUN_WRITE_BUFFER_SIZE, &msg, ICE_PWD)) < 0)
 			return;
 
-		if (_juice_tcp_ice_write(client_socket, server_buffer, n) < 0)
+		tcp_ice_write_context_t context;
+		if (_juice_tcp_ice_write(client_socket, buffer, len, &context) < 0)
 			return;
 
 		i++;

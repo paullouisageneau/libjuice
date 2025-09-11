@@ -880,17 +880,18 @@ int agent_conn_tcp_state(juice_agent_t *agent, const addr_record_t *dst, tcp_sta
 			switch(state) {
 			case TCP_STATE_CONNECTED:
 				entry->next_transmission = current_timestamp();
+				conn_interrupt(agent);
 				break;
 			case TCP_STATE_DISCONNECTED:
 			case TCP_STATE_FAILED:
 				entry->pair->state = ICE_CANDIDATE_PAIR_STATE_FAILED;
 				entry->state = AGENT_STUN_ENTRY_STATE_FAILED;
 				entry->next_transmission = 0;
+				conn_interrupt(agent);
 				break;
 			default:
 				break;
 			}
-			conn_interrupt(agent);
 			return 0;
 		}
 	}
