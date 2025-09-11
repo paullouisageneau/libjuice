@@ -432,8 +432,13 @@ int conn_mux_process(conn_registry_t *registry, struct pollfd *pfd) {
 	if (pfd->revents & POLLIN) {
 		char buffer[BUFFER_SIZE];
 		addr_record_t src;
+		int left = 1000; // limit to ensure update is run and new agents are processed
 		int ret;
-		while ((ret = conn_mux_recv(registry, buffer, BUFFER_SIZE, &src)) > 0) {
+		while (left--) {
+			if ((ret = conn_mux_recv(registry, buffer, BUFFER_SIZE, &src)) <= 0) {
+				break;
+			}
+
 			if (JLOG_DEBUG_ENABLED) {
 				char src_str[ADDR_MAX_STRING_LEN];
 				addr_record_to_string(&src, src_str, ADDR_MAX_STRING_LEN);
