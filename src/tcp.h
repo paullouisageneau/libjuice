@@ -21,11 +21,29 @@ typedef enum tcp_state {
 } tcp_state_t;
 
 socket_t tcp_create_socket(const addr_record_t *dst);
-int tcp_ice_write(socket_t sock, const char *data, size_t size);
-int tcp_ice_read(socket_t sock, char *buffer, size_t size, uint16_t *ice_tcp_len);
+
+#define TCP_ICE_BUFFER_SIZE 2048
+
+typedef struct tcp_ice_write_context {
+	char buffer[TCP_ICE_BUFFER_SIZE];
+	uint16_t length;
+	uint16_t bytes_written;
+	bool pending;
+} tcp_ice_write_context_t;
+
+typedef struct tcp_ice_read_context {
+	char buffer[TCP_ICE_BUFFER_SIZE];
+	uint16_t length;
+	uint16_t bytes_read; // 0 if finished
+	uint16_t header;
+	bool pending;
+} tcp_ice_read_context_t;
+
+int tcp_ice_write(socket_t sock, const char *data, size_t size, tcp_ice_write_context_t *context);
+int tcp_ice_read(socket_t sock, tcp_ice_read_context_t *context);
 
 // Export for tests
-JUICE_EXPORT int _juice_tcp_ice_write(socket_t sock, const char *data, size_t size);
-JUICE_EXPORT int _juice_tcp_ice_read(socket_t sock, char *buffer, size_t size, uint16_t *ice_tcp_len);
+JUICE_EXPORT int _juice_tcp_ice_write(socket_t sock, const char *data, size_t size, tcp_ice_write_context_t *context);
+JUICE_EXPORT int _juice_tcp_ice_read(socket_t sock, tcp_ice_read_context_t *context);
 
 #endif
