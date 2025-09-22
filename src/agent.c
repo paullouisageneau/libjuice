@@ -214,8 +214,9 @@ static thread_return_t THREAD_CALL resolver_thread_entry(void *arg) {
 
 void agent_add_ice_tcp_local_candidate(juice_agent_t *agent, addr_record_t *record) {
 	ice_candidate_t candidate;
-	if (ice_create_local_candidate(ICE_CANDIDATE_TYPE_HOST, 1, agent->local.candidates_count, record, &candidate, ICE_CANDIDATE_TRANSPORT_TCP_TYPE_ACTIVE)) {
-        JLOG_ERROR("Failed to create ice-tcp candidate");
+	if (ice_create_local_candidate(ICE_CANDIDATE_TYPE_HOST, 1, agent->local.candidates_count,
+	                               record, &candidate, ICE_CANDIDATE_TRANSPORT_TCP_TYPE_ACTIVE)) {
+		JLOG_ERROR("Failed to create ice-tcp candidate");
 		return;
 	}
 
@@ -365,7 +366,8 @@ int agent_resolve_servers(juice_agent_t *agent) {
 			conn_unlock(agent);
 
 			addr_record_t records[DEFAULT_MAX_RECORDS_COUNT];
-			int records_count = addr_resolve(hostname, service, SOCK_DGRAM, records, DEFAULT_MAX_RECORDS_COUNT);
+			int records_count =
+			    addr_resolve(hostname, service, SOCK_DGRAM, records, DEFAULT_MAX_RECORDS_COUNT);
 
 			conn_lock(agent);
 
@@ -450,7 +452,8 @@ int agent_resolve_servers(juice_agent_t *agent) {
 		conn_unlock(agent);
 
 		addr_record_t records[MAX_STUN_SERVER_RECORDS_COUNT];
-		int records_count = addr_resolve(hostname, service, SOCK_DGRAM, records, MAX_STUN_SERVER_RECORDS_COUNT);
+		int records_count =
+		    addr_resolve(hostname, service, SOCK_DGRAM, records, MAX_STUN_SERVER_RECORDS_COUNT);
 
 		conn_lock(agent);
 
@@ -849,7 +852,8 @@ int agent_input(juice_agent_t *agent, char *buf, size_t len, const addr_record_t
 	return -1;
 }
 
-void agent_register_entry_for_candidate_pair(juice_agent_t *agent, ice_candidate_pair_t *pair, agent_stun_entry_t *relay_entry) {
+void agent_register_entry_for_candidate_pair(juice_agent_t *agent, ice_candidate_pair_t *pair,
+                                             agent_stun_entry_t *relay_entry) {
 	JLOG_VERBOSE("Registering STUN entry %d for candidate pair checking", agent->entries_count);
 	agent_stun_entry_t *entry = agent->entries + agent->entries_count;
 	entry->type = AGENT_STUN_ENTRY_TYPE_CHECK;
@@ -869,7 +873,7 @@ void agent_register_entry_for_candidate_pair(juice_agent_t *agent, ice_candidate
 void agent_tcp_conn_connected(juice_agent_t *agent, bool success) {
 	for (int i = 0; i < agent->entries_count; ++i) {
 		agent_stun_entry_t *entry = agent->entries + i;
-		if (entry->pair->remote->transport != ICE_CANDIDATE_TRANSPORT_UDP) {
+		if (entry->pair && entry->pair->remote->transport != ICE_CANDIDATE_TRANSPORT_UDP) {
 
 			if (success) {
 				entry->next_transmission = current_timestamp();
@@ -897,7 +901,8 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 	for (int i = 0; i < agent->entries_count; ++i) {
 		agent_stun_entry_t *entry = agent->entries + i;
 
-		if (entry->pair && entry->pair->remote->transport != ICE_CANDIDATE_TRANSPORT_UDP && entry->pair->tcp_conn_state != ICE_TCP_CONN_STATE_CONNECTED) {
+		if (entry->pair && entry->pair->remote->transport != ICE_CANDIDATE_TRANSPORT_UDP && 
+        entry->pair->tcp_conn_state != ICE_TCP_CONN_STATE_CONNECTED) {
 			if (entry->pair->tcp_conn_state == ICE_TCP_CONN_STATE_NEW) {
 				conn_tcp_connect(agent, &entry->pair->remote->resolved, agent_tcp_conn_connected);
 				entry->pair->tcp_conn_state = ICE_TCP_CONN_STATE_CONNECTING;
@@ -1175,7 +1180,7 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 						if (entry->pair && entry->pair == selected_pair) {
 							entry->state =
 							    AGENT_STUN_ENTRY_STATE_PENDING;      // we don't want keepalives
-							entry->transaction_id_expired = true;	 // this is a new request
+							entry->transaction_id_expired = true;    // this is a new request
 							agent_arm_transmission(agent, entry, 0); // transmit now
 							break;
 						}
@@ -1366,7 +1371,8 @@ int agent_dispatch_stun(juice_agent_t *agent, void *buf, size_t size, stun_messa
 	case STUN_METHOD_ALLOCATE:
 	case STUN_METHOD_REFRESH:
 		if (agent_verify_credentials(agent, entry, buf, size, msg)) {
-			JLOG_WARN("Ignoring TURN Allocate message with invalid credentials (Is server authentication disabled?)");
+			JLOG_WARN("Ignoring TURN Allocate message with invalid credentials (Is server "
+			          "authentication disabled?)");
 			return -1;
 		}
 		return agent_process_turn_allocate(agent, msg, entry);
@@ -1960,7 +1966,7 @@ int agent_send_turn_allocate_request(juice_agent_t *agent, const agent_stun_entr
 	}
 
 	const char *password = NULL;
-	if(*entry->turn->credentials.nonce != '\0') {
+	if (*entry->turn->credentials.nonce != '\0') {
 		msg.credentials = entry->turn->credentials;
 		password = entry->turn->password;
 	}
@@ -2284,7 +2290,8 @@ int agent_add_local_reflexive_candidate(juice_agent_t *agent, ice_candidate_type
 		return 0;
 	}
 	ice_candidate_t candidate;
-	if (ice_create_local_candidate(type, 1, agent->local.candidates_count, record, &candidate, ICE_CANDIDATE_TRANSPORT_UDP)) {
+	if (ice_create_local_candidate(type, 1, agent->local.candidates_count, record, &candidate,
+	                               ICE_CANDIDATE_TRANSPORT_UDP)) {
 		JLOG_ERROR("Failed to create reflexive candidate");
 		return -1;
 	}
@@ -2324,7 +2331,8 @@ int agent_add_remote_reflexive_candidate(juice_agent_t *agent, ice_candidate_typ
 		return 0;
 	}
 	ice_candidate_t candidate;
-	if (ice_create_local_candidate(type, 1, agent->local.candidates_count, record, &candidate, ICE_CANDIDATE_TRANSPORT_UDP)) {
+	if (ice_create_local_candidate(type, 1, agent->local.candidates_count, record, &candidate,
+	                               ICE_CANDIDATE_TRANSPORT_UDP)) {
 		JLOG_ERROR("Failed to create reflexive candidate");
 		return -1;
 	}
@@ -2367,7 +2375,8 @@ int agent_add_candidate_pair(juice_agent_t *agent, ice_candidate_t *local, // lo
 			return 0;
 		}
 
-		if (remote->transport != ICE_CANDIDATE_TRANSPORT_TCP_TYPE_PASSIVE && remote->transport != ICE_CANDIDATE_TRANSPORT_TCP_TYPE_SO) {
+		if (remote->transport != ICE_CANDIDATE_TRANSPORT_TCP_TYPE_PASSIVE &&
+		    remote->transport != ICE_CANDIDATE_TRANSPORT_TCP_TYPE_SO) {
 			JLOG_INFO("Ignoring ICE-TCP Candidate that is not passive or simultaneous open");
 			return 0;
 		}
@@ -2694,8 +2703,7 @@ agent_stun_entry_t *agent_find_entry_from_record(juice_agent_t *agent, const add
 	return NULL;
 }
 
-int agent_set_ice_tcp_mode(juice_agent_t *agent, juice_ice_tcp_mode_t ice_tcp_mode)
-{
+int agent_set_ice_tcp_mode(juice_agent_t *agent, juice_ice_tcp_mode_t ice_tcp_mode) {
 	if (agent->conn_impl) {
 		JLOG_WARN("Unable to set ICE attributes, candidates gathering already started");
 		return JUICE_ERR_FAILED;
