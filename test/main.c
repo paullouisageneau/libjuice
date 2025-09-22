@@ -27,6 +27,7 @@ int test_stun_unhandled_multiple(void);
 int test_stun_unhandled_no_host(void);
 int test_stun_unhandled_unhandle(void);
 int test_tcp(void);
+int test_tcp_bad_candidate(void);
 
 #ifndef NO_SERVER
 int test_server(void);
@@ -114,6 +115,13 @@ int main(int argc, char **argv) {
 		fprintf(stderr, "TCP test failed\n");
 		return -2;
 	}
+
+	printf("\nRunning TCP Bad Candidate test...\n");
+	if (test_tcp_bad_candidate()) {
+		fprintf(stderr, "TCP bad candidate test failed\n");
+		return -2;
+	}
+
 
 #ifndef _WIN32
 	// windows fails to read STUN message from listen socket:

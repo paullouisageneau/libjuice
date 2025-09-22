@@ -870,12 +870,20 @@ void agent_register_entry_for_candidate_pair(juice_agent_t *agent, ice_candidate
 		agent_translate_host_candidate_entry(agent, entry);
 }
 
-void agent_tcp_conn_connected(juice_agent_t *agent) {
+void agent_tcp_conn_connected(juice_agent_t *agent, bool success) {
 	for (int i = 0; i < agent->entries_count; ++i) {
 		agent_stun_entry_t *entry = agent->entries + i;
 		if (entry->pair && entry->pair->remote->transport != ICE_CANDIDATE_TRANSPORT_UDP) {
-			entry->pair->tcp_connected = true;
-			entry->next_transmission = current_timestamp();
+
+			if (success) {
+				entry->next_transmission = current_timestamp();
+				entry->pair->tcp_conn_state = ICE_TCP_CONN_STATE_CONNECTED;
+			} else {
+				JLOG_DEBUG("ice-tcp failed to connected, marking as failed");
+				entry->pair->state = ICE_CANDIDATE_PAIR_STATE_FAILED;
+				entry->state = AGENT_STUN_ENTRY_STATE_FAILED;
+				entry->next_transmission = 0;
+			}
 		}
 	}
 	conn_interrupt(agent);
@@ -893,12 +901,13 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 	for (int i = 0; i < agent->entries_count; ++i) {
 		agent_stun_entry_t *entry = agent->entries + i;
 
-		if (entry->pair && entry->pair->remote->transport != ICE_CANDIDATE_TRANSPORT_UDP &&
-		    entry->pair->tcp_connected == false) {
-			conn_tcp_connect(agent, &entry->pair->remote->resolved, agent_tcp_conn_connected);
-			entry->next_transmission = now + LAST_STUN_RETRANSMISSION_TIMEOUT;
-		} else if (entry->state ==
-		           AGENT_STUN_ENTRY_STATE_PENDING) { // STUN requests transmission or retransmission
+		if (entry->pair && entry->pair->remote->transport != ICE_CANDIDATE_TRANSPORT_UDP && 
+        entry->pair->tcp_conn_state != ICE_TCP_CONN_STATE_CONNECTED) {
+			if (entry->pair->tcp_conn_state == ICE_TCP_CONN_STATE_NEW) {
+				conn_tcp_connect(agent, &entry->pair->remote->resolved, agent_tcp_conn_connected);
+				entry->pair->tcp_conn_state = ICE_TCP_CONN_STATE_CONNECTING;
+			}
+		} else if (entry->state == AGENT_STUN_ENTRY_STATE_PENDING) { // STUN requests transmission or retransmission
 			if (entry->next_transmission > now)
 				continue;
 
