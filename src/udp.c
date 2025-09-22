@@ -179,6 +179,7 @@ socket_t udp_create_socket(const udp_socket_config_t *config) {
 int udp_recvfrom(socket_t sock, char *buffer, size_t size, addr_record_t *src) {
 	while (true) {
 		src->len = sizeof(src->addr);
+		src->socktype = SOCK_DGRAM;
 		int len =
 		    recvfrom(sock, buffer, (socklen_t)size, 0, (struct sockaddr *)&src->addr, &src->len);
 		if (len >= 0) {

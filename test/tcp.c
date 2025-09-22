@@ -171,3 +171,68 @@ int test_tcp() {
 	}
 }
 
+static juice_agent_t *agent1;
+static juice_agent_t *agent2;
+
+static void on_candidate_bad_tcp_1(juice_agent_t *agent, const char *sdp, void *user_ptr) {
+	juice_add_remote_candidate(agent2, sdp);
+}
+
+static void on_candidate_bad_tcp_2(juice_agent_t *agent, const char *sdp, void *user_ptr) {
+	juice_add_remote_candidate(agent1, sdp);
+}
+
+int test_tcp_bad_candidate() {
+	juice_set_log_level(JUICE_LOG_LEVEL_DEBUG);
+
+	juice_config_t config1;
+	memset(&config1, 0, sizeof(config1));
+
+	config1.cb_candidate = on_candidate_bad_tcp_1;
+	config1.user_ptr = NULL;
+
+	agent1 = juice_create(&config1);
+
+	juice_config_t config2;
+	memset(&config2, 0, sizeof(config2));
+
+	config1.cb_candidate = on_candidate_bad_tcp_2;
+	config2.user_ptr = NULL;
+
+	agent2 = juice_create(&config2);
+
+	if (juice_set_ice_tcp_mode(agent1, JUICE_ICE_TCP_MODE_ACTIVE) || juice_set_ice_tcp_mode(agent2, JUICE_ICE_TCP_MODE_ACTIVE)) {
+		printf("Failure\n");
+		return -1;
+	}
+
+	char sdp1[JUICE_MAX_SDP_STRING_LEN];
+	juice_get_local_description(agent1, sdp1, JUICE_MAX_SDP_STRING_LEN);
+	juice_set_remote_description(agent2, sdp1);
+
+	char sdp2[JUICE_MAX_SDP_STRING_LEN];
+	juice_get_local_description(agent2, sdp2, JUICE_MAX_SDP_STRING_LEN);
+	juice_set_remote_description(agent1, sdp2);
+
+	// Candidate that doesn't exist
+	juice_add_remote_candidate(agent1, "a=candidate:1 1 TCP 2122316799 127.0.0.1 1337 typ host tcptype passive");
+
+	juice_gather_candidates(agent1);
+	sleep(2);
+
+	juice_gather_candidates(agent2);
+	sleep(2);
+
+	bool success = (juice_get_state(agent1) == JUICE_STATE_COMPLETED && juice_get_state(agent2) == JUICE_STATE_COMPLETED);
+
+	juice_destroy(agent1);
+	juice_destroy(agent2);
+
+	if (success) {
+		printf("Success\n");
+		return 0;
+	} else {
+		printf("Failure\n");
+		return -1;
+	}
+}
