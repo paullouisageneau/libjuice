@@ -654,6 +654,11 @@ void conn_poll_tcp_connect(juice_agent_t *agent, const addr_record_t *dst) {
 	mutex_lock(&conn_impl->registry->mutex);
 	mutex_lock(&conn_impl->send_mutex);
 	if (conn_impl->tcp_sock == INVALID_SOCKET) {
+		if (JLOG_DEBUG_ENABLED) {
+			char dst_str[ADDR_MAX_STRING_LEN];
+			addr_record_to_string(dst, dst_str, ADDR_MAX_STRING_LEN);
+			JLOG_DEBUG("Attempting ICE-TCP connection to %s", dst_str);
+		}
 		conn_impl->tcp_sock = tcp_create_socket(dst);
 		memcpy(&conn_impl->tcp_dst, dst, sizeof(conn_impl->tcp_dst));
 		conn_poll_change_tcp_state(agent, TCP_STATE_CONNECTING);
