@@ -183,15 +183,13 @@ int conn_poll_prepare(conn_registry_t *registry, pfds_record_t *pfds, timestamp_
 	nfds_t i = 1;
 	for (int j = 0; j < registry->agents_size; ++j) {
 		juice_agent_t *agent = registry->agents[j];
-		if (!agent) {
+		if (!agent)
 			continue;
-		}
 
 		conn_impl_t *conn_impl = agent->conn_impl;
 		if (!conn_impl ||
-		    (conn_impl->state != CONN_STATE_NEW && conn_impl->state != CONN_STATE_READY)) {
+		    (conn_impl->state != CONN_STATE_NEW && conn_impl->state != CONN_STATE_READY))
 			continue;
-		}
 
 		if (conn_impl->state == CONN_STATE_NEW)
 			conn_impl->state = CONN_STATE_READY;
@@ -458,14 +456,12 @@ int conn_poll_process(conn_registry_t *registry, pfds_record_t *pfds) {
 	nfds_t i = 1;
 	for (int j = 0; j < registry->agents_size; ++j) {
 		juice_agent_t *agent = registry->agents[j];
-		if (!agent) {
+		if (!agent)
 			continue;
-		}
 
 		conn_impl_t *conn_impl = agent->conn_impl;
-		if (!conn_impl || (conn_impl->state != CONN_STATE_NEW && conn_impl->state != CONN_STATE_READY)) {
+		if (!conn_impl || (conn_impl->state != CONN_STATE_NEW && conn_impl->state != CONN_STATE_READY))
 			continue;
-		}
 
 		if (i >= pfds->size)
 			break;
