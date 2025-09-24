@@ -199,18 +199,22 @@ int conn_poll_prepare(conn_registry_t *registry, pfds_record_t *pfds, timestamp_
 		if (*next_timestamp > conn_impl->next_timestamp)
 			*next_timestamp = conn_impl->next_timestamp;
 
-		pfds->pfds[i].fd = conn_impl->udp_sock;
-		pfds->pfds[i].events = POLLIN;
+		assert(i < pfds->size);
+
+		struct pollfd *udp_pfd = pfds->pfds + i;
+		udp_pfd->fd = conn_impl->udp_sock;
+		udp_pfd->events = POLLIN;
 		i++;
 
 		if (conn_impl->tcp_sock != INVALID_SOCKET) {
-			pfds->pfds[i].fd = conn_impl->tcp_sock;
+			struct pollfd *tcp_pfd = pfds->pfds + i;
+			tcp_pfd->fd = conn_impl->tcp_sock;
 			if (conn_impl->tcp_state == TCP_STATE_CONNECTING) {
-				pfds->pfds[i].events = POLLOUT;
+				tcp_pfd->events = POLLOUT;
 			} else {
-				pfds->pfds[i].events = POLLIN;
+				tcp_pfd->events = POLLIN;
 				if(conn_impl->tcp_ice_write_context.pending)
-					pfds->pfds[i].events |= POLLOUT;
+					tcp_pfd->events |= POLLOUT;
 			}
 
 			i++;
@@ -463,22 +467,24 @@ int conn_poll_process(conn_registry_t *registry, pfds_record_t *pfds) {
 			continue;
 		}
 
-		if (pfds->pfds[i].fd != conn_impl->udp_sock) {
+		if (i >= pfds->size)
 			break;
-		}
 
-		conn_poll_process_udp(agent, &pfds->pfds[i]);
+		struct pollfd *udp_pfd = pfds->pfds + i;
+		if (udp_pfd->fd != conn_impl->udp_sock)
+			break;
+
+		conn_poll_process_udp(agent, udp_pfd);
 		i++;
 
-		if (conn_impl->tcp_sock == INVALID_SOCKET) {
+		if (conn_impl->tcp_sock == INVALID_SOCKET)
 			continue;
-		}
 
-		if (pfds->pfds[i].fd != conn_impl->tcp_sock) {
+		struct pollfd *tcp_pfd = pfds->pfds + i;
+		if (tcp_pfd->fd != conn_impl->tcp_sock)
 			break;
-		}
 
-		conn_poll_process_tcp(agent, &pfds->pfds[i]);
+		conn_poll_process_tcp(agent, tcp_pfd);
 		i++;
 	}
 
