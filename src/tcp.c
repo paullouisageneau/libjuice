@@ -115,7 +115,7 @@ int tcp_ice_read(socket_t sock, tcp_ice_read_context_t *context) {
 				if (size > BUFFER_SIZE)
 					size = BUFFER_SIZE;
 
-				len = recv(sock, buffer, size, flags);
+				len = recv(sock, buffer, (socklen_t)size, flags);
 			}
 		}
 
