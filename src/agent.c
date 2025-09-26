@@ -212,21 +212,6 @@ static thread_return_t THREAD_CALL resolver_thread_entry(void *arg) {
 	return (thread_return_t)0;
 }
 
-void agent_add_ice_tcp_local_candidate(juice_agent_t *agent, addr_record_t *record) {
-	ice_candidate_t candidate;
-	if (ice_create_local_candidate(ICE_CANDIDATE_TYPE_HOST, 1, agent->local.candidates_count,
-	                               record, &candidate, ICE_CANDIDATE_TRANSPORT_TCP_TYPE_ACTIVE)) {
-		JLOG_ERROR("Failed to create ice-tcp candidate");
-		return;
-	}
-
-	if (ice_add_candidate(&candidate, &agent->local)) {
-		JLOG_ERROR("Failed to add ice-tcp candidate to local description");
-	}
-
-	return;
-}
-
 int agent_gather_candidates(juice_agent_t *agent) {
 	JLOG_VERBOSE("Gathering candidates");
 	if (agent->conn_impl) {
@@ -284,10 +269,27 @@ int agent_gather_candidates(juice_agent_t *agent) {
 
 	if (agent->ice_tcp_mode == JUICE_ICE_TCP_MODE_ACTIVE) {
 		if (records_count > 0) {
-			addr_set_port((struct sockaddr *)&records[0].addr, 9);
-			agent_add_ice_tcp_local_candidate(agent, &records[0]);
+			// RFC 6544: The connection-address encoded into the candidate-attribute for
+			// active candidates MUST be set to the IP address that will be used for the
+			// attempt, but the port(s) MUST be set to 9 (i.e., Discard).
+			// Add only two TCP candidates, one for IPv6 and one for IPv4
+			const int families[2] = {AF_INET6, AF_INET};
+			for (int i = 0; i < 2; ++i) {
+				int family = families[i];
+				for (int j = 0; j < records_count; ++j) {
+					addr_record_t *record = records + j;
+					if (record->addr.ss_family == family) {
+						addr_record_t tcp_record;
+						memcpy(&tcp_record, record, sizeof(addr_record_t));
+						tcp_record.socktype = SOCK_STREAM;
+						addr_set_port((struct sockaddr *)&tcp_record.addr, 9);
+						agent_add_local_tcp_active_candidate(agent, &tcp_record);
+						break;
+					}
+				}
+			}
 		} else {
-			JLOG_WARN("No local host candidates gathered, unable to add ice-tcp");
+			JLOG_WARN("No local host candidates gathered, unable to add TCP candidates");
 		}
 	}
 
@@ -870,23 +872,32 @@ void agent_register_entry_for_candidate_pair(juice_agent_t *agent, ice_candidate
 		agent_translate_host_candidate_entry(agent, entry);
 }
 
-void agent_tcp_conn_connected(juice_agent_t *agent, bool success) {
+int agent_conn_tcp_state(juice_agent_t *agent, const addr_record_t *dst, tcp_state_t state) {
 	for (int i = 0; i < agent->entries_count; ++i) {
 		agent_stun_entry_t *entry = agent->entries + i;
-		if (entry->pair && entry->pair->remote->transport != ICE_CANDIDATE_TRANSPORT_UDP) {
-
-			if (success) {
+		if (entry->pair && entry->pair->remote->transport != ICE_CANDIDATE_TRANSPORT_UDP && addr_record_is_equal(&entry->record, dst, true)) {
+			entry->pair->tcp_state = state;
+			switch(state) {
+			case TCP_STATE_CONNECTED:
 				entry->next_transmission = current_timestamp();
-				entry->pair->tcp_conn_state = ICE_TCP_CONN_STATE_CONNECTED;
-			} else {
-				JLOG_DEBUG("ice-tcp failed to connected, marking as failed");
+				conn_interrupt(agent);
+				break;
+			case TCP_STATE_DISCONNECTED:
+			case TCP_STATE_FAILED:
 				entry->pair->state = ICE_CANDIDATE_PAIR_STATE_FAILED;
 				entry->state = AGENT_STUN_ENTRY_STATE_FAILED;
 				entry->next_transmission = 0;
+				conn_interrupt(agent);
+				break;
+			default:
+				break;
 			}
+			return 0;
 		}
 	}
-	conn_interrupt(agent);
+
+	JLOG_WARN("No entry found for TCP address");
+	return -1;
 }
 
 int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
@@ -901,12 +912,10 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 	for (int i = 0; i < agent->entries_count; ++i) {
 		agent_stun_entry_t *entry = agent->entries + i;
 
-		if (entry->pair && entry->pair->remote->transport != ICE_CANDIDATE_TRANSPORT_UDP && 
-        entry->pair->tcp_conn_state != ICE_TCP_CONN_STATE_CONNECTED) {
-			if (entry->pair->tcp_conn_state == ICE_TCP_CONN_STATE_NEW) {
-				conn_tcp_connect(agent, &entry->pair->remote->resolved, agent_tcp_conn_connected);
-				entry->pair->tcp_conn_state = ICE_TCP_CONN_STATE_CONNECTING;
-			}
+		if (entry->pair && entry->pair->remote->transport != ICE_CANDIDATE_TRANSPORT_UDP &&
+		    entry->pair->tcp_state == TCP_STATE_DISCONNECTED) {
+			conn_tcp_connect(agent, &entry->record);
+			entry->next_transmission = now + LAST_STUN_RETRANSMISSION_TIMEOUT;
 		} else if (entry->state == AGENT_STUN_ENTRY_STATE_PENDING) { // STUN requests transmission or retransmission
 			if (entry->next_transmission > now)
 				continue;
@@ -2355,6 +2364,21 @@ int agent_add_remote_reflexive_candidate(juice_agent_t *agent, ice_candidate_typ
 	return agent_add_candidate_pairs_for_remote(agent, remote);
 }
 
+int agent_add_local_tcp_active_candidate(juice_agent_t *agent, addr_record_t *record) {
+	ice_candidate_t candidate;
+	if (ice_create_local_candidate(ICE_CANDIDATE_TYPE_HOST, 1, agent->local.candidates_count,
+	                               record, &candidate, ICE_CANDIDATE_TRANSPORT_TCP_TYPE_ACTIVE)) {
+		JLOG_ERROR("Failed to create TCP candidate");
+		return -1;
+	}
+	if (ice_add_candidate(&candidate, &agent->local)) {
+		JLOG_ERROR("Failed to add TCP candidate to local description");
+		return -1;
+	}
+
+	return 0;
+}
+
 int agent_add_candidate_pair(juice_agent_t *agent, ice_candidate_t *local, // local may be NULL
                              ice_candidate_t *remote) {
 	ice_candidate_pair_t pair;
@@ -2371,20 +2395,21 @@ int agent_add_candidate_pair(juice_agent_t *agent, ice_candidate_t *local, // lo
 
 	if (remote->transport != ICE_CANDIDATE_TRANSPORT_UDP) {
 		if (agent->ice_tcp_mode != JUICE_ICE_TCP_MODE_ACTIVE) {
-			JLOG_WARN("ICE-TCP is disabled ignoring TCP Candidate");
+			JLOG_WARN("ICE-TCP is disabled, ignoring TCP candidate");
 			return 0;
 		}
 
 		if (remote->transport != ICE_CANDIDATE_TRANSPORT_TCP_TYPE_PASSIVE &&
 		    remote->transport != ICE_CANDIDATE_TRANSPORT_TCP_TYPE_SO) {
-			JLOG_INFO("Ignoring ICE-TCP Candidate that is not passive or simultaneous open");
+			JLOG_INFO("TCP candidate is not passive or simultaneous open, ignoring");
 			return 0;
 		}
 
 		for (int i = 0; i < agent->candidate_pairs_count; ++i) {
 			ice_candidate_pair_t *pair = &agent->candidate_pairs[i];
-			if (pair->remote->transport != ICE_CANDIDATE_TRANSPORT_UDP) {
-				JLOG_INFO("Only one ICE-TCP remote candidate is supported ignoring TCP Candidate");
+			if (pair->remote->transport != ICE_CANDIDATE_TRANSPORT_UDP &&
+			    pair->remote->resolved.addr.ss_family == remote->resolved.addr.ss_family) {
+				JLOG_INFO("Only one remote TCP candidate is supported, ignoring");
 				return 0;
 			}
 		}

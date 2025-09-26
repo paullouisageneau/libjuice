@@ -9,8 +9,8 @@
 #include "juice/juice.h"
 
 #include "stun.h"
-#include "thread.h"
 #include "tcp.h"
+#include "thread.h"
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -26,17 +26,14 @@ static void sleep(unsigned int secs) { Sleep(secs * 1000); }
 #include <unistd.h> // for sleep
 #endif
 
-#define ICE_TCP_SERVER_BUFFER_SIZE 150
+#define STUN_WRITE_BUFFER_SIZE 150
 #define ICE_PWD "pw01234567890123456789"
 
-mutex_t local_gathered_ice_tcp_candidate_mutex = MUTEX_INITIALIZER;
-bool local_gathered_ice_tcp_candidate = false;
+atomic(bool) local_gathered_ice_tcp_candidate = false;
 
 static void on_candidate(juice_agent_t *agent, const char *sdp, void *user_ptr) {
 	if (strstr(sdp, "9 typ host tcptype active")) {
-		mutex_lock(&local_gathered_ice_tcp_candidate_mutex);
-		local_gathered_ice_tcp_candidate = true;
-		mutex_unlock(&local_gathered_ice_tcp_candidate_mutex);
+		atomic_store(&local_gathered_ice_tcp_candidate, true);
 	}
 }
 
@@ -46,9 +43,8 @@ static void on_state_changed(juice_agent_t *agent, juice_state_t state, void *us
 
 socket_t start_ice_tcp_server(int ice_tcp_server_port) {
 	socket_t server_socket = socket(AF_INET, SOCK_STREAM, 0);
-	if (server_socket == -1) {
+	if (server_socket == INVALID_SOCKET)
 		return INVALID_SOCKET;
-	}
 
 	struct sockaddr_in server_sockaddr;
 	memset(&server_sockaddr, 0, sizeof(server_sockaddr));
@@ -56,53 +52,57 @@ socket_t start_ice_tcp_server(int ice_tcp_server_port) {
 	server_sockaddr.sin_addr.s_addr = htonl(INADDR_ANY);
 	server_sockaddr.sin_port = htons(ice_tcp_server_port);
 
-	if ((bind(server_socket, (const struct sockaddr *)&server_sockaddr, sizeof(server_sockaddr))) != 0) {
-		return INVALID_SOCKET;
-	}
+	if ((bind(server_socket, (const struct sockaddr *)&server_sockaddr, sizeof(server_sockaddr))) !=
+	    0)
+		goto error;
 
-	if (listen(server_socket, 1) != 0) {
-		return INVALID_SOCKET;
-	}
+	if (listen(server_socket, 1) != 0)
+		goto error;
 
 	return server_socket;
+
+error:
+	closesocket(server_socket);
+	return INVALID_SOCKET;
 }
 
 void run_passive_ice_tcp(socket_t server_socket) {
-	stun_message_t msg;
-	memset(&msg, 0, sizeof(msg));
-
 	socket_t client_socket = accept(server_socket, NULL, NULL);
-	uint16_t ice_tcp_len = 0;
-	int n;
-	char server_buffer[ICE_TCP_SERVER_BUFFER_SIZE];
+	if(client_socket == INVALID_SOCKET)
+		return;
+
+	tcp_ice_read_context_t context;
+	memset(&context, 0, sizeof(context));
+
 	for (int i = 0; i < 2;) {
-		if ((n = _juice_tcp_ice_read(client_socket, server_buffer, ICE_TCP_SERVER_BUFFER_SIZE, &ice_tcp_len)) == -1) {
+		int len;
+		if ((len = _juice_tcp_ice_read(client_socket, &context)) < 0)
 			return;
-		} else if (n == 0) {
+
+		if (len == 0)
 			continue;
-		}
 
+		stun_message_t msg;
+		memset(&msg, 0, sizeof(msg));
 
-		if (_juice_stun_read(server_buffer, n, &msg)  == -1) {
+		if (_juice_stun_read(context.buffer, len, &msg) < 0)
 			return;
-		}
 
-		if (msg.msg_class != STUN_CLASS_REQUEST) {
+		if (msg.msg_class != STUN_CLASS_REQUEST)
 			continue;
-		}
 
 		msg.msg_class = STUN_CLASS_RESP_SUCCESS;
 		msg.msg_method = STUN_METHOD_BINDING;
 		msg.priority = 0;
 		msg.ice_controlling = 0;
 
-		if ((n = _juice_stun_write(server_buffer, ICE_TCP_SERVER_BUFFER_SIZE, &msg, ICE_PWD)) == -1) {
+		char buffer[STUN_WRITE_BUFFER_SIZE];
+		if ((len = _juice_stun_write(buffer, STUN_WRITE_BUFFER_SIZE, &msg, ICE_PWD)) < 0)
 			return;
-		}
 
-		if (_juice_tcp_ice_write(client_socket, server_buffer, n) == -1) {
+		tcp_ice_write_context_t context;
+		if (_juice_tcp_ice_write(client_socket, buffer, len, &context) < 0)
 			return;
-		}
 
 		i++;
 	}
@@ -111,8 +111,6 @@ void run_passive_ice_tcp(socket_t server_socket) {
 }
 
 int test_tcp() {
-	juice_set_log_level(JUICE_LOG_LEVEL_VERBOSE);
-
 	juice_config_t config;
 	memset(&config, 0, sizeof(config));
 
@@ -155,9 +153,8 @@ int test_tcp() {
 	run_passive_ice_tcp(server_socket);
 	sleep(2);
 
-	mutex_lock(&local_gathered_ice_tcp_candidate_mutex);
-	bool success = juice_get_state(agent) == JUICE_STATE_COMPLETED && local_gathered_ice_tcp_candidate;
-	mutex_unlock(&local_gathered_ice_tcp_candidate_mutex);
+	bool success = juice_get_state(agent) == JUICE_STATE_COMPLETED &&
+	               atomic_load(&local_gathered_ice_tcp_candidate);
 
 	// Agent destroy
 	juice_destroy(agent);
@@ -236,3 +233,4 @@ int test_tcp_bad_candidate() {
 		return -1;
 	}
 }
+

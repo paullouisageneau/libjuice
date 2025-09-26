@@ -14,6 +14,7 @@
 #include "ice.h"
 #include "juice.h"
 #include "stun.h"
+#include "tcp.h"
 #include "thread.h"
 #include "timestamp.h"
 #include "turn.h"
@@ -177,6 +178,7 @@ int agent_get_selected_candidate_pair(juice_agent_t *agent, ice_candidate_t *loc
 
 int agent_conn_recv(juice_agent_t *agent, char *buf, size_t len, const addr_record_t *src);
 int agent_conn_update(juice_agent_t *agent, timestamp_t *next_timestamp);
+int agent_conn_tcp_state(juice_agent_t *agent, const addr_record_t *dst, tcp_state_t state);
 int agent_conn_fail(juice_agent_t *agent);
 
 int agent_input(juice_agent_t *agent, char *buf, size_t len, const addr_record_t *src,
@@ -219,6 +221,7 @@ int agent_add_local_reflexive_candidate(juice_agent_t *agent, ice_candidate_type
                                         const addr_record_t *record);
 int agent_add_remote_reflexive_candidate(juice_agent_t *agent, ice_candidate_type_t type,
                                          uint32_t priority, const addr_record_t *record);
+int agent_add_local_tcp_active_candidate(juice_agent_t *agent, addr_record_t *record);
 int agent_add_candidate_pair(juice_agent_t *agent, ice_candidate_t *local,
                              ice_candidate_t *remote); // local may be NULL
 int agent_add_candidate_pairs_for_remote(juice_agent_t *agent, ice_candidate_t *remote);
