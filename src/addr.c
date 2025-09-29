@@ -250,7 +250,8 @@ unsigned long addr_hash(const struct sockaddr *sa, bool with_port) {
 	return hash;
 }
 
-int addr_resolve(const char *hostname, const char *service, int socktype, addr_record_t *records, size_t count) {
+int addr_resolve(const char *hostname, const char *service, int socktype, addr_record_t *records,
+                 size_t count) {
 	addr_record_t *end = records + count;
 
 	struct addrinfo hints;
@@ -274,6 +275,7 @@ int addr_resolve(const char *hostname, const char *service, int socktype, addr_r
 			if (records != end) {
 				memcpy(&records->addr, ai->ai_addr, ai->ai_addrlen);
 				records->len = (socklen_t)ai->ai_addrlen;
+				records->socktype = socktype;
 				++records;
 			}
 		}
@@ -289,7 +291,7 @@ bool addr_is_numeric_hostname(const char *hostname) {
 	hints.ai_family = AF_UNSPEC;
 	hints.ai_socktype = SOCK_DGRAM;
 	hints.ai_protocol = IPPROTO_UDP;
-	hints.ai_flags = AI_NUMERICHOST|AI_NUMERICSERV;
+	hints.ai_flags = AI_NUMERICHOST | AI_NUMERICSERV;
 	struct addrinfo *ai_list = NULL;
 	if (getaddrinfo(hostname, "9", &hints, &ai_list))
 		return false;
@@ -300,7 +302,8 @@ bool addr_is_numeric_hostname(const char *hostname) {
 
 bool addr_record_is_equal(const addr_record_t *a, const addr_record_t *b, bool compare_ports) {
 	return addr_is_equal((const struct sockaddr *)&a->addr, (const struct sockaddr *)&b->addr,
-	                     compare_ports);
+	                     compare_ports) &&
+	       a->socktype == b->socktype;
 }
 
 int addr_record_to_string(const addr_record_t *record, char *buffer, size_t size) {
@@ -308,5 +311,6 @@ int addr_record_to_string(const addr_record_t *record, char *buffer, size_t size
 }
 
 unsigned long addr_record_hash(const addr_record_t *record, bool with_port) {
-	return addr_hash((const struct sockaddr *)&record->addr, with_port);
+	return addr_hash((const struct sockaddr *)&record->addr, with_port) +
+	       (record->socktype == SOCK_DGRAM ? 0 : 1);
 }
