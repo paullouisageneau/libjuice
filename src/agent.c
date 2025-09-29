@@ -875,12 +875,12 @@ void agent_register_entry_for_candidate_pair(juice_agent_t *agent, ice_candidate
 int agent_conn_tcp_state(juice_agent_t *agent, const addr_record_t *dst, tcp_state_t state) {
 	for (int i = 0; i < agent->entries_count; ++i) {
 		agent_stun_entry_t *entry = agent->entries + i;
-		if (entry->pair && entry->pair->remote->transport != ICE_CANDIDATE_TRANSPORT_UDP && addr_record_is_equal(&entry->record, dst, true)) {
+		if (entry->pair && entry->pair->remote->transport != ICE_CANDIDATE_TRANSPORT_UDP &&
+		    addr_record_is_equal(&entry->record, dst, true)) {
 			entry->pair->tcp_state = state;
-			switch(state) {
+			switch (state) {
 			case TCP_STATE_CONNECTED:
-				entry->next_transmission = current_timestamp();
-				conn_interrupt(agent);
+				agent_arm_transmission(agent, entry, 0); // transmit now
 				break;
 			case TCP_STATE_DISCONNECTED:
 			case TCP_STATE_FAILED:
@@ -912,21 +912,32 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 	for (int i = 0; i < agent->entries_count; ++i) {
 		agent_stun_entry_t *entry = agent->entries + i;
 
-		if (entry->pair && entry->pair->remote->transport != ICE_CANDIDATE_TRANSPORT_UDP &&
-		    entry->pair->tcp_state == TCP_STATE_DISCONNECTED) {
-			conn_tcp_connect(agent, &entry->record);
-			entry->next_transmission = now + LAST_STUN_RETRANSMISSION_TIMEOUT;
-		} else if (entry->state == AGENT_STUN_ENTRY_STATE_PENDING) { // STUN requests transmission or retransmission
+		if (entry->state == AGENT_STUN_ENTRY_STATE_PENDING) { // STUN transmission or retransmission
 			if (entry->next_transmission > now)
 				continue;
+
+			if (entry->pair && entry->pair->remote->transport != ICE_CANDIDATE_TRANSPORT_UDP) {
+			    if (entry->pair->tcp_state == TCP_STATE_DISCONNECTED)
+					conn_tcp_connect(agent, &entry->record); // First attempt a TCP connection
+
+				if(entry->pair->tcp_state != TCP_STATE_CONNECTED)
+					continue;
+			}
 
 			if (entry->retransmissions >= 0) {
 				if (JLOG_DEBUG_ENABLED) {
 					char record_str[ADDR_MAX_STRING_LEN];
 					addr_record_to_string(&entry->record, record_str, ADDR_MAX_STRING_LEN);
-					JLOG_DEBUG("STUN entry %d: Sending request to %s (%d retransmission%s left)", i,
-					           record_str, entry->retransmissions,
-					           entry->retransmissions >= 2 ? "s" : "");
+					if (entry->retransmissions == 0) {
+						JLOG_DEBUG("STUN entry %d: Sending request to %s (no retransmission)", i,
+						           record_str);
+					} else if (entry->retransmissions == 1) {
+						JLOG_DEBUG("STUN entry %d: Sending request to %s (1 retransmission left)",
+						           i, record_str);
+					} else {
+						JLOG_DEBUG("STUN entry %d: Sending request to %s (%d retransmissions left)",
+						           i, record_str, entry->retransmissions);
+					}
 				}
 				if (entry->transaction_id_expired) {
 					juice_random(entry->transaction_id, STUN_TRANSACTION_ID_SIZE);
@@ -2545,10 +2556,15 @@ void agent_arm_transmission(juice_agent_t *agent, agent_stun_entry_t *entry, tim
 	entry->next_transmission = current_timestamp() + delay;
 
 	if (entry->state == AGENT_STUN_ENTRY_STATE_PENDING) {
-		entry->retransmission_timeout = MIN_STUN_RETRANSMISSION_TIMEOUT;
-		entry->retransmissions = entry->type == AGENT_STUN_ENTRY_TYPE_CHECK
-		                             ? MAX_STUN_CHECK_RETRANSMISSION_COUNT
-		                             : MAX_STUN_SERVER_RETRANSMISSION_COUNT;
+		if (entry->pair && entry->pair->remote->transport != ICE_CANDIDATE_TRANSPORT_UDP) {
+			entry->retransmission_timeout = STUN_TCP_TIMEOUT;
+			entry->retransmissions = 0; // do not retransmit
+		} else {
+			entry->retransmission_timeout = MIN_STUN_RETRANSMISSION_TIMEOUT;
+			entry->retransmissions = entry->type == AGENT_STUN_ENTRY_TYPE_CHECK
+			                             ? MAX_STUN_CHECK_RETRANSMISSION_COUNT
+			                             : MAX_STUN_SERVER_RETRANSMISSION_COUNT;
+		}
 	}
 
 	// Find a time slot
