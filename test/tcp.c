@@ -71,12 +71,15 @@ void run_passive_ice_tcp(socket_t server_socket) {
 	if(client_socket == INVALID_SOCKET)
 		return;
 
-	tcp_ice_read_context_t context;
-	memset(&context, 0, sizeof(context));
+	tcp_ice_read_context_t read_context;
+	memset(&read_context, 0, sizeof(read_context));
+
+	tcp_ice_write_context_t write_context;
+	memset(&write_context, 0, sizeof(write_context));
 
 	for (int i = 0; i < 2;) {
 		int len;
-		if ((len = _juice_tcp_ice_read(client_socket, &context)) < 0)
+		if ((len = _juice_tcp_ice_read(client_socket, &read_context)) < 0)
 			return;
 
 		if (len == 0)
@@ -85,7 +88,7 @@ void run_passive_ice_tcp(socket_t server_socket) {
 		stun_message_t msg;
 		memset(&msg, 0, sizeof(msg));
 
-		if (_juice_stun_read(context.buffer, len, &msg) < 0)
+		if (_juice_stun_read(read_context.buffer, len, &msg) < 0)
 			return;
 
 		if (msg.msg_class != STUN_CLASS_REQUEST)
@@ -100,8 +103,7 @@ void run_passive_ice_tcp(socket_t server_socket) {
 		if ((len = _juice_stun_write(buffer, STUN_WRITE_BUFFER_SIZE, &msg, ICE_PWD)) < 0)
 			return;
 
-		tcp_ice_write_context_t context;
-		if (_juice_tcp_ice_write(client_socket, buffer, len, &context) < 0)
+		if (_juice_tcp_ice_write(client_socket, buffer, len, &write_context) < 0)
 			return;
 
 		i++;
@@ -144,7 +146,7 @@ int test_tcp() {
 	         "a=ice-pwd:%s\r\n"
 	         "a=candidate:1 1 TCP 2122316799 127.0.0.1 %d typ host tcptype passive\r\n"
 	         "a=candidate:2 1 TCP 3122316799 127.0.0.1 %d typ host tcptype so\r\n"
-	         "a=candidate:3 1 TCP 4122316799 127.0.0.1 0  typ host tcptype active\r\n",
+	         "a=candidate:3 1 TCP 4122316799 127.0.0.1 9 typ host tcptype active\r\n",
 	         ICE_PWD, ice_tcp_server_port + 2, ice_tcp_server_port);
 
 	juice_set_remote_description(agent, sdp);
@@ -180,8 +182,6 @@ static void on_candidate_bad_tcp_2(juice_agent_t *agent, const char *sdp, void *
 }
 
 int test_tcp_bad_candidate() {
-	juice_set_log_level(JUICE_LOG_LEVEL_DEBUG);
-
 	juice_config_t config1;
 	memset(&config1, 0, sizeof(config1));
 
