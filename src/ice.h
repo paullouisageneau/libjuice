@@ -11,6 +11,7 @@
 
 #include "addr.h"
 #include "juice.h"
+#include "tcp.h"
 #include "timestamp.h"
 
 #include <stdbool.h>
@@ -69,12 +70,6 @@ typedef enum ice_candidate_pair_state {
 	ICE_CANDIDATE_PAIR_STATE_FROZEN,
 } ice_candidate_pair_state_t;
 
-typedef enum ice_tcp_conn_state {
-	ICE_TCP_CONN_STATE_NEW,
-	ICE_TCP_CONN_STATE_CONNECTING,
-	ICE_TCP_CONN_STATE_CONNECTED,
-} ice_tcp_conn_state_t;
-
 typedef struct ice_candidate_pair {
 	ice_candidate_t *local;
 	ice_candidate_t *remote;
@@ -82,7 +77,7 @@ typedef struct ice_candidate_pair {
 	ice_candidate_pair_state_t state;
 	bool nominated;
 	bool nomination_requested;
-	ice_tcp_conn_state_t tcp_conn_state;
+	tcp_state_t tcp_state;
 	timestamp_t consent_expiry;
 } ice_candidate_pair_t;
 
@@ -100,7 +95,8 @@ int ice_parse_sdp(const char *sdp, ice_description_t *description);
 int ice_parse_candidate_sdp(const char *line, ice_candidate_t *candidate);
 int ice_create_local_description(ice_description_t *description);
 int ice_create_local_candidate(ice_candidate_type_t type, int component, int index,
-                               const addr_record_t *record, ice_candidate_t *candidate, ice_candidate_transport_t transport);
+                               const addr_record_t *record, ice_candidate_t *candidate,
+                               ice_candidate_transport_t transport);
 int ice_resolve_candidate(ice_candidate_t *candidate, ice_resolve_mode_t mode);
 int ice_add_candidate(ice_candidate_t *candidate, ice_description_t *description);
 void ice_sort_candidates(ice_description_t *description);
@@ -115,7 +111,8 @@ int ice_update_candidate_pair(ice_candidate_pair_t *pair, bool is_controlling);
 
 int ice_candidates_count(const ice_description_t *description, ice_candidate_type_t type);
 
-uint32_t ice_compute_priority(ice_candidate_type_t type, int family, int component, int index, ice_candidate_transport_t transport);
+uint32_t ice_compute_priority(ice_candidate_type_t type, int family, int component, int index,
+                              ice_candidate_transport_t transport);
 
 bool ice_is_valid_string(const char *str);
 

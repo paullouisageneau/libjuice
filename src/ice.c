@@ -183,6 +183,12 @@ int ice_create_local_candidate(ice_candidate_type_t type, int component, int ind
 	candidate->transport = transport;
 	strcpy(candidate->foundation, "-");
 
+	int socktype = transport == ICE_CANDIDATE_TRANSPORT_UDP ? SOCK_DGRAM : SOCK_STREAM;
+	if (record->socktype && record->socktype != socktype) {
+		JLOG_WARN("Incorrect socket type for candidate transport");
+	}
+	candidate->resolved.socktype = socktype;
+
 	candidate->priority = ice_compute_priority(candidate->type, candidate->resolved.addr.ss_family,
 	                                           candidate->component, index, candidate->transport);
 

@@ -63,8 +63,6 @@ a=ice-options:ice2\n\
 	// Remote agent: Receive description from local agent
 	juice_set_remote_description(remoteAgent1, localSdp);
 
-	printf("----> test gather candidates\n");
-
 	// Remote agent: Gather candidates (and send them to local agent)
 	juice_gather_candidates(remoteAgent1);
 
