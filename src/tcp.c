@@ -17,7 +17,7 @@
 #define BUFFER_SIZE 1024
 
 socket_t tcp_create_socket(const addr_record_t *dst) {
-	socket_t sock = socket(AF_INET, SOCK_STREAM, 0);
+	socket_t sock = socket(dst->addr.ss_family, SOCK_STREAM, IPPROTO_TCP);
 	if (sock == INVALID_SOCKET) {
 		JLOG_WARN("TCP socket creation failed, errno=%d", sockerrno);
 		return INVALID_SOCKET;
