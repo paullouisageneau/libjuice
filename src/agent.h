@@ -102,6 +102,7 @@ typedef struct agent_turn_state {
 	turn_map_t map;
 	stun_credentials_t credentials;
 	const char *password;
+	juice_turn_transport_t transport;
 } agent_turn_state_t;
 
 typedef struct agent_stun_entry {
@@ -116,6 +117,7 @@ typedef struct agent_stun_entry {
 	timediff_t retransmission_timeout;
 	int retransmissions;
 	bool transaction_id_expired;
+	tcp_state_t tcp_state;
 
 	// TURN
 	agent_turn_state_t *turn;

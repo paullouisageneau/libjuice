@@ -77,7 +77,6 @@ typedef struct ice_candidate_pair {
 	ice_candidate_pair_state_t state;
 	bool nominated;
 	bool nomination_requested;
-	tcp_state_t tcp_state;
 	timestamp_t consent_expiry;
 } ice_candidate_pair_t;
 

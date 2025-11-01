@@ -45,6 +45,7 @@ typedef struct server_turn_alloc {
 	uint8_t transaction_id[STUN_TRANSACTION_ID_SIZE];
 	timestamp_t timestamp;
 	socket_t sock;
+	socket_t tcp_sock;
 	turn_map_t map;
 } server_turn_alloc_t;
 

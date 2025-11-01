@@ -74,6 +74,11 @@ static int copy_turn_server(juice_turn_server_t *dst, const juice_turn_server_t 
 	return 0;
 }
 
+static bool entry_is_tcp(agent_entry_t *entry) {
+	return (entry->pair && entry->pair->remote->transport != ICE_CANDIDATE_TRANSPORT_UDP) ||
+		(entry->turn && entry->turn->transport != JUICE_TURN_TRANSPORT_UDP);
+}
+
 juice_agent_t *agent_create(const juice_config_t *config) {
 	JLOG_VERBOSE("Creating agent");
 
@@ -360,6 +365,8 @@ int agent_resolve_servers(juice_agent_t *agent) {
 			if (!turn_server->port)
 				turn_server->port = 3478; // default TURN port
 
+			// TODO: transport
+
 			char hostname[256];
 			char service[8];
 			snprintf(hostname, 256, "%s", turn_server->host);
@@ -368,8 +375,9 @@ int agent_resolve_servers(juice_agent_t *agent) {
 			conn_unlock(agent);
 
 			addr_record_t records[DEFAULT_MAX_RECORDS_COUNT];
+			int socktype = transport == JUICE_TURN_TRANSPORT_UDP ? SOCK_DGRAM : SOCK_STREAM;
 			int records_count =
-			    addr_resolve(hostname, service, SOCK_DGRAM, records, DEFAULT_MAX_RECORDS_COUNT);
+			    addr_resolve(hostname, service, socktype, records, DEFAULT_MAX_RECORDS_COUNT);
 
 			conn_lock(agent);
 
@@ -426,6 +434,7 @@ int agent_resolve_servers(juice_agent_t *agent) {
 					snprintf(entry->turn->credentials.username, STUN_MAX_USERNAME_LEN, "%s",
 					         turn_server->username);
 					entry->turn->password = turn_server->password;
+					entry->turn->transport = transport;
 					juice_random(entry->transaction_id, STUN_TRANSACTION_ID_SIZE);
 					entry->transaction_id_expired = false;
 					++agent->entries_count;
@@ -875,18 +884,20 @@ void agent_register_entry_for_candidate_pair(juice_agent_t *agent, ice_candidate
 int agent_conn_tcp_state(juice_agent_t *agent, const addr_record_t *dst, tcp_state_t state) {
 	for (int i = 0; i < agent->entries_count; ++i) {
 		agent_stun_entry_t *entry = agent->entries + i;
-		if (entry->pair && entry->pair->remote->transport != ICE_CANDIDATE_TRANSPORT_UDP &&
-		    addr_record_is_equal(&entry->record, dst, true)) {
-			entry->pair->tcp_state = state;
+		if (entry_is_tcp(entry) && addr_record_is_equal(&entry->record, dst, true)) {
+			entry->tcp_state = state;
 			switch (state) {
 			case TCP_STATE_CONNECTED:
 				agent_arm_transmission(agent, entry, 0); // transmit now
 				break;
 			case TCP_STATE_DISCONNECTED:
 			case TCP_STATE_FAILED:
-				entry->pair->state = ICE_CANDIDATE_PAIR_STATE_FAILED;
 				entry->state = AGENT_STUN_ENTRY_STATE_FAILED;
 				entry->next_transmission = 0;
+
+				if(entry->pair)
+					entry->pair->state = ICE_CANDIDATE_PAIR_STATE_FAILED;
+
 				conn_interrupt(agent);
 				break;
 			default:
@@ -916,11 +927,11 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 			if (entry->next_transmission > now)
 				continue;
 
-			if (entry->pair && entry->pair->remote->transport != ICE_CANDIDATE_TRANSPORT_UDP) {
-			    if (entry->pair->tcp_state == TCP_STATE_DISCONNECTED)
+			if (entry_is_tcp(entry)) {
+			    if (entry->tcp_state == TCP_STATE_DISCONNECTED)
 					conn_tcp_connect(agent, &entry->record); // First attempt a TCP connection
 
-				if(entry->pair->tcp_state != TCP_STATE_CONNECTED)
+				if(entry->tcp_state != TCP_STATE_CONNECTED)
 					continue;
 			}
 
@@ -2556,7 +2567,7 @@ void agent_arm_transmission(juice_agent_t *agent, agent_stun_entry_t *entry, tim
 	entry->next_transmission = current_timestamp() + delay;
 
 	if (entry->state == AGENT_STUN_ENTRY_STATE_PENDING) {
-		if (entry->pair && entry->pair->remote->transport != ICE_CANDIDATE_TRANSPORT_UDP) {
+		if (entry_is_tcp(entry)) {
 			entry->retransmission_timeout = STUN_TCP_TIMEOUT;
 			entry->retransmissions = 0; // do not retransmit
 		} else {

@@ -40,7 +40,6 @@ typedef struct conn_impl {
 	tcp_ice_read_context_t tcp_ice_read_context;
 	addr_record_t tcp_dst;
 	tcp_state_t tcp_state;
-	uint16_t ice_tcp_len;
 	mutex_t send_mutex;
 	int send_ds;
 	timestamp_t next_timestamp;

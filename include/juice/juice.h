@@ -84,6 +84,12 @@ typedef struct juice_turn_server {
 	uint16_t port;
 } juice_turn_server_t;
 
+typedef enum juice_turn_transport {
+	JUICE_TURN_TRANSPORT_UDP = 0,
+	JUICE_TURN_TRANSPORT_TCP,
+	JUICE_TURN_TRANSPORT_TLS,
+} juice_turn_transport_t;
+
 typedef enum juice_concurrency_mode {
 	JUICE_CONCURRENCY_MODE_POLL = 0, // Connections share a single thread
 	JUICE_CONCURRENCY_MODE_MUX,      // Connections are multiplexed on a single UDP socket
