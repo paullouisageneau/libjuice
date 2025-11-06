@@ -23,6 +23,7 @@
 //
 #include <iphlpapi.h>
 #include <windows.h>
+#include <BaseTsd.h>
 
 #ifdef __MINGW32__
 #include <sys/stat.h>
@@ -39,6 +40,10 @@ typedef SOCKET socket_t;
 typedef SOCKADDR sockaddr;
 typedef ULONG ctl_t;
 typedef DWORD sockopt_t;
+#ifndef _SSIZE_T_DEFINED
+typedef SSIZE_T ssize_t;
+#define _SSIZE_T_DEFINED
+#endif
 #define sockerrno ((int)WSAGetLastError())
 #define IP_DONTFRAG IP_DONTFRAGMENT
 #define HOST_NAME_MAX 256
