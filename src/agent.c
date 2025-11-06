@@ -92,13 +92,14 @@ juice_agent_t *agent_create(const juice_config_t *config) {
 	}
 
 	bool alloc_failed = false;
-	agent->ice_tcp_mode = JUICE_ICE_TCP_MODE_NONE;
+	agent->ice_tcp_mode = config->enable_ice_tcp ? JUICE_ICE_TCP_MODE_ACTIVE : JUICE_ICE_TCP_MODE_NONE;
 	agent->config.concurrency_mode = config->concurrency_mode;
 	agent->config.stun_server_host = alloc_string_copy(config->stun_server_host, &alloc_failed);
 	agent->config.stun_server_port = config->stun_server_port;
 	agent->config.bind_address = alloc_string_copy(config->bind_address, &alloc_failed);
 	agent->config.local_port_range_begin = config->local_port_range_begin;
 	agent->config.local_port_range_end = config->local_port_range_end;
+	agent->config.enable_ice_tcp = config->enable_ice_tcp;
 	agent->config.cb_state_changed = config->cb_state_changed;
 	agent->config.cb_candidate = config->cb_candidate;
 	agent->config.cb_gathering_done = config->cb_gathering_done;
@@ -247,6 +248,21 @@ int agent_gather_candidates(juice_agent_t *agent) {
 	} else if (records_count > ICE_MAX_CANDIDATES_COUNT - 1)
 		records_count = ICE_MAX_CANDIDATES_COUNT - 1;
 
+	addr_record_t tcp_records[ICE_MAX_CANDIDATES_COUNT - 1];
+	int tcp_records_count = 0;
+	if (agent->ice_tcp_mode != JUICE_ICE_TCP_MODE_NONE) {
+		tcp_records_count =
+		    conn_get_tcp_addrs(agent, tcp_records, ICE_MAX_CANDIDATES_COUNT - 1);
+		if (tcp_records_count < 0) {
+			JLOG_ERROR("Failed to gather TCP host candidates");
+			tcp_records_count = 0;
+		} else if (tcp_records_count == 0) {
+			JLOG_WARN("No TCP host candidates gathered");
+		} else if (tcp_records_count > ICE_MAX_CANDIDATES_COUNT - 1) {
+			tcp_records_count = ICE_MAX_CANDIDATES_COUNT - 1;
+		}
+	}
+
 	conn_lock(agent);
 
 	JLOG_VERBOSE("Adding %d local host candidates", records_count);
@@ -290,6 +306,28 @@ int agent_gather_candidates(juice_agent_t *agent) {
 			}
 		} else {
 			JLOG_WARN("No local host candidates gathered, unable to add TCP candidates");
+		}
+	}
+
+	if (agent->ice_tcp_mode != JUICE_ICE_TCP_MODE_NONE && tcp_records_count > 0) {
+		JLOG_VERBOSE("Adding %d local TCP passive candidates", tcp_records_count);
+		for (int i = 0; i < tcp_records_count; ++i) {
+			ice_candidate_t candidate;
+			if (ice_create_local_candidate(ICE_CANDIDATE_TYPE_HOST, 1,
+			                               agent->local.candidates_count,
+			                               tcp_records + i, &candidate,
+			                               ICE_CANDIDATE_TRANSPORT_TCP_TYPE_PASSIVE)) {
+				JLOG_ERROR("Failed to create TCP host candidate");
+				continue;
+			}
+			if (agent->local.candidates_count >= MAX_HOST_CANDIDATES_COUNT) {
+				JLOG_WARN("Local description already has the maximum number of host candidates");
+				break;
+			}
+			if (ice_add_candidate(&candidate, &agent->local)) {
+				JLOG_ERROR("Failed to add TCP candidate to local description");
+				continue;
+			}
 		}
 	}
 
@@ -872,11 +910,31 @@ void agent_register_entry_for_candidate_pair(juice_agent_t *agent, ice_candidate
 		agent_translate_host_candidate_entry(agent, entry);
 }
 
+static inline bool pair_is_relayed(const ice_candidate_pair_t *pair) {
+	return pair && pair->local && pair->local->type == ICE_CANDIDATE_TYPE_RELAYED;
+}
+
+static inline bool entry_is_relayed(const agent_stun_entry_t *entry) {
+	return entry && entry->pair && pair_is_relayed(entry->pair);
+}
+
+static inline bool pair_compare_ports(const ice_candidate_pair_t *pair) {
+	if (!pair || !pair->remote)
+		return true;
+	return pair->remote->transport == ICE_CANDIDATE_TRANSPORT_UDP;
+}
+
+static inline bool entry_compare_ports(const agent_stun_entry_t *entry) {
+	if (entry_is_relayed(entry))
+		return true;
+	return pair_compare_ports(entry->pair);
+}
+
 int agent_conn_tcp_state(juice_agent_t *agent, const addr_record_t *dst, tcp_state_t state) {
 	for (int i = 0; i < agent->entries_count; ++i) {
 		agent_stun_entry_t *entry = agent->entries + i;
-		if (entry->pair && entry->pair->remote->transport != ICE_CANDIDATE_TRANSPORT_UDP &&
-		    addr_record_is_equal(&entry->record, dst, true)) {
+	if (entry->pair && entry->pair->remote->transport != ICE_CANDIDATE_TRANSPORT_UDP &&
+	    addr_record_is_equal(&entry->record, dst, entry_compare_ports(entry))) {
 			entry->pair->tcp_state = state;
 			switch (state) {
 			case TCP_STATE_CONNECTED:
@@ -1496,6 +1554,10 @@ int agent_process_stun_binding(juice_agent_t *agent, const stun_message_t *msg,
 				JLOG_DEBUG("Pair nomination requested (controlled)");
 				pair->nomination_requested = true;
 			}
+		}
+		if (!relayed && pair && pair->remote &&
+		    pair->remote->transport != ICE_CANDIDATE_TRANSPORT_UDP) {
+			entry->record = *src;
 		}
 		// Response
 		if (agent_send_stun_binding(agent, entry, STUN_CLASS_RESP_SUCCESS, 0, msg->transaction_id,
@@ -2651,12 +2713,40 @@ void agent_update_ordered_pairs(juice_agent_t *agent) {
 	}
 }
 
-static inline bool pair_is_relayed(const ice_candidate_pair_t *pair) {
-	return pair->local && pair->local->type == ICE_CANDIDATE_TYPE_RELAYED;
-}
+bool agent_address_uses_tcp(juice_agent_t *agent, const addr_record_t *addr) {
+	bool result = false;
+	conn_lock(agent);
+	agent_stun_entry_t *selected_entry = atomic_load(&agent->selected_entry);
+	if (selected_entry && selected_entry->pair && selected_entry->pair->remote) {
+		bool compare_ports = entry_compare_ports(selected_entry);
+		bool match = addr_record_is_equal(&selected_entry->record, addr, compare_ports);
+		if (!match)
+			match = addr_record_is_equal(&selected_entry->pair->remote->resolved, addr, compare_ports);
+		if (match) {
+			result = selected_entry->pair->remote->transport != ICE_CANDIDATE_TRANSPORT_UDP;
+			conn_unlock(agent);
+			return result;
+		}
+	}
 
-static inline bool entry_is_relayed(const agent_stun_entry_t *entry) {
-	return entry->pair && pair_is_relayed(entry->pair);
+	for (int i = 0; i < agent->entries_count; ++i) {
+		agent_stun_entry_t *entry = agent->entries + i;
+		if (entry->type != AGENT_STUN_ENTRY_TYPE_CHECK || !entry->pair || !entry->pair->remote)
+			continue;
+		bool compare_ports = entry_compare_ports(entry);
+		bool match = addr_record_is_equal(&entry->record, addr, compare_ports);
+		if (!match)
+			match = addr_record_is_equal(&entry->pair->remote->resolved, addr, compare_ports);
+		if (!match)
+			continue;
+		if (entry->pair->remote->transport != ICE_CANDIDATE_TRANSPORT_UDP) {
+			result = true;
+			break;
+		}
+	}
+
+	conn_unlock(agent);
+	return result;
 }
 
 agent_stun_entry_t *agent_find_entry_from_transaction_id(juice_agent_t *agent,
@@ -2686,13 +2776,15 @@ agent_stun_entry_t *agent_find_entry_from_record(juice_agent_t *agent, const add
 		if (relayed) {
 			if (entry_is_relayed(selected_entry) &&
 			    addr_record_is_equal(&selected_entry->pair->local->resolved, relayed, true) &&
-			    addr_record_is_equal(&selected_entry->record, record, true)) {
+			    addr_record_is_equal(&selected_entry->record, record,
+			                       entry_compare_ports(selected_entry))) {
 				JLOG_DEBUG("STUN selected entry matching incoming relayed address");
 				return selected_entry;
 			}
 		} else {
 			if (!entry_is_relayed(selected_entry) &&
-			    addr_record_is_equal(&selected_entry->record, record, true)) {
+			    addr_record_is_equal(&selected_entry->record, record,
+			                       entry_compare_ports(selected_entry))) {
 				JLOG_DEBUG("STUN selected entry matching incoming address");
 				return selected_entry;
 			}
@@ -2715,7 +2807,8 @@ agent_stun_entry_t *agent_find_entry_from_record(juice_agent_t *agent, const add
 		for (int i = 0; i < agent->candidate_pairs_count; ++i) {
 			ice_candidate_pair_t *pair = agent->ordered_pairs[i];
 			if (!pair_is_relayed(pair) &&
-			    addr_record_is_equal(&pair->remote->resolved, record, true)) {
+			    addr_record_is_equal(&pair->remote->resolved, record,
+			                       pair_compare_ports(pair))) {
 				matching_pair = pair;
 				break;
 			}
@@ -2735,7 +2828,8 @@ agent_stun_entry_t *agent_find_entry_from_record(juice_agent_t *agent, const add
 		// Try to match entries directly
 		for (int i = 0; i < agent->entries_count; ++i) {
 			agent_stun_entry_t *entry = agent->entries + i;
-			if (!entry_is_relayed(entry) && addr_record_is_equal(&entry->record, record, true)) {
+			if (!entry_is_relayed(entry) &&
+			    addr_record_is_equal(&entry->record, record, entry_compare_ports(entry))) {
 				JLOG_DEBUG("STUN entry %d matching incoming address", i);
 				return entry;
 			}
@@ -2751,6 +2845,7 @@ int agent_set_ice_tcp_mode(juice_agent_t *agent, juice_ice_tcp_mode_t ice_tcp_mo
 	}
 
 	agent->ice_tcp_mode = ice_tcp_mode;
+	agent->config.enable_ice_tcp = (ice_tcp_mode != JUICE_ICE_TCP_MODE_NONE);
 	return JUICE_ERR_SUCCESS;
 }
 

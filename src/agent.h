@@ -176,6 +176,7 @@ int agent_channel_send(juice_agent_t *agent, agent_stun_entry_t *entry, const ad
 juice_state_t agent_get_state(juice_agent_t *agent);
 int agent_get_selected_candidate_pair(juice_agent_t *agent, ice_candidate_t *local,
                                       ice_candidate_t *remote);
+bool agent_address_uses_tcp(juice_agent_t *agent, const addr_record_t *addr);
 
 int agent_conn_recv(juice_agent_t *agent, char *buf, size_t len, const addr_record_t *src);
 int agent_conn_update(juice_agent_t *agent, timestamp_t *next_timestamp);

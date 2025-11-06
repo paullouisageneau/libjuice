@@ -357,23 +357,46 @@ int ice_generate_candidate_sdp(const ice_candidate_t *candidate, char *buffer, s
 		return -1;
 	}
 
+	const char *transport_suffix = NULL;
 	switch (candidate->transport) {
-		case  ICE_CANDIDATE_TRANSPORT_UDP:
-			transport = "UDP";
-			break;
-		case  ICE_CANDIDATE_TRANSPORT_TCP_TYPE_ACTIVE:
-			transport = "TCP";
-			suffix = "tcptype active";
-			break;
-		default:
-			JLOG_ERROR("Unknown candidate transport");
-			return -1;
+	case ICE_CANDIDATE_TRANSPORT_UDP:
+		transport = "UDP";
+		break;
+	case ICE_CANDIDATE_TRANSPORT_TCP_TYPE_ACTIVE:
+		transport = "TCP";
+		transport_suffix = "tcptype active";
+		break;
+	case ICE_CANDIDATE_TRANSPORT_TCP_TYPE_PASSIVE:
+		transport = "TCP";
+		transport_suffix = "tcptype passive";
+		break;
+	case ICE_CANDIDATE_TRANSPORT_TCP_TYPE_SO:
+		transport = "TCP";
+		transport_suffix = "tcptype so";
+		break;
+	default:
+		JLOG_ERROR("Unknown candidate transport");
+		return -1;
 	}
 
-	return snprintf(buffer, size, "a=candidate:%s %u %s %u %s %s typ %s%s%s",
+	if (suffix && transport_suffix)
+		return snprintf(buffer, size, "a=candidate:%s %u %s %u %s %s typ %s %s",
+		                candidate->foundation, candidate->component, transport,
+		                candidate->priority, candidate->hostname, candidate->service, type,
+		                suffix, transport_suffix);
+	if (suffix)
+		return snprintf(buffer, size, "a=candidate:%s %u %s %u %s %s typ %s %s",
+		                candidate->foundation, candidate->component, transport,
+		                candidate->priority, candidate->hostname, candidate->service, type,
+		                suffix);
+	if (transport_suffix)
+		return snprintf(buffer, size, "a=candidate:%s %u %s %u %s %s typ %s %s",
+		                candidate->foundation, candidate->component, transport,
+		                candidate->priority, candidate->hostname, candidate->service, type,
+		                transport_suffix);
+	return snprintf(buffer, size, "a=candidate:%s %u %s %u %s %s typ %s",
 	                candidate->foundation, candidate->component, transport, candidate->priority,
-	                candidate->hostname, candidate->service, type, suffix ? " " : "",
-	                suffix ? suffix : "");
+	                candidate->hostname, candidate->service, type);
 }
 
 int ice_create_candidate_pair(ice_candidate_t *local, ice_candidate_t *remote, bool is_controlling,
