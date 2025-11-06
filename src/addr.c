@@ -302,8 +302,7 @@ bool addr_is_numeric_hostname(const char *hostname) {
 
 bool addr_record_is_equal(const addr_record_t *a, const addr_record_t *b, bool compare_ports) {
 	return addr_is_equal((const struct sockaddr *)&a->addr, (const struct sockaddr *)&b->addr,
-	                     compare_ports) &&
-	       a->socktype == b->socktype;
+	                     compare_ports);
 }
 
 int addr_record_to_string(const addr_record_t *record, char *buffer, size_t size) {
@@ -311,6 +310,5 @@ int addr_record_to_string(const addr_record_t *record, char *buffer, size_t size
 }
 
 unsigned long addr_record_hash(const addr_record_t *record, bool with_port) {
-	return addr_hash((const struct sockaddr *)&record->addr, with_port) +
-	       (record->socktype == SOCK_DGRAM ? 0 : 1);
+	return addr_hash((const struct sockaddr *)&record->addr, with_port);
 }
