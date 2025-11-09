@@ -505,14 +505,14 @@ static int conn_poll_tcp_reserve(conn_impl_t *conn_impl, size_t count) {
 	return 0;
 }
 
-static void conn_poll_mark_tcp_connection_closed(juice_agent_t *agent, conn_impl_t *conn_impl,
+static bool conn_poll_mark_tcp_connection_closed(juice_agent_t *agent, conn_impl_t *conn_impl,
 	                                              size_t index) {
 	if (index >= conn_impl->tcp_conns_count)
-		return;
+		return false;
 
 	addr_record_t remote = conn_impl->tcp_conns[index].remote;
 	conn_poll_free_tcp_connection(conn_impl->tcp_conns + index);
-	agent_conn_tcp_state(agent, &remote, TCP_STATE_DISCONNECTED);
+	return agent_conn_tcp_state(agent, &remote, TCP_STATE_DISCONNECTED) == 0;
 }
 
 static int conn_poll_tcp_flush(tcp_connection_t *connection) {
@@ -905,12 +905,18 @@ int conn_poll_process(conn_registry_t *registry, pfds_record_t *pfds) {
 			connection_failed = true;
 		if (connection_failed) {
 			JLOG_WARN("ICE-TCP connection failed or closed");
+			bool entry_notified = false;
 			mutex_lock(&conn_impl->send_mutex);
-			conn_poll_mark_tcp_connection_closed(agent, conn_impl, (size_t)map->index);
+			entry_notified =
+			    conn_poll_mark_tcp_connection_closed(agent, conn_impl, (size_t)map->index);
 			mutex_unlock(&conn_impl->send_mutex);
-			agent_conn_fail(agent);
-			conn_impl->state = CONN_STATE_FINISHED;
 			map->agent = NULL;
+			if (!entry_notified) {
+				agent_conn_fail(agent);
+				conn_impl->state = CONN_STATE_FINISHED;
+				continue;
+			}
+			need_update = true;
 			continue;
 		}
 		break;

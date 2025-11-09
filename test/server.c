@@ -13,6 +13,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #ifdef _WIN32
@@ -49,6 +50,17 @@ static void on_gathering_done2(juice_agent_t *agent, void *user_ptr);
 static void on_recv1(juice_agent_t *agent, const char *data, size_t size, void *user_ptr);
 static void on_recv2(juice_agent_t *agent, const char *data, size_t size, void *user_ptr);
 
+static uint16_t pick_server_port(void) {
+	const char *env = getenv("JUICE_TEST_SERVER_PORT");
+	if (env && *env) {
+		char *end = NULL;
+		long value = strtol(env, &end, 10);
+		if (end && *end == '\0' && value > 0 && value <= 65535)
+			return (uint16_t)value;
+	}
+	return 3478;
+}
+
 int test_server() {
 	juice_set_log_level(JUICE_LOG_LEVEL_DEBUG);
 
@@ -58,17 +70,32 @@ int test_server() {
 	credentials[0].username = TURN_USERNAME1;
 	credentials[0].password = TURN_PASSWORD1;
 
+	uint16_t requested_port = pick_server_port();
+
 	juice_server_config_t server_config;
 	memset(&server_config, 0, sizeof(server_config));
-	server_config.port = 3478;
+	server_config.port = requested_port;
 	server_config.credentials = credentials;
 	server_config.credentials_count = 1;
 	server_config.max_allocations = 100;
 	server_config.realm = "Juice test server";
 	server = juice_server_create(&server_config);
+	if (!server && requested_port != 0) {
+		printf("Port %hu busy, falling back to ephemeral port\n", requested_port);
+		server_config.port = 0;
+		requested_port = 0;
+		server = juice_server_create(&server_config);
+	}
 
-	if (juice_server_get_port(server) != 3478) {
-		printf("juice_server_get_port failed\n");
+	if (!server) {
+		printf("Server creation failed\n");
+		return -1;
+	}
+
+	uint16_t server_port = juice_server_get_port(server);
+	if (requested_port != 0 && server_port != requested_port) {
+		printf("juice_server_get_port mismatch (expected %hu, got %hu)\n", requested_port,
+		       server_port);
 		juice_server_destroy(server);
 		return -1;
 	}
@@ -86,13 +113,13 @@ int test_server() {
 
 	// Set STUN server
 	config1.stun_server_host = "localhost";
-	config1.stun_server_port = 3478;
+	config1.stun_server_port = server_port;
 
 	// Set TURN server
 	juice_turn_server_t turn_server1;
 	memset(&turn_server1, 0, sizeof(turn_server1));
 	turn_server1.host = "localhost";
-	turn_server1.port = 3478;
+	turn_server1.port = server_port;
 	turn_server1.username = TURN_USERNAME1;
 	turn_server1.password = TURN_PASSWORD1;
 
@@ -110,13 +137,13 @@ int test_server() {
 
 	// Set STUN server
 	config2.stun_server_host = "localhost";
-	config2.stun_server_port = 3478;
+	config2.stun_server_port = server_port;
 
 	// Set TURN server
 	juice_turn_server_t turn_server2;
 	memset(&turn_server2, 0, sizeof(turn_server2));
 	turn_server2.host = "localhost";
-	turn_server2.port = 3478;
+	turn_server2.port = server_port;
 	turn_server2.username = TURN_USERNAME2;
 	turn_server2.password = TURN_PASSWORD2;
 
