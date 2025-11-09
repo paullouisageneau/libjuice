@@ -380,7 +380,7 @@ int ice_generate_candidate_sdp(const ice_candidate_t *candidate, char *buffer, s
 	}
 
 	if (suffix && transport_suffix)
-		return snprintf(buffer, size, "a=candidate:%s %u %s %u %s %s typ %s %s",
+		return snprintf(buffer, size, "a=candidate:%s %u %s %u %s %s typ %s %s %s",
 		                candidate->foundation, candidate->component, transport,
 		                candidate->priority, candidate->hostname, candidate->service, type,
 		                suffix, transport_suffix);
