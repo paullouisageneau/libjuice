@@ -742,7 +742,7 @@ static int conn_poll_tcp_handle_read(juice_agent_t *agent, tcp_connection_t *con
 						JLOG_WARN("Invalid zero-length TCP frame");
 						return -1;
 					}
-					if (connection->frame_len > sizeof(connection->recv_buffer)) {
+					if (connection->frame_len >= sizeof(connection->recv_buffer)) {
 						JLOG_WARN("TCP frame too large: %u bytes", connection->frame_len);
 						return -1;
 					}
