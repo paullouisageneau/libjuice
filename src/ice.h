@@ -17,7 +17,9 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#define ICE_MAX_CANDIDATES_COUNT 20 // ~ 500B * 20 = 10KB
+#ifndef ICE_MAX_CANDIDATES_COUNT
+#define ICE_MAX_CANDIDATES_COUNT 30 // ~ 500B * 30 = 15KB
+#endif
 
 #define ICE_CANDIDATE_PENALTY_TCP 50
 
