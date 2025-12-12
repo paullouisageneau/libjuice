@@ -29,7 +29,7 @@
 #endif
 #else               // ! defined __LITTLE_ENDIAN__
 #include <endian.h> // machine/endian.h
-#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+#if BYTE_ORDER == BIG_ENDIAN
 #define _PICOHASH_BIG_ENDIAN
 #endif
 #endif
