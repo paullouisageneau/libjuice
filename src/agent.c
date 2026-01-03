@@ -27,6 +27,7 @@
 
 #ifdef _WIN32
 #include <windows.h>
+#include <qos2.h>
 #endif
 
 // RFC 8656: The Permission Lifetime MUST be 300 seconds (= 5 minutes)
@@ -90,6 +91,17 @@ juice_agent_t *agent_create(const juice_config_t *config) {
 		JLOG_FATAL("Memory allocation for agent failed");
 		return NULL;
 	}
+
+#ifdef _WIN32
+	// Create QOS Handle
+	QOS_VERSION qos_version = {1, 0};
+	if (QOSCreateHandle(&qos_version, &agent->qos_handle)) {
+		JLOG_DEBUG("QoS handle created successfully");
+	} else {
+		JLOG_WARN("QOSCreateHandle failed, error=%lu. QoS will be disabled.", GetLastError());
+		agent->qos_handle = NULL;
+	}
+#endif
 
 	bool alloc_failed = false;
 	agent->ice_tcp_mode = JUICE_ICE_TCP_MODE_NONE;
@@ -184,6 +196,18 @@ void agent_destroy(juice_agent_t *agent) {
 	}
 	free(agent->config.turn_servers);
 	free((void *)agent->config.bind_address);
+
+#ifdef _WIN32
+	// Free QOS handle
+	if (agent->qos_handle) {
+		if (!QOSCloseHandle(agent->qos_handle)) {
+			JLOG_WARN("QOSCloseHandle failed, error=%lu", GetLastError());
+		} else {
+			JLOG_DEBUG("QoS handle closed successfully");
+		}
+	}
+#endif
+
 	free(agent);
 
 #ifdef _WIN32

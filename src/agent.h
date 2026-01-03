@@ -153,6 +153,10 @@ struct juice_agent {
 
 	thread_t resolver_thread;
 	bool resolver_thread_started;
+
+#ifdef _WIN32
+	HANDLE qos_handle;
+#endif
 };
 
 juice_agent_t *agent_create(const juice_config_t *config);
