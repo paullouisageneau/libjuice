@@ -119,10 +119,12 @@ target_link_libraries(juice-static PRIVATE Threads::Threads)
 if(WIN32)
 	target_link_libraries(juice PRIVATE
 		ws2_32 # winsock2
-		bcrypt)
+		bcrypt
+		qwave) # qWave API
 	target_link_libraries(juice-static PRIVATE
 		ws2_32 # winsock2
-		bcrypt)
+		bcrypt
+		qwave) # qWave API
 endif()
 
 if (USE_NETTLE)
@@ -242,7 +244,7 @@ if(NOT NO_TESTS)
 	target_link_libraries(juice-tests juice Threads::Threads)
 
 	if(WIN32)
-		target_link_libraries(juice-tests ws2_32)
+		target_link_libraries(juice-tests ws2_32 qwave)
 	endif()
 endif()
 

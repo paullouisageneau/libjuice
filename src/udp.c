@@ -12,6 +12,11 @@
 #include "random.h"
 #include "thread.h" // for mutexes
 
+#ifdef _WIN32
+#include "agent.h"
+#include <qos2.h>
+#endif
+
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
@@ -250,10 +255,11 @@ int udp_set_diffserv(socket_t sock, int ds) {
 #ifdef _WIN32
 	// IP_TOS has been intentionally broken on Windows in favor of a convoluted proprietary
 	// mechanism called qWave. Thank you Microsoft!
-	// TODO: Investigate if DSCP can be still set directly without administrator flow configuration.
+	// For Windows, we need the agent for qWave support
 	(void)sock;
 	(void)ds;
-	JLOG_INFO("IP Differentiated Services are not supported on Windows");
+	JLOG_INFO("IP Differentiated Services requires qWave API on Windows. Use "
+	          "udp_set_diffserv_qwave() or udp_set_qwave_traffic_type() instead.");
 	return -1;
 #else
 	addr_record_t name;
@@ -297,6 +303,80 @@ int udp_set_diffserv(socket_t sock, int ds) {
 	}
 #endif
 }
+
+#ifdef _WIN32
+int udp_set_qwave_traffic_type(socket_t sock, int traffic_type, struct juice_agent *agent) {
+	if (!agent || !agent->qos_handle) {
+		JLOG_WARN("No QoS handle available for QoS traffic type");
+		return -1;
+	}
+
+	// Validate traffic type
+	if (traffic_type < QOSTrafficTypeBestEffort || traffic_type > QOSTrafficTypeControl) {
+		JLOG_ERROR("Invalid QoS traffic type: %d", traffic_type);
+		return -1;
+	}
+
+	QOS_FLOWID flow_id = 0;
+	if (!QOSAddSocketToFlow(agent->qos_handle, sock,
+	                        NULL, // destination address (NULL for all destinations)
+	                        (QOS_TRAFFIC_TYPE)traffic_type, QOS_NON_ADAPTIVE_FLOW, &flow_id)) {
+
+		DWORD error = GetLastError();
+		if (error == ERROR_NOT_SUPPORTED) {
+			JLOG_INFO("QoS not supported on this system");
+		} else {
+			JLOG_WARN("QOSAddSocketToFlow failed, error=%lu", error);
+		}
+		return -1;
+	}
+
+	JLOG_DEBUG("Successfully applied QoS traffic type %d to socket", traffic_type);
+	return 0;
+}
+
+// Arbitrary DSCP values require admin permissions
+int udp_set_diffserv_qwave(socket_t sock, int ds, struct juice_agent *agent) {
+	if (!agent || !agent->qos_handle) {
+		JLOG_WARN("No QoS handle available for differentiated services");
+		return -1;
+	}
+
+	QOS_FLOWID flow_id = 0;
+	if (!QOSAddSocketToFlow(agent->qos_handle, sock,
+	                        NULL, // destination address (NULL for all destinations)
+	                        QOSTrafficTypeBestEffort, // Start with best effort
+	                        QOS_NON_ADAPTIVE_FLOW, &flow_id)) {
+
+		DWORD error = GetLastError();
+		if (error == ERROR_NOT_SUPPORTED) {
+			JLOG_INFO("QoS not supported on this system");
+		} else {
+			JLOG_WARN("QOSAddSocketToFlow failed, error=%lu", error);
+		}
+		return -1;
+	}
+
+	DWORD dscp_value = (DWORD)ds;
+	if (!QOSSetFlow(agent->qos_handle, flow_id, QOSSetOutgoingDSCPValue, sizeof(DWORD), &dscp_value,
+	                0, NULL)) {
+
+		DWORD error = GetLastError();
+		if (error == ERROR_ACCESS_DENIED) {
+			JLOG_WARN("Setting arbitrary DSCP values requires administrator privileges or policy "
+			          "configuration");
+		} else {
+			JLOG_WARN("QOSSetFlow failed to set DSCP value, error=%lu", error);
+		}
+
+		QOSRemoveSocketFromFlow(agent->qos_handle, sock, flow_id, 0);
+		return -1;
+	}
+
+	JLOG_DEBUG("Successfully applied DSCP value 0x%02X to socket using qWave (admin mode)", ds);
+	return 0;
+}
+#endif
 
 uint16_t udp_get_port(socket_t sock) {
 	addr_record_t record;

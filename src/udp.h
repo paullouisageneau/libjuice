@@ -25,6 +25,13 @@ int udp_recvfrom(socket_t sock, char *buffer, size_t size, addr_record_t *src);
 int udp_sendto(socket_t sock, const char *data, size_t size, const addr_record_t *dst);
 int udp_sendto_self(socket_t sock, const char *data, size_t size);
 int udp_set_diffserv(socket_t sock, int ds);
+#ifdef _WIN32
+struct juice_agent;
+// Add to a standard traffic type, no admin permissions required
+int udp_set_qwave_traffic_type(socket_t sock, int traffic_type, struct juice_agent *agent);
+// Arbitrary DSCP values (requires admin permissions)
+int udp_set_diffserv_qwave(socket_t sock, int ds, struct juice_agent *agent);
+#endif
 uint16_t udp_get_port(socket_t sock);
 int udp_get_bound_addr(socket_t sock, addr_record_t *record);
 int udp_get_local_addr(socket_t sock, int family, addr_record_t *record); // family may be AF_UNSPEC
