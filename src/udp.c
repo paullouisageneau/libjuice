@@ -50,7 +50,7 @@ static uint16_t get_next_port_in_range(uint16_t begin, uint16_t end) {
 }
 
 static socket_t create_socket_for_addrinfo(const udp_socket_config_t *config,
-                                           const struct addrinfo *ai) {
+										   const struct addrinfo *ai) {
 	// Create socket
 	socket_t sock = socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
 	if (sock == INVALID_SOCKET) {
@@ -98,7 +98,7 @@ static socket_t create_socket_for_addrinfo(const udp_socket_config_t *config,
 	if (config->port_begin == 0 && config->port_end == 0) {
 		if (bind(sock, ai->ai_addr, (socklen_t)ai->ai_addrlen) == 0) {
 			JLOG_DEBUG("UDP socket bound to %s:%hu",
-			           config->bind_address ? config->bind_address : "any", udp_get_port(sock));
+					   config->bind_address ? config->bind_address : "any", udp_get_port(sock));
 			return sock;
 		}
 
@@ -113,7 +113,7 @@ static socket_t create_socket_for_addrinfo(const udp_socket_config_t *config,
 
 		if (bind(sock, (struct sockaddr *)&addr, addrlen) == 0) {
 			JLOG_DEBUG("UDP socket bound to %s:%hu",
-			           config->bind_address ? config->bind_address : "any", port);
+					   config->bind_address ? config->bind_address : "any", port);
 			return sock;
 		}
 
@@ -130,14 +130,14 @@ static socket_t create_socket_for_addrinfo(const udp_socket_config_t *config,
 			addr_set_port((struct sockaddr *)&addr, port);
 			if (bind(sock, (struct sockaddr *)&addr, addrlen) == 0) {
 				JLOG_DEBUG("UDP socket bound to %s:%hu",
-				           config->bind_address ? config->bind_address : "any", port);
+						   config->bind_address ? config->bind_address : "any", port);
 				return sock;
 			}
 		} while ((sockerrno == SEADDRINUSE || sockerrno == SEACCES) && retries-- > 0);
 
 		JLOG_WARN("UDP socket binding failed on port range %s:[%hu,%hu], errno=%d",
-		          config->bind_address ? config->bind_address : "any", config->port_begin,
-		          config->port_end, sockerrno);
+				  config->bind_address ? config->bind_address : "any", config->port_begin,
+				  config->port_end, sockerrno);
 	}
 
 error:
@@ -186,20 +186,20 @@ int udp_recvfrom(socket_t sock, char *buffer, size_t size, addr_record_t *src) {
 		src->len = sizeof(src->addr);
 		src->socktype = SOCK_DGRAM;
 		int len =
-		    recvfrom(sock, buffer, (socklen_t)size, 0, (struct sockaddr *)&src->addr, &src->len);
+			recvfrom(sock, buffer, (socklen_t)size, 0, (struct sockaddr *)&src->addr, &src->len);
 		if (len >= 0) {
 			addr_unmap_inet6_v4mapped((struct sockaddr *)&src->addr, &src->len);
 
 		} else if (sockerrno == SECONNRESET || sockerrno == SENETRESET ||
-		           sockerrno == SECONNREFUSED) {
+				   sockerrno == SECONNREFUSED) {
 			// On Windows, if a UDP socket receives an ICMP port unreachable response after
 			// sending a datagram, this error is stored, and the next call to recvfrom() returns
 			// WSAECONNRESET (port unreachable) or WSAENETRESET (TTL expired).
 			// Therefore, it may be ignored.
 			JLOG_DEBUG("Ignoring %s returned by recvfrom",
-			           sockerrno == SECONNRESET
-			               ? "ECONNRESET"
-			               : (sockerrno == SENETRESET ? "ENETRESET" : "ECONNREFUSED"));
+					   sockerrno == SECONNRESET
+						   ? "ECONNRESET"
+						   : (sockerrno == SENETRESET ? "ENETRESET" : "ECONNREFUSED"));
 			continue;
 		}
 		return len;
@@ -259,7 +259,7 @@ int udp_set_diffserv(socket_t sock, int ds) {
 	(void)sock;
 	(void)ds;
 	JLOG_INFO("IP Differentiated Services requires qWave API on Windows. Use "
-	          "udp_set_diffserv_qwave() or udp_set_qwave_traffic_type() instead.");
+			  "udp_set_diffserv_qwave() or udp_set_qwave_traffic_type() instead.");
 	return -1;
 #else
 	addr_record_t name;
@@ -319,19 +319,19 @@ int udp_set_qwave_traffic_type(socket_t sock, int traffic_type, struct juice_age
 
 	QOS_FLOWID flow_id = 0;
 	if (!QOSAddSocketToFlow(agent->qos_handle, sock,
-	                        NULL, // destination address (NULL for all destinations)
-	                        (QOS_TRAFFIC_TYPE)traffic_type, QOS_NON_ADAPTIVE_FLOW, &flow_id)) {
+							NULL, // destination address (NULL for all destinations)
+							(QOS_TRAFFIC_TYPE)traffic_type, QOS_NON_ADAPTIVE_FLOW, &flow_id)) {
 
 		DWORD error = GetLastError();
 		if (error == ERROR_NOT_SUPPORTED) {
-			JLOG_INFO("QoS not supported on this system");
+			JLOG_VERBOSE("QoS not supported on this system");
 		} else {
 			JLOG_WARN("QOSAddSocketToFlow failed, error=%lu", error);
 		}
 		return -1;
 	}
 
-	JLOG_DEBUG("Successfully applied QoS traffic type %d to socket", traffic_type);
+	JLOG_VERBOSE("Successfully applied QoS traffic type %d to socket", traffic_type);
 	return 0;
 }
 
@@ -344,13 +344,13 @@ int udp_set_diffserv_qwave(socket_t sock, int ds, struct juice_agent *agent) {
 
 	QOS_FLOWID flow_id = 0;
 	if (!QOSAddSocketToFlow(agent->qos_handle, sock,
-	                        NULL, // destination address (NULL for all destinations)
-	                        QOSTrafficTypeBestEffort, // Start with best effort
-	                        QOS_NON_ADAPTIVE_FLOW, &flow_id)) {
+							NULL, // destination address (NULL for all destinations)
+							QOSTrafficTypeBestEffort, // Start with best effort
+							QOS_NON_ADAPTIVE_FLOW, &flow_id)) {
 
 		DWORD error = GetLastError();
 		if (error == ERROR_NOT_SUPPORTED) {
-			JLOG_INFO("QoS not supported on this system");
+			JLOG_WARN("QoS not supported on this system");
 		} else {
 			JLOG_WARN("QOSAddSocketToFlow failed, error=%lu", error);
 		}
@@ -359,21 +359,62 @@ int udp_set_diffserv_qwave(socket_t sock, int ds, struct juice_agent *agent) {
 
 	DWORD dscp_value = (DWORD)ds;
 	if (!QOSSetFlow(agent->qos_handle, flow_id, QOSSetOutgoingDSCPValue, sizeof(DWORD), &dscp_value,
-	                0, NULL)) {
+					0, NULL)) {
 
 		DWORD error = GetLastError();
 		if (error == ERROR_ACCESS_DENIED) {
-			JLOG_WARN("Setting arbitrary DSCP values requires administrator privileges or policy "
-			          "configuration");
+			JLOG_WARN("Admin permissions not available for arbitrary DSCP, falling back to closest "
+					  "standard traffic type");
+
+			QOSRemoveSocketFromFlow(agent->qos_handle, sock, flow_id, 0);
+
+			// Map DSCP to closest standard traffic type
+			QOS_TRAFFIC_TYPE traffic_type;
+			int expected_dscp = ds >> 2; // DSCP is upper 6 bits
+
+			if (expected_dscp >= 40) {
+				// High priority: EF (46), CS5 (40), etc. -> Voice
+				traffic_type = QOSTrafficTypeVoice;
+				JLOG_VERBOSE("Using Voice traffic type (DSCP ~46) for requested DSCP %d",
+						  expected_dscp);
+			} else if (expected_dscp >= 24) {
+				// Medium-high priority: AF4x (34-38), AF3x (26-30), CS3 (24) -> AudioVideo
+				traffic_type = QOSTrafficTypeAudioVideo;
+				JLOG_VERBOSE("Using AudioVideo traffic type (DSCP ~34) for requested DSCP %d",
+						  expected_dscp);
+			} else if (expected_dscp >= 8) {
+				// Low priority: AF2x (18-22), AF1x (10-14), CS1 (8) -> Background
+				traffic_type = QOSTrafficTypeBackground;
+				JLOG_VERBOSE("Using Background traffic type (DSCP ~8) for requested DSCP %d",
+						  expected_dscp);
+			} else {
+				// Best effort: CS0 (0) and other low values -> Best Effort
+				traffic_type = QOSTrafficTypeBestEffort;
+				JLOG_VERBOSE("Using BestEffort traffic type (DSCP 0) for requested DSCP %d",
+						  expected_dscp);
+			}
+
+			// Try the fallback standard traffic type
+			if (!QOSAddSocketToFlow(agent->qos_handle, sock, NULL, traffic_type,
+									QOS_NON_ADAPTIVE_FLOW, &flow_id)) {
+
+				JLOG_WARN("Fallback to standard traffic type also failed, error=%lu",
+						  GetLastError());
+				return -1;
+			}
+
+			JLOG_VERBOSE("Successfully applied fallback traffic type %d to socket", traffic_type);
+			return 0;
+
 		} else {
 			JLOG_WARN("QOSSetFlow failed to set DSCP value, error=%lu", error);
-		}
 
-		QOSRemoveSocketFromFlow(agent->qos_handle, sock, flow_id, 0);
-		return -1;
+			QOSRemoveSocketFromFlow(agent->qos_handle, sock, flow_id, 0);
+			return -1;
+		}
 	}
 
-	JLOG_DEBUG("Successfully applied DSCP value 0x%02X to socket using qWave (admin mode)", ds);
+	JLOG_VERBOSE("Successfully applied DSCP value 0x%02X to socket using qWave (admin mode)", ds);
 	return 0;
 }
 #endif
@@ -582,8 +623,8 @@ int udp_get_addrs(socket_t sock, addr_record_t *records, size_t count) {
 		struct sockaddr *sa = list->Address[i].lpSockaddr;
 		socklen_t len = list->Address[i].iSockaddrLength;
 		if ((sa->sa_family == AF_INET ||
-		     (sa->sa_family == AF_INET6 && bound.addr.ss_family == AF_INET6)) &&
-		    !addr_is_local(sa)) {
+			 (sa->sa_family == AF_INET6 && bound.addr.ss_family == AF_INET6)) &&
+			!addr_is_local(sa)) {
 			if (!has_duplicate_addr(sa, records, current - records)) {
 				++ret;
 				if (current != end) {
@@ -615,9 +656,9 @@ int udp_get_addrs(socket_t sock, addr_record_t *records, size_t count) {
 		struct sockaddr *sa = ifa->ifa_addr;
 		socklen_t len;
 		if (sa &&
-		    (sa->sa_family == AF_INET ||
-		     (sa->sa_family == AF_INET6 && bound.addr.ss_family == AF_INET6)) &&
-		    !addr_is_local(sa) && (len = addr_get_len(sa)) > 0) {
+			(sa->sa_family == AF_INET ||
+			 (sa->sa_family == AF_INET6 && bound.addr.ss_family == AF_INET6)) &&
+			!addr_is_local(sa) && (len = addr_get_len(sa)) > 0) {
 			if (!has_duplicate_addr(sa, records, current - records)) {
 				++ret;
 				if (current != end) {
@@ -655,8 +696,8 @@ int udp_get_addrs(socket_t sock, addr_record_t *records, size_t count) {
 
 		socklen_t len;
 		if ((sa->sa_family == AF_INET ||
-		     (sa->sa_family == AF_INET6 && bound.addr.ss_family == AF_INET6)) &&
-		    !addr_is_local(sa) && (len = addr_get_len(sa)) > 0) {
+			 (sa->sa_family == AF_INET6 && bound.addr.ss_family == AF_INET6)) &&
+			!addr_is_local(sa) && (len = addr_get_len(sa)) > 0) {
 			if (!has_duplicate_addr(sa, records, current - records)) {
 				++ret;
 				if (current != end) {
