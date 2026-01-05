@@ -380,42 +380,36 @@ int udp_set_diffserv_qwave(socket_t sock, int ds, struct juice_agent *agent) {
 	}
 
 	DWORD set_flow_error = GetLastError();
-	// If custom DSCP failed due to admin privileges, fall back to standard traffic types
-	if (set_flow_error == ERROR_ACCESS_DENIED || set_flow_error) {
-		JLOG_INFO("Admin privileges not available, falling back to standard traffic types");
-		QOSRemoveSocketFromFlow(agent->qos_handle, sock, flow_id, 0);
+	JLOG_WARN("QOSSetFlow failed with error %lu, falling back to standard traffic types", set_flow_error);
 
-		QOS_TRAFFIC_TYPE traffic_type;
-		int expected_dscp = ds >> 2; // DSCP is upper 6 bits
-		if (expected_dscp >= 40) {
-			// High priority: EF (46), CS5 (40), etc. -> Voice
-			traffic_type = QOSTrafficTypeVoice;
-			JLOG_INFO("Mapping DSCP %d to Voice traffic type (DSCP ~46)", expected_dscp);
-		} else if (expected_dscp >= 24) {
-			// Medium-high priority: AF4x (34-38), AF3x (26-30), CS3 (24) -> AudioVideo
-			traffic_type = QOSTrafficTypeAudioVideo;
-			JLOG_INFO("Mapping DSCP %d to AudioVideo traffic type (DSCP ~34)", expected_dscp);
-		} else if (expected_dscp >= 8) {
-			// Low priority: AF2x (18-22), AF1x (10-14), CS1 (8) -> Background
-			traffic_type = QOSTrafficTypeBackground;
-			JLOG_INFO("Mapping DSCP %d to Background traffic type (DSCP ~8)", expected_dscp);
-		} else {
-			// Best effort: CS0 (0) and other low values -> Best Effort
-			traffic_type = QOSTrafficTypeBestEffort;
-			JLOG_INFO("Mapping DSCP %d to BestEffort traffic type (DSCP 0)", expected_dscp);
-		}
-
-		if (udp_set_traffic_type_qwave(sock, traffic_type, agent, NULL) == 0) {
-			JLOG_INFO("qWave: Standard traffic type applied successfully");
-			return 0;
-		} else {
-			JLOG_WARN("Fallback to standard traffic type also failed");
-			return -1;
-		}
-
+	QOSRemoveSocketFromFlow(agent->qos_handle, sock, flow_id, 0);
+	
+	QOS_TRAFFIC_TYPE traffic_type;
+	int expected_dscp = ds >> 2; // DSCP is upper 6 bits
+	if (expected_dscp >= 40) {
+		// High priority: EF (46), CS5 (40), etc. -> Voice
+		traffic_type = QOSTrafficTypeVoice;
+		JLOG_INFO("Mapping DSCP %d to Voice traffic type (DSCP ~46)", expected_dscp);
+	} else if (expected_dscp >= 24) {
+		// Medium-high priority: AF4x (34-38), AF3x (26-30), CS3 (24) -> AudioVideo
+		traffic_type = QOSTrafficTypeAudioVideo;
+		JLOG_INFO("Mapping DSCP %d to AudioVideo traffic type (DSCP ~34)", expected_dscp);
+	} else if (expected_dscp >= 8) {
+		// Low priority: AF2x (18-22), AF1x (10-14), CS1 (8) -> Background
+		traffic_type = QOSTrafficTypeBackground;
+		JLOG_INFO("Mapping DSCP %d to Background traffic type (DSCP ~8)", expected_dscp);
 	} else {
-		JLOG_WARN("QOSSetFlow failed with error %lu", set_flow_error);
+		// Best effort: CS0 (0) and other low values -> Best Effort
+		traffic_type = QOSTrafficTypeBestEffort;
+		JLOG_INFO("Mapping DSCP %d to BestEffort traffic type (DSCP 0)", expected_dscp);
+	}
+
+	if (udp_set_traffic_type_qwave(sock, traffic_type, agent, NULL) == 0) {
+		JLOG_INFO("qWave: Standard traffic type applied successfully");
 		return 0;
+	} else {
+		JLOG_WARN("Fallback to standard traffic type also failed");
+		return -1;
 	}
 }
 #endif
