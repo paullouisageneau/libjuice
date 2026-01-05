@@ -66,30 +66,30 @@ set(LIBJUICE_HEADERS
 source_group("Header Files" FILES "${LIBJUICE_HEADERS}")
 
 set(TESTS_SOURCES
-    ${CMAKE_CURRENT_SOURCE_DIR}/test/main.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/test/crc32.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/test/base64.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/test/stun-unhandled.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/test/stun-unhandled-multiple.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/test/stun-unhandled-no-host.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/test/stun-unhandled-unhandle.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/test/stun.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/test/gathering.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/test/connectivity.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/test/turn.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/test/thread.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/test/mux.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/test/notrickle.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/test/server.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/test/conflict.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/test/bind.c
+	${CMAKE_CURRENT_SOURCE_DIR}/test/main.c
+	${CMAKE_CURRENT_SOURCE_DIR}/test/crc32.c
+	${CMAKE_CURRENT_SOURCE_DIR}/test/base64.c
+	${CMAKE_CURRENT_SOURCE_DIR}/test/stun-unhandled.c
+	${CMAKE_CURRENT_SOURCE_DIR}/test/stun-unhandled-multiple.c
+	${CMAKE_CURRENT_SOURCE_DIR}/test/stun-unhandled-no-host.c
+	${CMAKE_CURRENT_SOURCE_DIR}/test/stun-unhandled-unhandle.c
+	${CMAKE_CURRENT_SOURCE_DIR}/test/stun.c
+	${CMAKE_CURRENT_SOURCE_DIR}/test/gathering.c
+	${CMAKE_CURRENT_SOURCE_DIR}/test/connectivity.c
+	${CMAKE_CURRENT_SOURCE_DIR}/test/turn.c
+	${CMAKE_CURRENT_SOURCE_DIR}/test/thread.c
+	${CMAKE_CURRENT_SOURCE_DIR}/test/mux.c
+	${CMAKE_CURRENT_SOURCE_DIR}/test/notrickle.c
+	${CMAKE_CURRENT_SOURCE_DIR}/test/server.c
+	${CMAKE_CURRENT_SOURCE_DIR}/test/conflict.c
+	${CMAKE_CURRENT_SOURCE_DIR}/test/bind.c
 	${CMAKE_CURRENT_SOURCE_DIR}/test/ufrag.c
 	${CMAKE_CURRENT_SOURCE_DIR}/test/tcp.c
 )
 source_group("Test Files" FILES "${TESTS_SOURCES}")
 
 set(FUZZER_SOURCES
-    ${CMAKE_CURRENT_SOURCE_DIR}/fuzzer/fuzzer.c
+	${CMAKE_CURRENT_SOURCE_DIR}/fuzzer/fuzzer.c
 )
 source_group("Fuzzer Files" FILES "${FUZZER_SOURCES}")
 
@@ -99,8 +99,8 @@ find_package(Threads REQUIRED)
 add_library(juice ${LIBJUICE_SOURCES})
 set_target_properties(juice PROPERTIES VERSION ${PROJECT_VERSION})
 target_include_directories(juice PUBLIC
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-    $<INSTALL_INTERFACE:include>)
+	$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+	$<INSTALL_INTERFACE:include>)
 target_include_directories(juice PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include/juice)
 target_include_directories(juice PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_compile_definitions(juice PRIVATE $<$<CONFIG:Release>:RELEASE=1>)
@@ -109,8 +109,8 @@ target_link_libraries(juice PRIVATE Threads::Threads)
 add_library(juice-static STATIC EXCLUDE_FROM_ALL ${LIBJUICE_SOURCES})
 set_target_properties(juice-static PROPERTIES VERSION ${PROJECT_VERSION})
 target_include_directories(juice-static PUBLIC
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-    $<INSTALL_INTERFACE:include>)
+	$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+	$<INSTALL_INTERFACE:include>)
 target_include_directories(juice-static PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include/juice)
 target_include_directories(juice-static PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_compile_definitions(juice-static PRIVATE $<$<CONFIG:Release>:RELEASE=1>)
@@ -119,21 +119,23 @@ target_link_libraries(juice-static PRIVATE Threads::Threads)
 if(WIN32)
 	target_link_libraries(juice PRIVATE
 		ws2_32 # winsock2
-		bcrypt)
+		bcrypt
+		qwave) # qWave API
 	target_link_libraries(juice-static PRIVATE
 		ws2_32 # winsock2
-		bcrypt)
+		bcrypt
+		qwave) # qWave API
 endif()
 
 if (USE_NETTLE)
 	find_package(Nettle REQUIRED)
-    target_compile_definitions(juice PRIVATE USE_NETTLE=1)
-    target_link_libraries(juice PRIVATE Nettle::Nettle)
-    target_compile_definitions(juice-static PRIVATE USE_NETTLE=1)
-    target_link_libraries(juice-static PRIVATE Nettle::Nettle)
+	target_compile_definitions(juice PRIVATE USE_NETTLE=1)
+	target_link_libraries(juice PRIVATE Nettle::Nettle)
+	target_compile_definitions(juice-static PRIVATE USE_NETTLE=1)
+	target_link_libraries(juice-static PRIVATE Nettle::Nettle)
 else()
-    target_compile_definitions(juice PRIVATE USE_NETTLE=0)
-    target_compile_definitions(juice-static PRIVATE USE_NETTLE=0)
+	target_compile_definitions(juice PRIVATE USE_NETTLE=0)
+	target_compile_definitions(juice-static PRIVATE USE_NETTLE=0)
 endif()
 
 if (NO_SERVER)
@@ -171,22 +173,22 @@ install(
 
 include(CMakePackageConfigHelpers)
 configure_package_config_file(
-    ${CMAKE_CURRENT_SOURCE_DIR}/cmake/LibJuiceConfig.cmake.in
-    ${CMAKE_BINARY_DIR}/LibJuiceConfig.cmake
-    INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/LibJuice
-    NO_SET_AND_CHECK_MACRO
-    NO_CHECK_REQUIRED_COMPONENTS_MACRO
+	${CMAKE_CURRENT_SOURCE_DIR}/cmake/LibJuiceConfig.cmake.in
+	${CMAKE_BINARY_DIR}/LibJuiceConfig.cmake
+	INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/LibJuice
+	NO_SET_AND_CHECK_MACRO
+	NO_CHECK_REQUIRED_COMPONENTS_MACRO
 )
 write_basic_package_version_file(
-    ${CMAKE_BINARY_DIR}/LibJuiceConfigVersion.cmake
-    VERSION ${PROJECT_VERSION}
-    COMPATIBILITY SameMajorVersion
+	${CMAKE_BINARY_DIR}/LibJuiceConfigVersion.cmake
+	VERSION ${PROJECT_VERSION}
+	COMPATIBILITY SameMajorVersion
 )
 # Export config and version files
 install(FILES
 	${CMAKE_BINARY_DIR}/LibJuiceConfig.cmake
 	${CMAKE_BINARY_DIR}/LibJuiceConfigVersion.cmake
-    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/LibJuice)
+	DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/LibJuice)
 
 set_target_properties(juice PROPERTIES C_VISIBILITY_PRESET hidden)
 target_compile_definitions(juice PRIVATE JUICE_EXPORTS)
@@ -242,7 +244,7 @@ if(NOT NO_TESTS)
 	target_link_libraries(juice-tests juice Threads::Threads)
 
 	if(WIN32)
-		target_link_libraries(juice-tests ws2_32)
+		target_link_libraries(juice-tests ws2_32 qwave)
 	endif()
 endif()
 
