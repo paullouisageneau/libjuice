@@ -259,7 +259,7 @@ int udp_set_diffserv(socket_t sock, int ds) {
 	(void)sock;
 	(void)ds;
 	JLOG_INFO("IP Differentiated Services requires qWave API on Windows. Use "
-			  "udp_set_diffserv_qwave() or udp_set_qwave_traffic_type() instead.");
+			  "udp_set_diffserv_qwave() or udp_set_traffic_type_qwave() instead.");
 	return -1;
 #else
 	addr_record_t name;
@@ -305,117 +305,118 @@ int udp_set_diffserv(socket_t sock, int ds) {
 }
 
 #ifdef _WIN32
-int udp_set_qwave_traffic_type(socket_t sock, int traffic_type, struct juice_agent *agent) {
+int udp_set_traffic_type_qwave(socket_t sock, int traffic_type, struct juice_agent *agent,
+							 void *flow_id) {
 	if (!agent || !agent->qos_handle) {
 		JLOG_WARN("No QoS handle available for QoS traffic type");
 		return -1;
 	}
-
-	// Validate traffic type
+	if (sock == INVALID_SOCKET) {
+		JLOG_WARN("Invalid socket for QoS");
+		return -1;
+	}
 	if (traffic_type < QOSTrafficTypeBestEffort || traffic_type > QOSTrafficTypeControl) {
 		JLOG_ERROR("Invalid QoS traffic type: %d", traffic_type);
 		return -1;
 	}
 
-	QOS_FLOWID flow_id = 0;
-	if (!QOSAddSocketToFlow(agent->qos_handle, sock,
-							NULL, // destination address (NULL for all destinations)
-							(QOS_TRAFFIC_TYPE)traffic_type, QOS_NON_ADAPTIVE_FLOW, &flow_id)) {
+	// QOSAddSocketToFlow requires a non-localhost destination address be provided but all traffic
+	// sent from the socket will be tagged regardless of destination so just use a dummy address
+	struct sockaddr_in6 dummy_ipv6 = {0};
+	dummy_ipv6.sin6_family = AF_INET6;
+	dummy_ipv6.sin6_port = htons(53);
+	inet_pton(AF_INET6, "2001:4860:4860::8888", &dummy_ipv6.sin6_addr);
 
+	QOS_FLOWID local_flow_id = 0;
+	if (!QOSAddSocketToFlow(agent->qos_handle, sock, (struct sockaddr *)&dummy_ipv6,
+							(QOS_TRAFFIC_TYPE)traffic_type, QOS_NON_ADAPTIVE_FLOW,
+							&local_flow_id)) {
 		DWORD error = GetLastError();
 		if (error == ERROR_NOT_SUPPORTED) {
-			JLOG_VERBOSE("QoS not supported on this system");
+			JLOG_INFO("QoS not supported on this system");
 		} else {
-			JLOG_WARN("QOSAddSocketToFlow failed, error=%lu", error);
+			JLOG_WARN("QOSAddSocketToFlow failed for traffic type %d, error=%lu", traffic_type,
+					  error);
 		}
 		return -1;
 	}
 
-	JLOG_VERBOSE("Successfully applied QoS traffic type %d to socket", traffic_type);
+	if (flow_id) {
+		*(QOS_FLOWID *)flow_id = local_flow_id;
+	}
+
+	if (traffic_type != QOSTrafficTypeBestEffort) {
+		JLOG_INFO("Successfully applied QoS traffic type %d to socket (flow_id=%lu)", traffic_type,
+				  (unsigned long)local_flow_id);
+	}
 	return 0;
 }
 
-// Arbitrary DSCP values require admin permissions
 int udp_set_diffserv_qwave(socket_t sock, int ds, struct juice_agent *agent) {
 	if (!agent || !agent->qos_handle) {
 		JLOG_WARN("No QoS handle available for differentiated services");
 		return -1;
 	}
-
-	QOS_FLOWID flow_id = 0;
-	if (!QOSAddSocketToFlow(agent->qos_handle, sock,
-							NULL, // destination address (NULL for all destinations)
-							QOSTrafficTypeBestEffort, // Start with best effort
-							QOS_NON_ADAPTIVE_FLOW, &flow_id)) {
-
-		DWORD error = GetLastError();
-		if (error == ERROR_NOT_SUPPORTED) {
-			JLOG_WARN("QoS not supported on this system");
-		} else {
-			JLOG_WARN("QOSAddSocketToFlow failed, error=%lu", error);
-		}
+	if (sock == INVALID_SOCKET) {
+		JLOG_WARN("Invalid socket for QoS");
 		return -1;
 	}
+	JLOG_DEBUG("Setting up qWave with DSCP: 0x%02X", ds);
 
-	DWORD dscp_value = (DWORD)ds;
-	if (!QOSSetFlow(agent->qos_handle, flow_id, QOSSetOutgoingDSCPValue, sizeof(DWORD), &dscp_value,
-					0, NULL)) {
+	QOS_FLOWID flow_id = 0;
+	if (udp_set_traffic_type_qwave(sock, QOSTrafficTypeBestEffort, agent, &flow_id) != 0) {
+		JLOG_WARN("Failed to create initial QoS flow");
+		return -1;
+	}
+	JLOG_INFO("Initial QoS flow established, flow_id=%lu", (unsigned long)flow_id);
 
-		DWORD error = GetLastError();
-		if (error == ERROR_ACCESS_DENIED) {
-			JLOG_WARN("Admin permissions not available for arbitrary DSCP, falling back to closest "
-					  "standard traffic type");
+	// Try to set arbitrary DSCP value (requires admin privileges)
+	DWORD dscp_value = (DWORD)(ds >> 2); // Extract 6-bit DSCP value
+	if (QOSSetFlow(agent->qos_handle, flow_id, QOSSetOutgoingDSCPValue, sizeof(DWORD), &dscp_value,
+				   0, NULL)) {
 
-			QOSRemoveSocketFromFlow(agent->qos_handle, sock, flow_id, 0);
-
-			// Map DSCP to closest standard traffic type
-			QOS_TRAFFIC_TYPE traffic_type;
-			int expected_dscp = ds >> 2; // DSCP is upper 6 bits
-
-			if (expected_dscp >= 40) {
-				// High priority: EF (46), CS5 (40), etc. -> Voice
-				traffic_type = QOSTrafficTypeVoice;
-				JLOG_VERBOSE("Using Voice traffic type (DSCP ~46) for requested DSCP %d",
-						  expected_dscp);
-			} else if (expected_dscp >= 24) {
-				// Medium-high priority: AF4x (34-38), AF3x (26-30), CS3 (24) -> AudioVideo
-				traffic_type = QOSTrafficTypeAudioVideo;
-				JLOG_VERBOSE("Using AudioVideo traffic type (DSCP ~34) for requested DSCP %d",
-						  expected_dscp);
-			} else if (expected_dscp >= 8) {
-				// Low priority: AF2x (18-22), AF1x (10-14), CS1 (8) -> Background
-				traffic_type = QOSTrafficTypeBackground;
-				JLOG_VERBOSE("Using Background traffic type (DSCP ~8) for requested DSCP %d",
-						  expected_dscp);
-			} else {
-				// Best effort: CS0 (0) and other low values -> Best Effort
-				traffic_type = QOSTrafficTypeBestEffort;
-				JLOG_VERBOSE("Using BestEffort traffic type (DSCP 0) for requested DSCP %d",
-						  expected_dscp);
-			}
-
-			// Try the fallback standard traffic type
-			if (!QOSAddSocketToFlow(agent->qos_handle, sock, NULL, traffic_type,
-									QOS_NON_ADAPTIVE_FLOW, &flow_id)) {
-
-				JLOG_WARN("Fallback to standard traffic type also failed, error=%lu",
-						  GetLastError());
-				return -1;
-			}
-
-			JLOG_VERBOSE("Successfully applied fallback traffic type %d to socket", traffic_type);
-			return 0;
-
-		} else {
-			JLOG_WARN("QOSSetFlow failed to set DSCP value, error=%lu", error);
-
-			QOSRemoveSocketFromFlow(agent->qos_handle, sock, flow_id, 0);
-			return -1;
-		}
+		JLOG_INFO("qWave: Custom DSCP value 0x%02X applied (admin mode)", ds);
+		return 0;
 	}
 
-	JLOG_VERBOSE("Successfully applied DSCP value 0x%02X to socket using qWave (admin mode)", ds);
-	return 0;
+	DWORD set_flow_error = GetLastError();
+	// If custom DSCP failed due to admin privileges, fall back to standard traffic types
+	if (set_flow_error == ERROR_ACCESS_DENIED || set_flow_error) {
+		JLOG_INFO("Admin privileges not available, falling back to standard traffic types");
+		QOSRemoveSocketFromFlow(agent->qos_handle, sock, flow_id, 0);
+
+		QOS_TRAFFIC_TYPE traffic_type;
+		int expected_dscp = ds >> 2; // DSCP is upper 6 bits
+		if (expected_dscp >= 40) {
+			// High priority: EF (46), CS5 (40), etc. -> Voice
+			traffic_type = QOSTrafficTypeVoice;
+			JLOG_INFO("Mapping DSCP %d to Voice traffic type (DSCP ~46)", expected_dscp);
+		} else if (expected_dscp >= 24) {
+			// Medium-high priority: AF4x (34-38), AF3x (26-30), CS3 (24) -> AudioVideo
+			traffic_type = QOSTrafficTypeAudioVideo;
+			JLOG_INFO("Mapping DSCP %d to AudioVideo traffic type (DSCP ~34)", expected_dscp);
+		} else if (expected_dscp >= 8) {
+			// Low priority: AF2x (18-22), AF1x (10-14), CS1 (8) -> Background
+			traffic_type = QOSTrafficTypeBackground;
+			JLOG_INFO("Mapping DSCP %d to Background traffic type (DSCP ~8)", expected_dscp);
+		} else {
+			// Best effort: CS0 (0) and other low values -> Best Effort
+			traffic_type = QOSTrafficTypeBestEffort;
+			JLOG_INFO("Mapping DSCP %d to BestEffort traffic type (DSCP 0)", expected_dscp);
+		}
+
+		if (udp_set_traffic_type_qwave(sock, traffic_type, agent, NULL) == 0) {
+			JLOG_INFO("qWave: Standard traffic type applied successfully");
+			return 0;
+		} else {
+			JLOG_WARN("Fallback to standard traffic type also failed");
+			return -1;
+		}
+
+	} else {
+		JLOG_WARN("QOSSetFlow failed with error %lu", set_flow_error);
+		return 0;
+	}
 }
 #endif
 
