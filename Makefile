@@ -54,7 +54,7 @@ test/%.o: test/%.c
 -include $(subst .c,.d,$(SRCS))
 
 $(NAME).a: $(OBJS)
-	$(AR) crf $@ $(OBJS)
+	$(AR) cr $@ $(OBJS)
 
 $(NAME).so: $(OBJS)
 	$(CC) $(LDFLAGS) -shared -o $@ $(OBJS) $(LDLIBS)
