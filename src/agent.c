@@ -1216,10 +1216,18 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 		// RFC 8863: While the timer is still running, the ICE agent MUST NOT update a checklist
 		// state from Running to Failed, even if there are no pairs left in the checklist to check.
 		if (now >= agent->pac_timestamp) {
-			JLOG_INFO("Connectivity timer expired");
-			agent_change_state(agent, JUICE_STATE_FAILED);
-			atomic_store(&agent->selected_entry, NULL); // disallow sending
-			return 0;
+			// Don't fail if we have an active nominated pair with valid consent.
+			// The PAC timer is meant to catch the case where no pair is ever nominated,
+			// not to kill a working connection.
+			agent_stun_entry_t *selected = atomic_load(&agent->selected_entry);
+			if (selected && selected->state == AGENT_STUN_ENTRY_STATE_SUCCEEDED_KEEPALIVE) {
+				agent->pac_timestamp = 0; // clear timer, connection is healthy
+			} else {
+				JLOG_INFO("Connectivity timer expired");
+				agent_change_state(agent, JUICE_STATE_FAILED);
+				atomic_store(&agent->selected_entry, NULL); // disallow sending
+				return 0;
+			}
 		} else if (*next_timestamp > agent->pac_timestamp) {
 			*next_timestamp = agent->pac_timestamp;
 		}
