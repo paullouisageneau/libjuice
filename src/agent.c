@@ -992,7 +992,7 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 		}
 		// STUN keepalives
 		else if (entry->state == AGENT_STUN_ENTRY_STATE_SUCCEEDED_KEEPALIVE) {
-#if JUICE_DISABLE_CONSENT_FRESHNESS
+#if defined(JUICE_DISABLE_CONSENT_FRESHNESS) && JUICE_DISABLE_CONSENT_FRESHNESS
 			// No expiration
 #else
 			// Consent freshness expiration
@@ -1028,7 +1028,7 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 				ret = agent_send_stun_binding(agent, entry, STUN_CLASS_REQUEST, 0, NULL, NULL);
 				break;
 			default:
-#if JUICE_DISABLE_CONSENT_FRESHNESS
+#if defined(JUICE_DISABLE_CONSENT_FRESHNESS) && JUICE_DISABLE_CONSENT_FRESHNESS
 				// RFC 8445 11. Keepalives:
 				// All endpoints MUST send keepalives for each data session. [...] STUN keepalives
 				// MUST be used when an ICE agent is a full ICE implementation and is communicating
@@ -1230,7 +1230,7 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 		if (entry->next_transmission && *next_timestamp > entry->next_transmission)
 			*next_timestamp = entry->next_transmission;
 
-#if JUICE_DISABLE_CONSENT_FRESHNESS
+#if defined(JUICE_DISABLE_CONSENT_FRESHNESS) && JUICE_DISABLE_CONSENT_FRESHNESS
 		// No expiration
 #else
 		if (entry->state == AGENT_STUN_ENTRY_STATE_SUCCEEDED_KEEPALIVE && entry->pair &&
@@ -2535,7 +2535,7 @@ void agent_arm_keepalive(juice_agent_t *agent, agent_stun_entry_t *entry) {
 		period = STUN_KEEPALIVE_PERIOD;
 		break;
 	default:
-#if JUICE_DISABLE_CONSENT_FRESHNESS
+#if defined(JUICE_DISABLE_CONSENT_FRESHNESS) && JUICE_DISABLE_CONSENT_FRESHNESS
 		period = STUN_KEEPALIVE_PERIOD;
 #else
 		period = MIN_CONSENT_CHECK_PERIOD +
@@ -2758,7 +2758,7 @@ void agent_translate_host_candidate_entry(juice_agent_t *agent, agent_stun_entry
 	if (!entry->pair || entry->pair->remote->type != ICE_CANDIDATE_TYPE_HOST)
 		return;
 
-#if JUICE_ENABLE_LOCAL_ADDRESS_TRANSLATION
+#if defined(JUICE_ENABLE_LOCAL_ADDRESS_TRANSLATION) && JUICE_ENABLE_LOCAL_ADDRESS_TRANSLATION
 	for (int i = 0; i < agent->local.candidates_count; ++i) {
 		ice_candidate_t *candidate = agent->local.candidates + i;
 		if (candidate->type != ICE_CANDIDATE_TYPE_HOST)
