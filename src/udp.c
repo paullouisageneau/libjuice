@@ -470,7 +470,7 @@ int udp_get_addrs(socket_t sock, addr_record_t *records, size_t count) {
 	addr_record_t *end = records + count;
 	int ret = 0;
 
-#if JUICE_ENABLE_LOCALHOST_ADDRESS
+#if defined(JUICE_ENABLE_LOCALHOST_ADDRESS) && JUICE_ENABLE_LOCALHOST_ADDRESS
 	// Add localhost for test purposes
 	addr_record_t local;
 	if (bound.addr.ss_family == AF_INET6 && udp_get_local_addr(sock, AF_INET6, &local) == 0) {
