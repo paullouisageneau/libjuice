@@ -127,7 +127,7 @@ int tcp_ice_read(socket_t sock, tcp_ice_read_context_t *context) {
 		}
 
 		if (len == 0)
-			return len; // closed
+			return 0; // closed
 
 		context->bytes_read += len;
 

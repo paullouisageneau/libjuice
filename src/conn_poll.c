@@ -359,7 +359,7 @@ void conn_poll_process_tcp(juice_agent_t *agent, struct pollfd *pfd) {
 		int left = 1000; // limit for fairness between sockets
 		while (left--) {
 			tcp_ice_read_context_t *context = &conn_impl->tcp_ice_read_context;
-			if ((ret = tcp_ice_read(conn_impl->tcp_sock, context)) < 0) {
+			if ((ret = tcp_ice_read(conn_impl->tcp_sock, context)) <= 0) {
 				break;
 			}
 

@@ -79,11 +79,8 @@ void run_passive_ice_tcp(socket_t server_socket) {
 
 	for (int i = 0; i < 2;) {
 		int len;
-		if ((len = _juice_tcp_ice_read(client_socket, &read_context)) < 0)
+		if ((len = _juice_tcp_ice_read(client_socket, &read_context)) <= 0)
 			return;
-
-		if (len == 0)
-			continue;
 
 		stun_message_t msg;
 		memset(&msg, 0, sizeof(msg));
