@@ -261,12 +261,11 @@ void conn_poll_process_udp(juice_agent_t *agent, struct pollfd *pfd) {
 		if (conn_impl->state == CONN_STATE_FINISHED)
 			return;
 
-		if (ret == -SEAGAIN || ret == -SEWOULDBLOCK) {
-			JLOG_VERBOSE("No more datagrams to receive");
-		} else if (ret > 0) {
-			// Fairness limit reached — there are more datagrams but we need to
-			// give other sockets a turn. This is not an error.
+		if (ret > 0) {
+			// There are more datagrams but we need to give other sockets a turn
 			JLOG_VERBOSE("Fairness limit reached, will continue on next poll");
+		} else if (ret == -SEAGAIN || ret == -SEWOULDBLOCK) {
+			JLOG_VERBOSE("No more datagrams to receive");
 		} else {
 			agent_conn_fail(agent);
 			conn_impl->state = CONN_STATE_FINISHED;
@@ -372,9 +371,12 @@ void conn_poll_process_tcp(juice_agent_t *agent, struct pollfd *pfd) {
 		if (conn_impl->state == CONN_STATE_FINISHED)
 			return;
 
-		if (ret == -SEAGAIN || ret == -SEWOULDBLOCK) {
+		if (ret > 0) {
+			// There are more datagrams but we need to give other sockets a turn
+			JLOG_VERBOSE("Fairness limit reached, will continue on next poll");
+		} else if (ret == -SEAGAIN || ret == -SEWOULDBLOCK) {
 			JLOG_VERBOSE("No more ICE-TCP datagrams to receive");
-		} else if (ret <= 0) {
+		} else {
 			if (ret == 0) JLOG_DEBUG("TCP connection closed");
 			else JLOG_DEBUG("TCP connection failed");
 			conn_poll_change_tcp_fail(agent);
