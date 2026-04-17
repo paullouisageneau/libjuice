@@ -116,6 +116,7 @@ typedef struct agent_stun_entry {
 	timediff_t retransmission_timeout;
 	int retransmissions;
 	bool transaction_id_expired;
+	tcp_state_t tcp_state;
 
 	// TURN
 	agent_turn_state_t *turn;
