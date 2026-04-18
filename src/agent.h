@@ -22,6 +22,11 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+typedef enum juice_turn_transport {
+	JUICE_TURN_TRANSPORT_UDP = 0,
+	JUICE_TURN_TRANSPORT_TCP = 1,
+} juice_turn_transport_t;
+
 // RFC 8445: Agents MUST NOT use an RTO value smaller than 500 ms.
 #define MIN_STUN_RETRANSMISSION_TIMEOUT 500 // msecs
 #define LAST_STUN_RETRANSMISSION_TIMEOUT (MIN_STUN_RETRANSMISSION_TIMEOUT * 16)
@@ -122,11 +127,15 @@ typedef struct agent_stun_entry {
 	agent_turn_state_t *turn;
 	unsigned int turn_redirections;
 	struct agent_stun_entry *relay_entry;
+	juice_turn_transport_t transport;
+	bool turn_tcp_connect_initiated;
 
 } agent_stun_entry_t;
 
 struct juice_agent {
 	juice_config_t config;
+	juice_turn_server_t *turn_servers_tcp;
+	int turn_servers_tcp_count;
 	juice_state_t state;
 	agent_mode_t mode;
 	juice_ice_tcp_mode_t ice_tcp_mode;
@@ -166,10 +175,13 @@ int agent_set_remote_description(juice_agent_t *agent, const char *sdp);
 int agent_add_remote_candidate(juice_agent_t *agent, const char *sdp);
 int agent_set_local_ice_attributes(juice_agent_t *agent, const char *ufrag, const char *pwd);
 int agent_add_turn_server(juice_agent_t *agent, const juice_turn_server_t *turn_server);
+int agent_add_turn_server_tcp(juice_agent_t *agent, const juice_turn_server_t *turn_server);
 int agent_set_remote_gathering_done(juice_agent_t *agent);
 int agent_send(juice_agent_t *agent, const char *data, size_t size, int ds);
 int agent_direct_send(juice_agent_t *agent, const addr_record_t *dst, const char *data, size_t size,
                       int ds);
+int agent_turn_direct_send(juice_agent_t *agent, const agent_stun_entry_t *entry, const char *data,
+                           size_t size, int ds);
 int agent_relay_send(juice_agent_t *agent, agent_stun_entry_t *entry, const addr_record_t *dst,
                      const char *data, size_t size, int ds);
 int agent_channel_send(juice_agent_t *agent, agent_stun_entry_t *entry, const addr_record_t *dst,
@@ -218,7 +230,8 @@ int agent_process_turn_data(juice_agent_t *agent, const stun_message_t *msg,
 int agent_process_channel_data(juice_agent_t *agent, agent_stun_entry_t *entry, char *buf,
                                size_t len);
 
-int agent_add_local_relayed_candidate(juice_agent_t *agent, const addr_record_t *record);
+int agent_add_local_relayed_candidate(juice_agent_t *agent, const addr_record_t *record,
+                                      juice_turn_transport_t turn_transport);
 int agent_add_local_reflexive_candidate(juice_agent_t *agent, ice_candidate_type_t type,
                                         const addr_record_t *record);
 int agent_add_remote_reflexive_candidate(juice_agent_t *agent, ice_candidate_type_t type,

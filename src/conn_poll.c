@@ -35,11 +35,8 @@ typedef struct conn_impl {
 	conn_registry_t *registry;
 	conn_state_t state;
 	socket_t udp_sock;
-	socket_t tcp_sock;
-	tcp_write_context_t tcp_ice_write_context;
-	tcp_read_context_t tcp_ice_read_context;
-	addr_record_t tcp_dst;
-	tcp_state_t tcp_state;
+	tcp_conn_t *ice_tcp;
+	tcp_conn_t *turn_tcp;
 	mutex_t send_mutex;
 	int send_ds;
 	timestamp_t next_timestamp;
@@ -50,13 +47,18 @@ typedef struct pfds_record {
 	nfds_t size;
 } pfds_record_t;
 
+typedef void (*tcp_on_state_change_t)(juice_agent_t *agent, tcp_conn_t *tc, tcp_state_t state);
+
 int conn_poll_prepare(conn_registry_t *registry, pfds_record_t *pfds, timestamp_t *next_timestamp);
 int conn_poll_process(conn_registry_t *registry, pfds_record_t *pfds);
 void conn_poll_process_udp(juice_agent_t *agent, struct pollfd *pfd);
 int conn_poll_recv_udp(socket_t sock, char *buffer, size_t size, addr_record_t *src);
-void conn_poll_process_tcp(juice_agent_t *agent, struct pollfd *pfd);
-void conn_poll_change_tcp_fail(juice_agent_t *agent);
-void conn_poll_change_tcp_state(juice_agent_t *agent, tcp_state_t state);
+void conn_poll_change_tcp_fail(juice_agent_t *agent, tcp_conn_t *tc,
+                          const char *label, tcp_on_state_change_t on_change);
+void conn_poll_change_tcp_state(juice_agent_t *agent, tcp_conn_t *tc,
+                                  tcp_state_t state, const char *label,
+                                  tcp_on_state_change_t on_change);
+
 int conn_poll_run(conn_registry_t *registry);
 
 static thread_return_t THREAD_CALL conn_thread_entry(void *arg) {
@@ -135,6 +137,23 @@ void conn_poll_registry_cleanup(conn_registry_t *registry) {
 	registry->impl = NULL;
 }
 
+static inline nfds_t prepare_tcp_pfd(struct pollfd *pfds, nfds_t i, tcp_conn_t *tc) {
+	if (tc && tc->sock != INVALID_SOCKET) {
+		struct pollfd *pfd = pfds + i;
+		pfd->fd = tc->sock;
+		if (tc->state == TCP_STATE_CONNECTING)
+			pfd->events = POLLOUT;
+		else {
+			pfd->events = POLLIN;
+			bool write_pending = tc->write.pending;
+			if (write_pending)
+				pfd->events |= POLLOUT;
+		}
+		return i + 1;
+	}
+	return i;
+}
+
 int conn_poll_prepare(conn_registry_t *registry, pfds_record_t *pfds, timestamp_t *next_timestamp) {
 	timestamp_t now = current_timestamp();
 	*next_timestamp = now + 60000;
@@ -154,7 +173,12 @@ int conn_poll_prepare(conn_registry_t *registry, pfds_record_t *pfds, timestamp_
 		}
 
 		size++;
-		if (conn_impl->tcp_sock != INVALID_SOCKET) {
+		tcp_conn_t *ice_tcp = conn_impl->ice_tcp;
+		if (ice_tcp && ice_tcp->sock != INVALID_SOCKET) {
+			size++;
+		}
+		tcp_conn_t *turn_tcp = conn_impl->turn_tcp;
+		if (turn_tcp && turn_tcp->sock != INVALID_SOCKET) {
 			size++;
 		}
 	}
@@ -203,19 +227,8 @@ int conn_poll_prepare(conn_registry_t *registry, pfds_record_t *pfds, timestamp_
 		udp_pfd->events = POLLIN;
 		i++;
 
-		if (conn_impl->tcp_sock != INVALID_SOCKET) {
-			struct pollfd *tcp_pfd = pfds->pfds + i;
-			tcp_pfd->fd = conn_impl->tcp_sock;
-			if (conn_impl->tcp_state == TCP_STATE_CONNECTING) {
-				tcp_pfd->events = POLLOUT;
-			} else {
-				tcp_pfd->events = POLLIN;
-				if(conn_impl->tcp_ice_write_context.pending)
-					tcp_pfd->events |= POLLOUT;
-			}
-
-			i++;
-		}
+		i = prepare_tcp_pfd(pfds->pfds, i, conn_impl->ice_tcp);
+		i = prepare_tcp_pfd(pfds->pfds, i, conn_impl->turn_tcp);
 	}
 
 	mutex_unlock(&registry->mutex);
@@ -306,46 +319,54 @@ int conn_poll_recv_udp(socket_t sock, char *buffer, size_t size, addr_record_t *
 	return len; // len > 0
 }
 
-void conn_poll_process_tcp(juice_agent_t *agent, struct pollfd *pfd) {
+void conn_poll_process_tcp_conn(juice_agent_t *agent, struct pollfd *pfd,
+                                       tcp_conn_t *tc, const char *label,
+                                       tcp_on_state_change_t on_change) {
 	conn_impl_t *conn_impl = agent->conn_impl;
+	bool stun_framing = tc->framing == TCP_FRAMING_STUN;
 
 	if (pfd->revents & POLLNVAL) {
-		JLOG_WARN("Invalid socket");
+		JLOG_WARN("Invalid %s socket", label);
 		return;
 	}
 
 	if (pfd->revents & POLLERR || (pfd->revents & POLLHUP && !(pfd->revents & POLLIN))) {
-		JLOG_DEBUG("TCP connection failed");
-		conn_poll_change_tcp_fail(agent);
+		JLOG_DEBUG("%s connection got POLLERR/POLLHUP (revents=0x%x)", label, pfd->revents);
+		conn_poll_change_tcp_fail(agent, tc, label, on_change);
 		return;
 	}
 
 	if (pfd->revents & POLLOUT) {
-		if (conn_impl->tcp_state == TCP_STATE_CONNECTING) {
+		if (tc->state == TCP_STATE_CONNECTING) {
 			int err = 0;
 			socklen_t errlen = sizeof(err);
-			if (getsockopt(conn_impl->tcp_sock, SOL_SOCKET, SO_ERROR, (char *)&err, &errlen) != 0) {
-				JLOG_DEBUG("Failed to get socket error code");
-				conn_poll_change_tcp_fail(agent);
+			if (getsockopt(tc->sock, SOL_SOCKET, SO_ERROR, (char *)&err, &errlen) != 0) {
+				JLOG_INFO("Failed to get %s socket error code, errno=%d", label, sockerrno);
+				conn_poll_change_tcp_fail(agent, tc, label, on_change);
 				return;
 			}
 
 			if (err != 0) {
-				JLOG_DEBUG("TCP connection failed, errno=%d", err);
-				conn_poll_change_tcp_fail(agent);
+				JLOG_INFO("%s connection failed on SO_ERROR, errno=%d", label, err);
+				conn_poll_change_tcp_fail(agent, tc, label, on_change);
 				return;
 			}
 
-			conn_poll_change_tcp_state(agent, TCP_STATE_CONNECTED);
+			int nodelay = 1;
+			setsockopt(tc->sock, IPPROTO_TCP, TCP_NODELAY, (char*)&nodelay, sizeof(nodelay));
+
+			JLOG_INFO("%s connection established (POLLOUT with no error)", label);
+			conn_poll_change_tcp_state(agent, tc, TCP_STATE_CONNECTED, label, on_change);
 		} else {
-			tcp_write_context_t *context = &conn_impl->tcp_ice_write_context;
-			if(context->pending) {
-				int ret = tcp_ice_write(conn_impl->tcp_sock, NULL, 0, context);
+			if (tc->write.pending) {
+				int ret = stun_framing
+				    ? tcp_stun_write(tc->sock, NULL, 0, &tc->write)
+				    : tcp_ice_write(tc->sock, NULL, 0, &tc->write);
 				if (ret >= 0) {
-					JLOG_DEBUG("Finished sending ICE-TCP datagram");
+					JLOG_DEBUG("Finished sending %s message", label);
 				} else if (ret == -SEAGAIN || ret == -SEWOULDBLOCK) {
-					JLOG_WARN("TCP send failed, errno=%d", -ret);
-					conn_poll_change_tcp_fail(agent);
+					JLOG_WARN("%s send failed, errno=%d", label, -ret);
+					conn_poll_change_tcp_fail(agent, tc, label, on_change);
 					return;
 				}
 			}
@@ -356,12 +377,13 @@ void conn_poll_process_tcp(juice_agent_t *agent, struct pollfd *pfd) {
 		int ret = 0;
 		int left = 1000; // limit for fairness between sockets
 		while (left--) {
-			tcp_read_context_t *context = &conn_impl->tcp_ice_read_context;
-			if ((ret = tcp_ice_read(conn_impl->tcp_sock, context)) <= 0) {
+			if (stun_framing)
+				ret = tcp_stun_read(tc->sock, &tc->read);
+			else
+				ret = tcp_ice_read(tc->sock, &tc->read);
+			if (ret < 0)
 				break;
-			}
-
-			if (agent_conn_recv(agent, context->buffer, (size_t)ret, &conn_impl->tcp_dst) != 0) {
+			if (agent_conn_recv(agent, tc->read.buffer, (size_t)ret, &tc->dst) != 0) {
 				JLOG_WARN("Agent receive failed");
 				conn_impl->state = CONN_STATE_FINISHED;
 				break;
@@ -379,7 +401,7 @@ void conn_poll_process_tcp(juice_agent_t *agent, struct pollfd *pfd) {
 		} else {
 			if (ret == 0) JLOG_DEBUG("TCP connection closed");
 			else JLOG_DEBUG("TCP connection failed");
-			conn_poll_change_tcp_fail(agent);
+			conn_poll_change_tcp_fail(agent, tc, label, on_change);
 			return;
 		}
 
@@ -398,45 +420,43 @@ void conn_poll_process_tcp(juice_agent_t *agent, struct pollfd *pfd) {
 	}
 }
 
-void conn_poll_change_tcp_fail(juice_agent_t *agent) {
-	conn_impl_t *conn_impl = agent->conn_impl;
-	if (conn_impl->tcp_sock != INVALID_SOCKET) {
-		closesocket(conn_impl->tcp_sock);
-		conn_impl->tcp_sock = INVALID_SOCKET;
+void conn_poll_change_tcp_fail(juice_agent_t *agent, tcp_conn_t *tc,
+                          const char *label, tcp_on_state_change_t on_change) {
+	JLOG_INFO("%s connection closing socket and marking failed", label);
+	if (tc->sock != INVALID_SOCKET) {
+		closesocket(tc->sock);
+		tc->sock = INVALID_SOCKET;
 	}
-	memset(&conn_impl->tcp_ice_write_context, 0, sizeof(tcp_write_context_t));
-	memset(&conn_impl->tcp_ice_read_context, 0, sizeof(tcp_read_context_t));
-	conn_poll_change_tcp_state(agent, TCP_STATE_FAILED);
+	tcp_conn_reset(tc);
+	conn_poll_change_tcp_state(agent, tc, TCP_STATE_FAILED, label, on_change);
 }
 
-void conn_poll_change_tcp_state(juice_agent_t *agent, tcp_state_t state) {
-	conn_impl_t *conn_impl = agent->conn_impl;
-	if(conn_impl->tcp_state != state) {
-		switch(state) {
-			case TCP_STATE_DISCONNECTED:
-				JLOG_DEBUG("TCP state changed to disconnected");
-				break;
-			case TCP_STATE_CONNECTING:
-				JLOG_DEBUG("TCP state changed to connecting");
-				break;
-			case TCP_STATE_CONNECTED:
-				JLOG_DEBUG("TCP state changed to connected");
-				break;
-			case TCP_STATE_FAILED:
-				JLOG_DEBUG("TCP state changed to failed");
-				break;
-			default:
-				break;
-		}
-		conn_impl->tcp_state = state;
-		if (agent_conn_tcp_state(agent, &conn_impl->tcp_dst, state) != 0) {
-			if (conn_impl->tcp_sock != INVALID_SOCKET) {
-				closesocket(conn_impl->tcp_sock);
-				conn_impl->tcp_sock = INVALID_SOCKET;
-			}
-			conn_impl->tcp_state = TCP_STATE_DISCONNECTED;
-		}
+void conn_poll_change_tcp_state(juice_agent_t *agent, tcp_conn_t *tc,
+                                  tcp_state_t state, const char *label,
+                                  tcp_on_state_change_t on_change) {
+	if (tc->state != state) {
+		JLOG_INFO("%s state changed to %s", label, tcp_state_to_string(state));
+		tc->state = state;
+		if (on_change)
+			on_change(agent, tc, state);
 	}
+}
+
+static void ice_tcp_on_state_change(juice_agent_t *agent, tcp_conn_t *tc, tcp_state_t state) {
+	if (agent_conn_tcp_state(agent, &tc->dst, state) != 0) {
+		if (tc->sock != INVALID_SOCKET) {
+			closesocket(tc->sock);
+			tc->sock = INVALID_SOCKET;
+		}
+		tc->state = TCP_STATE_DISCONNECTED;
+	}
+}
+
+static void turn_tcp_on_state_change(juice_agent_t *agent, tcp_conn_t *tc, tcp_state_t state) {
+	(void)tc;
+	JLOG_INFO("TURN TCP state changed: %s", tcp_state_to_string(state));
+	if (state == TCP_STATE_CONNECTED || state == TCP_STATE_FAILED)
+		conn_interrupt(agent);
 }
 
 int conn_poll_process(conn_registry_t *registry, pfds_record_t *pfds) {
@@ -478,15 +498,29 @@ int conn_poll_process(conn_registry_t *registry, pfds_record_t *pfds) {
 		conn_poll_process_udp(agent, udp_pfd);
 		i++;
 
-		if (conn_impl->tcp_sock == INVALID_SOCKET)
-			continue;
+		tcp_conn_t *ice_tcp = conn_impl->ice_tcp;
+		if (ice_tcp && ice_tcp->sock != INVALID_SOCKET) {
+			if (i >= pfds->size)
+				break;
 
-		struct pollfd *tcp_pfd = pfds->pfds + i;
-		if (tcp_pfd->fd != conn_impl->tcp_sock)
-			break;
+			struct pollfd *tcp_pfd = pfds->pfds + i;
+			if (tcp_pfd->fd == ice_tcp->sock) {
+				conn_poll_process_tcp_conn(agent, tcp_pfd, ice_tcp, "ICE-TCP", ice_tcp_on_state_change);
+				i++;
+			}
+		}
 
-		conn_poll_process_tcp(agent, tcp_pfd);
-		i++;
+		tcp_conn_t *turn_tcp = conn_impl->turn_tcp;
+		if (turn_tcp && turn_tcp->sock != INVALID_SOCKET) {
+			if (i >= pfds->size)
+				break;
+
+			struct pollfd *turn_tcp_pfd = pfds->pfds + i;
+			if (turn_tcp_pfd->fd == turn_tcp->sock) {
+				conn_poll_process_tcp_conn(agent, turn_tcp_pfd, turn_tcp, "TURN TCP", turn_tcp_on_state_change);
+				i++;
+			}
+		}
 	}
 
 	mutex_unlock(&registry->mutex);
@@ -546,10 +580,6 @@ int conn_poll_init(juice_agent_t *agent, conn_registry_t *registry, udp_socket_c
 
 	mutex_init(&conn_impl->send_mutex, 0);
 	conn_impl->registry = registry;
-	conn_impl->tcp_sock = INVALID_SOCKET;
-	conn_impl->tcp_state = TCP_STATE_DISCONNECTED;
-	memset(&conn_impl->tcp_ice_write_context, 0, sizeof(tcp_write_context_t));
-	memset(&conn_impl->tcp_ice_read_context, 0, sizeof(tcp_read_context_t));
 
 	agent->conn_impl = conn_impl;
 	return 0;
@@ -562,7 +592,18 @@ void conn_poll_cleanup(juice_agent_t *agent) {
 
 	mutex_destroy(&conn_impl->send_mutex);
 	closesocket(conn_impl->udp_sock);
-	closesocket(conn_impl->tcp_sock);
+	tcp_conn_t *ice_tcp = conn_impl->ice_tcp;
+	if (ice_tcp) {
+		if (ice_tcp->sock != INVALID_SOCKET)
+			closesocket(ice_tcp->sock);
+		free(ice_tcp);
+	}
+	tcp_conn_t *turn_tcp = conn_impl->turn_tcp;
+	if (turn_tcp) {
+		if (turn_tcp->sock != INVALID_SOCKET)
+			closesocket(turn_tcp->sock);
+		free(turn_tcp);
+	}
 	free(agent->conn_impl);
 	agent->conn_impl = NULL;
 }
@@ -608,8 +649,41 @@ int conn_poll_interrupt(juice_agent_t *agent) {
 }
 
 int conn_poll_send(juice_agent_t *agent, const addr_record_t *dst, const char *data, size_t size,
-                   int ds) {
+                   int ds, bool use_turn_tcp) {
 	conn_impl_t *conn_impl = agent->conn_impl;
+
+	if (use_turn_tcp) {
+		mutex_lock(&conn_impl->send_mutex);
+
+		tcp_conn_t *turn_tcp = conn_impl->turn_tcp;
+		if (!turn_tcp || turn_tcp->state != TCP_STATE_CONNECTED) {
+			mutex_unlock(&conn_impl->send_mutex);
+			return -SEAGAIN;
+		}
+
+		JLOG_VERBOSE("Sending STUN message via TURN TCP, size=%d", (int)size);
+
+		int ret;
+		tcp_write_context_t *context = &turn_tcp->write;
+		if (!context->pending) {
+			ret = tcp_stun_write(turn_tcp->sock, data, size, context);
+			if (context->pending && (ret == -SEAGAIN || ret == -SEWOULDBLOCK))
+				ret = (int)size; // message is buffered, consider it sent
+		} else {
+			// another message is buffered, drop
+			ret = -SEAGAIN;
+		}
+
+		if (ret < 0) {
+			if (ret == -SEAGAIN || ret == -SEWOULDBLOCK)
+				JLOG_INFO("TURN TCP send failed, buffer is full");
+			else
+				JLOG_WARN("TURN TCP send failed, errno=%d", -ret);
+		}
+
+		mutex_unlock(&conn_impl->send_mutex);
+		return ret;
+	}
 
 	mutex_lock(&conn_impl->send_mutex);
 
@@ -617,10 +691,15 @@ int conn_poll_send(juice_agent_t *agent, const addr_record_t *dst, const char *d
 
 	int ret;
 	if (dst->socktype == SOCK_STREAM) {
-		tcp_write_context_t *context = &conn_impl->tcp_ice_write_context;
+		tcp_conn_t *ice_tcp = conn_impl->ice_tcp;
+		if (!ice_tcp) {
+			mutex_unlock(&conn_impl->send_mutex);
+			return -SEAGAIN;
+		}
+		tcp_write_context_t *context = &ice_tcp->write;
 		if (!context->pending) {
-			ret = tcp_ice_write(conn_impl->tcp_sock, data, size, context);
-			if (context->pending && (ret == SEAGAIN || ret == SEWOULDBLOCK))
+			ret = tcp_ice_write(ice_tcp->sock, data, size, context);
+			if (context->pending && (ret == -SEAGAIN || ret == -SEWOULDBLOCK))
 				ret = (int)size; // datagram is buffered, consider it sent
 		} else {
 			// another datagram is buffered, drop
@@ -653,21 +732,40 @@ int conn_poll_send(juice_agent_t *agent, const addr_record_t *dst, const char *d
 	return ret;
 }
 
+static void tcp_conn_connect(juice_agent_t *agent, tcp_conn_t *tc,
+                             const addr_record_t *dst, const char *label,
+                             bool override_socktype_dgram,
+                             tcp_on_state_change_t on_change) {
+	if (tc->sock == INVALID_SOCKET) {
+		char dst_str[ADDR_MAX_STRING_LEN];
+		addr_record_to_string(dst, dst_str, ADDR_MAX_STRING_LEN);
+		JLOG_INFO("Attempting %s connection to %s", label, dst_str);
+		tc->sock = tcp_create_socket(dst);
+		if (tc->sock == INVALID_SOCKET) {
+			JLOG_WARN("%s socket creation failed for %s", label, dst_str);
+			return;
+		}
+		memcpy(&tc->dst, dst, sizeof(tc->dst));
+		if (override_socktype_dgram)
+			tc->dst.socktype = SOCK_DGRAM;
+		conn_poll_change_tcp_state(agent, tc, TCP_STATE_CONNECTING, label, on_change);
+	}
+}
+
 void conn_poll_tcp_connect(juice_agent_t *agent, const addr_record_t *dst) {
 	conn_impl_t *conn_impl = agent->conn_impl;
 
 	mutex_lock(&conn_impl->registry->mutex);
 	mutex_lock(&conn_impl->send_mutex);
-	if (conn_impl->tcp_sock == INVALID_SOCKET) {
-		if (JLOG_DEBUG_ENABLED) {
-			char dst_str[ADDR_MAX_STRING_LEN];
-			addr_record_to_string(dst, dst_str, ADDR_MAX_STRING_LEN);
-			JLOG_DEBUG("Attempting ICE-TCP connection to %s", dst_str);
+	if (!conn_impl->ice_tcp) {
+		conn_impl->ice_tcp = malloc(sizeof(tcp_conn_t));
+		if (conn_impl->ice_tcp) {
+			tcp_conn_init(conn_impl->ice_tcp, TCP_FRAMING_ICE);
 		}
-		conn_impl->tcp_sock = tcp_create_socket(dst);
-		memcpy(&conn_impl->tcp_dst, dst, sizeof(conn_impl->tcp_dst));
-		conn_poll_change_tcp_state(agent, TCP_STATE_CONNECTING);
 	}
+	tcp_conn_t *ice_tcp = conn_impl->ice_tcp;
+	if (ice_tcp)
+		tcp_conn_connect(agent, ice_tcp, dst, "ICE-TCP", false, ice_tcp_on_state_change);
 	mutex_unlock(&conn_impl->send_mutex);
 	mutex_unlock(&conn_impl->registry->mutex);
 }
@@ -676,4 +774,34 @@ int conn_poll_get_addrs(juice_agent_t *agent, addr_record_t *records, size_t siz
 	conn_impl_t *conn_impl = agent->conn_impl;
 
 	return udp_get_addrs(conn_impl->udp_sock, records, size);
+}
+
+void conn_poll_turn_tcp_connect(juice_agent_t *agent, const addr_record_t *dst) {
+	conn_impl_t *conn_impl = agent->conn_impl;
+
+	mutex_lock(&conn_impl->registry->mutex);
+	mutex_lock(&conn_impl->send_mutex);
+	if (!conn_impl->turn_tcp) {
+		conn_impl->turn_tcp = malloc(sizeof(tcp_conn_t));
+		if (conn_impl->turn_tcp) {
+			tcp_conn_init(conn_impl->turn_tcp, TCP_FRAMING_STUN);
+		}
+	}
+	tcp_conn_t *turn_tcp = conn_impl->turn_tcp;
+	if (turn_tcp)
+		tcp_conn_connect(agent, turn_tcp, dst, "TURN TCP", true, turn_tcp_on_state_change);
+	mutex_unlock(&conn_impl->send_mutex);
+	mutex_unlock(&conn_impl->registry->mutex);
+}
+
+bool conn_poll_turn_tcp_connected(juice_agent_t *agent) {
+	conn_impl_t *conn_impl = agent->conn_impl;
+	tcp_conn_t *turn_tcp = conn_impl->turn_tcp;
+	return turn_tcp && turn_tcp->state == TCP_STATE_CONNECTED;
+}
+
+bool conn_poll_turn_tcp_failed(juice_agent_t *agent) {
+	conn_impl_t *conn_impl = agent->conn_impl;
+	tcp_conn_t *turn_tcp = conn_impl->turn_tcp;
+	return turn_tcp && turn_tcp->state == TCP_STATE_FAILED;
 }

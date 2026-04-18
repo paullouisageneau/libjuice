@@ -131,6 +131,9 @@ juice_agent_t *agent_create(const juice_config_t *config) {
 		}
 	}
 
+	agent->turn_servers_tcp = NULL;
+	agent->turn_servers_tcp_count = 0;
+
 	agent->state = JUICE_STATE_DISCONNECTED;
 	agent->mode = AGENT_MODE_UNKNOWN;
 	agent->selected_entry = NULL;
@@ -187,6 +190,13 @@ void agent_destroy(juice_agent_t *agent) {
 		free((void *)turn_server->password);
 	}
 	free(agent->config.turn_servers);
+	for (int i = 0; i < agent->turn_servers_tcp_count; ++i) {
+		juice_turn_server_t *turn_server = agent->turn_servers_tcp + i;
+		free((void *)turn_server->host);
+		free((void *)turn_server->username);
+		free((void *)turn_server->password);
+	}
+	free(agent->turn_servers_tcp);
 	free((void *)agent->config.bind_address);
 	free(agent);
 
@@ -197,13 +207,20 @@ void agent_destroy(juice_agent_t *agent) {
 	JLOG_VERBOSE("Destroyed agent");
 }
 
-static bool has_nonnumeric_server_hostnames(const juice_config_t *config) {
-	if (config->stun_server_host && !addr_is_numeric_hostname(config->stun_server_host))
+static bool has_nonnumeric_server_hostnames(const juice_agent_t *agent) {
+	if (agent->config.stun_server_host &&
+	    !addr_is_numeric_hostname(agent->config.stun_server_host))
 		return true;
 
-	for (int i = 0; i < config->turn_servers_count; ++i) {
-		juice_turn_server_t *turn_server = config->turn_servers + i;
-		if (turn_server->host && !addr_is_numeric_hostname(turn_server->host))
+	for (int i = 0; i < agent->config.turn_servers_count; ++i) {
+		const juice_turn_server_t *s = agent->config.turn_servers + i;
+		if (s->host && !addr_is_numeric_hostname(s->host))
+			return true;
+	}
+
+	for (int i = 0; i < agent->turn_servers_tcp_count; ++i) {
+		const juice_turn_server_t *s = agent->turn_servers_tcp + i;
+		if (s->host && !addr_is_numeric_hostname(s->host))
 			return true;
 	}
 
@@ -323,7 +340,7 @@ int agent_gather_candidates(juice_agent_t *agent) {
 	conn_unlock(agent);
 	conn_interrupt(agent);
 
-	if (has_nonnumeric_server_hostnames(&agent->config)) {
+	if (has_nonnumeric_server_hostnames(agent)) {
 		// Resolve server hostnames in a separate thread as it may block
 		JLOG_DEBUG("Starting resolver thread for servers");
 		int ret = thread_init(&agent->resolver_thread, resolver_thread_entry, agent);
@@ -342,6 +359,99 @@ int agent_gather_candidates(juice_agent_t *agent) {
 	return 0;
 }
 
+static void agent_resolve_turn_servers(juice_agent_t *agent, juice_turn_server_t *servers,
+                                       int servers_count, bool is_tcp, int *count) {
+	for (int i = 0; i < servers_count; ++i) {
+		if (*count >= MAX_RELAY_ENTRIES_COUNT)
+			break;
+
+		juice_turn_server_t *turn_server = servers + i;
+		if (!turn_server->host)
+			continue;
+
+		if (!turn_server->port)
+			turn_server->port = 3478;
+
+		char hostname[256];
+		char service[8];
+		snprintf(hostname, 256, "%s", turn_server->host);
+		snprintf(service, 8, "%hu", turn_server->port);
+
+		conn_unlock(agent);
+
+		addr_record_t records[DEFAULT_MAX_RECORDS_COUNT];
+		int records_count =
+		    addr_resolve(hostname, service, SOCK_DGRAM, records, DEFAULT_MAX_RECORDS_COUNT);
+
+		conn_lock(agent);
+
+		if (records_count > 0) {
+			if (records_count > DEFAULT_MAX_RECORDS_COUNT)
+				records_count = DEFAULT_MAX_RECORDS_COUNT;
+
+			JLOG_INFO("Using TURN%s server %s:%s", is_tcp ? " TCP" : "", hostname, service);
+
+			addr_record_t *record = NULL;
+			for (int j = 0; j < records_count; ++j) {
+				int family = records[j].addr.ss_family;
+				if (family == AF_INET) {
+					record = records + j;
+					break;
+				}
+				if (family == AF_INET6 && !record)
+					record = records + j;
+			}
+			if (record) {
+				bool is_duplicate = false;
+				for (int k = 0; k < agent->entries_count; ++k) {
+					agent_stun_entry_t *entry = agent->entries + k;
+					if (entry->type == AGENT_STUN_ENTRY_TYPE_RELAY &&
+					    addr_record_is_equal(&entry->record, record, true)) {
+						is_duplicate = true;
+						break;
+					}
+				}
+				if (is_duplicate) {
+					JLOG_INFO("Duplicate TURN server, ignoring");
+					continue;
+				}
+
+				JLOG_VERBOSE("Registering STUN entry %d for relay request",
+				             agent->entries_count);
+				agent_stun_entry_t *entry = agent->entries + agent->entries_count;
+				entry->type = AGENT_STUN_ENTRY_TYPE_RELAY;
+				entry->state = AGENT_STUN_ENTRY_STATE_PENDING;
+				entry->pair = NULL;
+				entry->record = *record;
+				entry->turn_redirections = 0;
+				entry->turn = calloc(1, sizeof(agent_turn_state_t));
+				if (!entry->turn) {
+					JLOG_ERROR("Memory allocation for TURN state failed");
+					break;
+				}
+				if (turn_init_map(&entry->turn->map, AGENT_TURN_MAP_SIZE) < 0) {
+					free(entry->turn);
+					break;
+				}
+				snprintf(entry->turn->credentials.username, STUN_MAX_USERNAME_LEN, "%s",
+				         turn_server->username);
+				entry->turn->password = turn_server->password;
+				entry->transport = is_tcp ? JUICE_TURN_TRANSPORT_TCP : JUICE_TURN_TRANSPORT_UDP;
+				entry->turn_tcp_connect_initiated = false;
+				juice_random(entry->transaction_id, STUN_TRANSACTION_ID_SIZE);
+				entry->transaction_id_expired = false;
+				++agent->entries_count;
+
+				agent_arm_transmission(agent, entry, STUN_PACING_TIME * i);
+
+				++(*count);
+			}
+		} else {
+			JLOG_ERROR("TURN address resolution failed");
+		}
+	}
+}
+
 int agent_resolve_servers(juice_agent_t *agent) {
 	conn_lock(agent);
 
@@ -351,97 +461,12 @@ int agent_resolve_servers(juice_agent_t *agent) {
 		if (agent->config.turn_servers_count > 0)
 			JLOG_WARN("TURN servers are not supported in mux mode");
 
-	} else if (agent->config.turn_servers_count > 0) {
+	} else if (agent->config.turn_servers_count > 0 || agent->turn_servers_tcp_count > 0) {
 		int count = 0;
-		for (int i = 0; i < agent->config.turn_servers_count; ++i) {
-			if (count >= MAX_RELAY_ENTRIES_COUNT)
-				break;
-
-			juice_turn_server_t *turn_server = agent->config.turn_servers + i;
-			if (!turn_server->host)
-				continue;
-
-			if (!turn_server->port)
-				turn_server->port = 3478; // default TURN port
-
-			char hostname[256];
-			char service[8];
-			snprintf(hostname, 256, "%s", turn_server->host);
-			snprintf(service, 8, "%hu", turn_server->port);
-
-			conn_unlock(agent);
-
-			addr_record_t records[DEFAULT_MAX_RECORDS_COUNT];
-			int records_count =
-			    addr_resolve(hostname, service, SOCK_DGRAM, records, DEFAULT_MAX_RECORDS_COUNT);
-
-			conn_lock(agent);
-
-			if (records_count > 0) {
-				if (records_count > DEFAULT_MAX_RECORDS_COUNT)
-					records_count = DEFAULT_MAX_RECORDS_COUNT;
-
-				JLOG_INFO("Using TURN server %s:%s", hostname, service);
-
-				addr_record_t *record = NULL;
-				for (int j = 0; j < records_count; ++j) {
-					int family = records[j].addr.ss_family;
-					// Prefer IPv4 for TURN
-					if (family == AF_INET) {
-						record = records + j;
-						break;
-					}
-					if (family == AF_INET6 && !record)
-						record = records + j;
-				}
-				if (record) {
-					// Ignore duplicate TURN servers as they will cause conflicts
-					bool is_duplicate = false;
-					for (int i = 0; i < agent->entries_count; ++i) {
-						agent_stun_entry_t *entry = agent->entries + i;
-						if (entry->type == AGENT_STUN_ENTRY_TYPE_RELAY &&
-						    addr_record_is_equal(&entry->record, record, true)) {
-							is_duplicate = true;
-							break;
-						}
-					}
-					if (is_duplicate) {
-						JLOG_INFO("Duplicate TURN server, ignoring");
-						continue;
-					}
-
-					JLOG_VERBOSE("Registering STUN entry %d for relay request",
-					             agent->entries_count);
-					agent_stun_entry_t *entry = agent->entries + agent->entries_count;
-					entry->type = AGENT_STUN_ENTRY_TYPE_RELAY;
-					entry->state = AGENT_STUN_ENTRY_STATE_PENDING;
-					entry->pair = NULL;
-					entry->record = *record;
-					entry->turn_redirections = 0;
-					entry->turn = calloc(1, sizeof(agent_turn_state_t));
-					if (!entry->turn) {
-						JLOG_ERROR("Memory allocation for TURN state failed");
-						break;
-					}
-					if (turn_init_map(&entry->turn->map, AGENT_TURN_MAP_SIZE) < 0) {
-						free(entry->turn);
-						break;
-					}
-					snprintf(entry->turn->credentials.username, STUN_MAX_USERNAME_LEN, "%s",
-					         turn_server->username);
-					entry->turn->password = turn_server->password;
-					juice_random(entry->transaction_id, STUN_TRANSACTION_ID_SIZE);
-					entry->transaction_id_expired = false;
-					++agent->entries_count;
-
-					agent_arm_transmission(agent, entry, STUN_PACING_TIME * i);
-
-					++count;
-				}
-			} else {
-				JLOG_ERROR("TURN address resolution failed");
-			}
-		}
+		agent_resolve_turn_servers(agent, agent->config.turn_servers,
+		                           agent->config.turn_servers_count, false, &count);
+		agent_resolve_turn_servers(agent, agent->turn_servers_tcp,
+		                           agent->turn_servers_tcp_count, true, &count);
 	}
 
 	// STUN server resolution
@@ -636,27 +661,38 @@ int agent_set_local_ice_attributes(juice_agent_t *agent, const char *ufrag, cons
 	return JUICE_ERR_SUCCESS;
 }
 
-int agent_add_turn_server(juice_agent_t *agent, const juice_turn_server_t *turn_server) {
-	if (agent->conn_impl) {
-		// The array must no be reallocated anymore after gathering started
-		JLOG_WARN("Unable to add TURN server, candidates gathering already started");
-		return -1;
-	}
-
-	juice_turn_server_t *new_turn_servers =
-	    realloc(agent->config.turn_servers,
-	            (agent->config.turn_servers_count + 1) * sizeof(juice_turn_server_t));
-	if (!new_turn_servers) {
+static int add_turn_server_to_list(juice_turn_server_t **list, int *count,
+                                   const juice_turn_server_t *turn_server) {
+	juice_turn_server_t *new_list =
+	    realloc(*list, (*count + 1) * sizeof(juice_turn_server_t));
+	if (!new_list) {
 		JLOG_FATAL("Memory allocation for TURN servers failed");
 		return -1;
 	}
-	memset(new_turn_servers + agent->config.turn_servers_count, 0, sizeof(juice_turn_server_t));
-	agent->config.turn_servers = new_turn_servers;
-	if (copy_turn_server(new_turn_servers + agent->config.turn_servers_count, turn_server) < 0) {
+	memset(new_list + *count, 0, sizeof(juice_turn_server_t));
+	*list = new_list;
+	if (copy_turn_server(new_list + *count, turn_server) < 0)
+		return -1;
+	++(*count);
+	return 0;
+}
+
+int agent_add_turn_server(juice_agent_t *agent, const juice_turn_server_t *turn_server) {
+	if (agent->conn_impl) {
+		JLOG_WARN("Unable to add TURN server, candidates gathering already started");
 		return -1;
 	}
-	agent->config.turn_servers_count++;
-	return 0;
+	return add_turn_server_to_list(&agent->config.turn_servers, &agent->config.turn_servers_count,
+	                               turn_server);
+}
+
+int agent_add_turn_server_tcp(juice_agent_t *agent, const juice_turn_server_t *turn_server) {
+	if (agent->conn_impl) {
+		JLOG_WARN("Unable to add TURN server, candidates gathering already started");
+		return -1;
+	}
+	return add_turn_server_to_list(&agent->turn_servers_tcp,
+	                               &agent->turn_servers_tcp_count, turn_server);
 }
 
 int agent_set_remote_gathering_done(juice_agent_t *agent) {
@@ -689,7 +725,13 @@ int agent_send(juice_agent_t *agent, const char *data, size_t size, int ds) {
 
 int agent_direct_send(juice_agent_t *agent, const addr_record_t *dst, const char *data, size_t size,
                       int ds) {
-	return conn_send(agent, dst, data, size, ds);
+	return conn_send(agent, dst, data, size, ds, false);
+}
+
+int agent_turn_direct_send(juice_agent_t *agent, const agent_stun_entry_t *entry, const char *data,
+                           size_t size, int ds) {
+	return conn_send(agent, &entry->record, data, size, ds,
+	                 entry->transport == JUICE_TURN_TRANSPORT_TCP);
 }
 
 int agent_relay_send(juice_agent_t *agent, agent_stun_entry_t *entry, const addr_record_t *dst,
@@ -724,7 +766,7 @@ int agent_relay_send(juice_agent_t *agent, agent_stun_entry_t *entry, const addr
 		return -1;
 	}
 
-	return agent_direct_send(agent, &entry->record, buffer, size, ds);
+	return agent_turn_direct_send(agent, entry, buffer, size, ds);
 }
 
 int agent_channel_send(juice_agent_t *agent, agent_stun_entry_t *entry, const addr_record_t *record,
@@ -742,15 +784,18 @@ int agent_channel_send(juice_agent_t *agent, agent_stun_entry_t *entry, const ad
 
 	JLOG_VERBOSE("Sending datagram via TURN ChannelData, channel=0x%hX, size=%d", channel, size);
 
-	// Send the data wrapped as ChannelData
-	char buffer[BUFFER_SIZE];
-	int len = turn_wrap_channel_data(buffer, BUFFER_SIZE, data, size, channel);
+	// Send the data wrapped as ChannelData (4-byte header + payload).
+	char buffer[sizeof(struct channel_data_header) + TCP_BUFFER_SIZE];
+	size_t channel_data_size = sizeof(struct channel_data_header) + size;
+	if (channel_data_size > sizeof(buffer))
+		return -SEMSGSIZE;
+	int len = turn_wrap_channel_data(buffer, channel_data_size, data, size, channel);
 	if (len <= 0) {
 		JLOG_ERROR("TURN ChannelData wrapping failed");
 		return -1;
 	}
 
-	return agent_direct_send(agent, &entry->record, buffer, len, ds);
+	return agent_turn_direct_send(agent, entry, buffer, len, ds);
 }
 
 juice_state_t agent_get_state(juice_agent_t *agent) {
@@ -928,6 +973,25 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 
 				if(entry->tcp_state != TCP_STATE_CONNECTED)
 					continue;
+			}
+
+			if (entry->type == AGENT_STUN_ENTRY_TYPE_RELAY &&
+			    entry->transport == JUICE_TURN_TRANSPORT_TCP) {
+				if (!conn_turn_tcp_connected(agent)) {
+					if (conn_turn_tcp_failed(agent)) {
+						JLOG_WARN("STUN entry %d: TURN TCP connection failed, failing entry", i);
+						entry->state = AGENT_STUN_ENTRY_STATE_FAILED;
+						agent_update_gathering_done(agent);
+						continue;
+					}
+					if (!entry->turn_tcp_connect_initiated) {
+						JLOG_INFO("Initiating TURN TCP connection");
+						conn_turn_tcp_connect(agent, &entry->record);
+						entry->turn_tcp_connect_initiated = true;
+					}
+					JLOG_DEBUG("STUN entry %d: Waiting for TURN TCP connection", i);
+					continue; // woken by conn_interrupt from turn_tcp_on_state_change
+				}
 			}
 
 			if (entry->retransmissions >= 0) {
@@ -1853,7 +1917,7 @@ int agent_process_turn_allocate(juice_agent_t *agent, const stun_message_t *msg,
 		}
 
 		entry->relayed = msg->relayed;
-		if (agent_add_local_relayed_candidate(agent, &msg->relayed)) {
+		if (agent_add_local_relayed_candidate(agent, &msg->relayed, entry->transport)) {
 			JLOG_WARN("Failed to add local relayed candidate from TURN relayed address");
 			return -1;
 		}
@@ -2003,7 +2067,7 @@ int agent_send_turn_allocate_request(juice_agent_t *agent, const agent_stun_entr
 		JLOG_ERROR("STUN message write failed");
 		return -1;
 	}
-	if (agent_direct_send(agent, &entry->record, buffer, size, 0) < 0) {
+	if (agent_turn_direct_send(agent, entry, buffer, size, 0) < 0) {
 		JLOG_WARN("STUN message send failed");
 		return -1;
 	}
@@ -2100,7 +2164,7 @@ int agent_send_turn_create_permission_request(juice_agent_t *agent, agent_stun_e
 		JLOG_ERROR("STUN message write failed");
 		return -1;
 	}
-	if (agent_direct_send(agent, &entry->record, buffer, size, ds) < 0) {
+	if (agent_turn_direct_send(agent, entry, buffer, size, ds) < 0) {
 		JLOG_WARN("STUN message send failed");
 		return -1;
 	}
@@ -2208,7 +2272,7 @@ int agent_send_turn_channel_bind_request(juice_agent_t *agent, agent_stun_entry_
 		JLOG_ERROR("STUN message write failed");
 		return -1;
 	}
-	if (agent_direct_send(agent, &entry->record, buffer, size, ds) < 0) {
+	if (agent_turn_direct_send(agent, entry, buffer, size, ds) < 0) {
 		JLOG_WARN("STUN message send failed");
 		return -1;
 	}
@@ -2266,19 +2330,17 @@ int agent_process_channel_data(juice_agent_t *agent, agent_stun_entry_t *entry, 
 	return agent_input(agent, buf, length, &src, &entry->relayed);
 }
 
-int agent_add_local_relayed_candidate(juice_agent_t *agent, const addr_record_t *record) {
+int agent_add_local_relayed_candidate(juice_agent_t *agent, const addr_record_t *record,
+                                      juice_turn_transport_t turn_transport) {
 	if (ice_find_candidate_from_addr(&agent->local, record, ICE_CANDIDATE_TYPE_RELAYED)) {
 		JLOG_VERBOSE("The relayed local candidate already exists");
 		return 0;
 	}
 	ice_candidate_t candidate;
-	if (ice_create_local_candidate(ICE_CANDIDATE_TYPE_RELAYED, 1, agent->local.candidates_count,
+	int index = (turn_transport == JUICE_TURN_TRANSPORT_TCP) ? 4095 : agent->local.candidates_count;
+	if (ice_create_local_candidate(ICE_CANDIDATE_TYPE_RELAYED, 1, index,
 	                               record, &candidate, ICE_CANDIDATE_TRANSPORT_UDP)) {
 		JLOG_ERROR("Failed to create relayed candidate");
-		return -1;
-	}
-	if (ice_add_candidate(&candidate, &agent->local)) {
-		JLOG_ERROR("Failed to add candidate to local description");
 		return -1;
 	}
 
@@ -2288,6 +2350,11 @@ int agent_add_local_relayed_candidate(juice_agent_t *agent, const addr_record_t 
 		return -1;
 	}
 	JLOG_DEBUG("Gathered relayed candidate: %s", buffer);
+
+	if (ice_add_candidate(&candidate, &agent->local)) {
+		JLOG_ERROR("Failed to add candidate to local description");
+		return -1;
+	}
 
 	// Relayed candidates must be differenciated, so match them with already known remote candidates
 	ice_candidate_t *local = agent->local.candidates + agent->local.candidates_count - 1;
@@ -2328,10 +2395,6 @@ int agent_add_local_reflexive_candidate(juice_agent_t *agent, ice_candidate_type
 		    "Local description has the maximum number of peer reflexive candidates, ignoring");
 		return 0;
 	}
-	if (ice_add_candidate(&candidate, &agent->local)) {
-		JLOG_ERROR("Failed to add candidate to local description");
-		return -1;
-	}
 
 	char buffer[BUFFER_SIZE];
 	if (ice_generate_candidate_sdp(&candidate, buffer, BUFFER_SIZE) < 0) {
@@ -2339,6 +2402,11 @@ int agent_add_local_reflexive_candidate(juice_agent_t *agent, ice_candidate_type
 		return -1;
 	}
 	JLOG_DEBUG("Gathered reflexive candidate: %s", buffer);
+
+	if (ice_add_candidate(&candidate, &agent->local)) {
+		JLOG_ERROR("Failed to add candidate to local description");
+		return -1;
+	}
 
 	if (type != ICE_CANDIDATE_TYPE_PEER_REFLEXIVE && agent->config.cb_candidate)
 		agent->config.cb_candidate(agent, buffer, agent->config.user_ptr);
