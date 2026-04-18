@@ -36,8 +36,8 @@ typedef struct conn_impl {
 	conn_state_t state;
 	socket_t udp_sock;
 	socket_t tcp_sock;
-	tcp_ice_write_context_t tcp_ice_write_context;
-	tcp_ice_read_context_t tcp_ice_read_context;
+	tcp_write_context_t tcp_ice_write_context;
+	tcp_read_context_t tcp_ice_read_context;
 	addr_record_t tcp_dst;
 	tcp_state_t tcp_state;
 	mutex_t send_mutex;
@@ -338,7 +338,7 @@ void conn_poll_process_tcp(juice_agent_t *agent, struct pollfd *pfd) {
 
 			conn_poll_change_tcp_state(agent, TCP_STATE_CONNECTED);
 		} else {
-			tcp_ice_write_context_t *context = &conn_impl->tcp_ice_write_context;
+			tcp_write_context_t *context = &conn_impl->tcp_ice_write_context;
 			if(context->pending) {
 				int ret = tcp_ice_write(conn_impl->tcp_sock, NULL, 0, context);
 				if (ret >= 0) {
@@ -356,7 +356,7 @@ void conn_poll_process_tcp(juice_agent_t *agent, struct pollfd *pfd) {
 		int ret = 0;
 		int left = 1000; // limit for fairness between sockets
 		while (left--) {
-			tcp_ice_read_context_t *context = &conn_impl->tcp_ice_read_context;
+			tcp_read_context_t *context = &conn_impl->tcp_ice_read_context;
 			if ((ret = tcp_ice_read(conn_impl->tcp_sock, context)) <= 0) {
 				break;
 			}
@@ -404,8 +404,8 @@ void conn_poll_change_tcp_fail(juice_agent_t *agent) {
 		closesocket(conn_impl->tcp_sock);
 		conn_impl->tcp_sock = INVALID_SOCKET;
 	}
-	memset(&conn_impl->tcp_ice_write_context, 0, sizeof(tcp_ice_write_context_t));
-	memset(&conn_impl->tcp_ice_read_context, 0, sizeof(tcp_ice_read_context_t));
+	memset(&conn_impl->tcp_ice_write_context, 0, sizeof(tcp_write_context_t));
+	memset(&conn_impl->tcp_ice_read_context, 0, sizeof(tcp_read_context_t));
 	conn_poll_change_tcp_state(agent, TCP_STATE_FAILED);
 }
 
@@ -548,8 +548,8 @@ int conn_poll_init(juice_agent_t *agent, conn_registry_t *registry, udp_socket_c
 	conn_impl->registry = registry;
 	conn_impl->tcp_sock = INVALID_SOCKET;
 	conn_impl->tcp_state = TCP_STATE_DISCONNECTED;
-	memset(&conn_impl->tcp_ice_write_context, 0, sizeof(tcp_ice_write_context_t));
-	memset(&conn_impl->tcp_ice_read_context, 0, sizeof(tcp_ice_read_context_t));
+	memset(&conn_impl->tcp_ice_write_context, 0, sizeof(tcp_write_context_t));
+	memset(&conn_impl->tcp_ice_read_context, 0, sizeof(tcp_read_context_t));
 
 	agent->conn_impl = conn_impl;
 	return 0;
@@ -617,7 +617,7 @@ int conn_poll_send(juice_agent_t *agent, const addr_record_t *dst, const char *d
 
 	int ret;
 	if (dst->socktype == SOCK_STREAM) {
-		tcp_ice_write_context_t *context = &conn_impl->tcp_ice_write_context;
+		tcp_write_context_t *context = &conn_impl->tcp_ice_write_context;
 		if (!context->pending) {
 			ret = tcp_ice_write(conn_impl->tcp_sock, data, size, context);
 			if (context->pending && (ret == SEAGAIN || ret == SEWOULDBLOCK))
