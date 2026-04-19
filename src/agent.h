@@ -22,17 +22,19 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-typedef enum juice_turn_transport {
-	JUICE_TURN_TRANSPORT_UDP = 0,
-	JUICE_TURN_TRANSPORT_TCP = 1,
-} juice_turn_transport_t;
-
 // RFC 8445: Agents MUST NOT use an RTO value smaller than 500 ms.
 #define MIN_STUN_RETRANSMISSION_TIMEOUT 500 // msecs
 #define LAST_STUN_RETRANSMISSION_TIMEOUT (MIN_STUN_RETRANSMISSION_TIMEOUT * 16)
 #define MAX_STUN_CHECK_RETRANSMISSION_COUNT 6  // exponential backoff, total 39500ms
 #define MAX_STUN_SERVER_RETRANSMISSION_COUNT 5 // total 23500ms
 #define STUN_TCP_TIMEOUT LAST_STUN_RETRANSMISSION_TIMEOUT
+
+// TCP TURN priority strategy: TCP relay entries start dormant (STANDBY) when any UDP probe exists
+// (STUN servers or UDP TURN). TCP activates only after all UDP probes have each retransmitted
+// TURN_TCP_FALLBACK_RETRANSMISSIONS times without response — indicating UDP is globally blocked.
+// If any UDP relay succeeds, TCP is cancelled (UDP relay is preferred). This avoids unnecessary
+// TCP relay candidates on networks where UDP works.
+#define TURN_TCP_FALLBACK_RETRANSMISSIONS 2 // UDP retransmissions before activating TCP fallback
 
 // RFC 8445: ICE agents SHOULD use a default Ta value, 50 ms, but MAY use another value based on the
 // characteristics of the associated data.
@@ -96,6 +98,7 @@ typedef enum agent_stun_entry_type {
 
 typedef enum agent_stun_entry_state {
 	AGENT_STUN_ENTRY_STATE_PENDING,
+	AGENT_STUN_ENTRY_STATE_STANDBY, // TCP relay dormant; waiting for paired UDP head start
 	AGENT_STUN_ENTRY_STATE_CANCELLED,
 	AGENT_STUN_ENTRY_STATE_FAILED,
 	AGENT_STUN_ENTRY_STATE_SUCCEEDED,
@@ -128,6 +131,7 @@ typedef struct agent_stun_entry {
 	unsigned int turn_redirections;
 	struct agent_stun_entry *relay_entry;
 	juice_turn_transport_t transport;
+	bool is_tcp_fallback; // true: started STANDBY; cancel if any UDP relay succeeds
 	bool turn_tcp_connect_initiated;
 
 } agent_stun_entry_t;
@@ -156,6 +160,9 @@ struct juice_agent {
 	timestamp_t pac_timestamp; // Patiently Awaiting Connectivity timer
 	timestamp_t nomination_timestamp;
 	bool gathering_done;
+
+	int tcp_fallback_udp_probe_count;    // total UDP probes (SERVER + UDP RELAY)
+	int tcp_fallback_udp_probes_reached; // how many hit the retransmission threshold
 
 	conn_registry_t *registry;
 	int conn_index;
@@ -189,10 +196,12 @@ int agent_channel_send(juice_agent_t *agent, agent_stun_entry_t *entry, const ad
 juice_state_t agent_get_state(juice_agent_t *agent);
 int agent_get_selected_candidate_pair(juice_agent_t *agent, ice_candidate_t *local,
                                       ice_candidate_t *remote);
+int agent_get_selected_relay_transport(juice_agent_t *agent);
 
 int agent_conn_recv(juice_agent_t *agent, char *buf, size_t len, const addr_record_t *src);
 int agent_conn_update(juice_agent_t *agent, timestamp_t *next_timestamp);
 int agent_conn_tcp_state(juice_agent_t *agent, const addr_record_t *dst, tcp_state_t state);
+void agent_conn_turn_tcp_state(juice_agent_t *agent, tcp_state_t state);
 int agent_conn_fail(juice_agent_t *agent);
 
 int agent_input(juice_agent_t *agent, char *buf, size_t len, const addr_record_t *src,

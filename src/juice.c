@@ -151,6 +151,15 @@ JUICE_EXPORT int juice_get_selected_addresses(juice_agent_t *agent, char *local,
 	return JUICE_ERR_SUCCESS;
 }
 
+JUICE_EXPORT int juice_get_selected_relay_transport(juice_agent_t *agent) {
+	if (!agent)
+		return -1;
+	conn_lock(agent);
+	int ret = agent_get_selected_relay_transport(agent);
+	conn_unlock(agent);
+	return ret;
+}
+
 int juice_set_local_ice_attributes(juice_agent_t *agent, const char *ufrag, const char *pwd)
 {
 	if (!ufrag || !pwd)

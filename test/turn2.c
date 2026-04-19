@@ -38,6 +38,8 @@ typedef struct {
 	volatile juice_state_t state2;
 	volatile int recv_count1;
 	volatile int recv_count2;
+	volatile int relay_count1;
+	volatile int relay_count2;
 } test_ctx_t;
 
 static void on_state_changed(juice_agent_t *agent, juice_state_t state, void *user_ptr) {
@@ -63,6 +65,7 @@ static void on_candidate1(juice_agent_t *agent, const char *sdp, void *user_ptr)
 	(void)agent;
 	test_ctx_t *ctx = (test_ctx_t *)user_ptr;
 	if (!strstr(sdp, "typ relay")) return;
+	++ctx->relay_count1;
 	printf("Candidate 1 (relay): %s\n", sdp);
 	juice_add_remote_candidate(ctx->agent2, sdp);
 }
@@ -71,6 +74,7 @@ static void on_candidate2(juice_agent_t *agent, const char *sdp, void *user_ptr)
 	(void)agent;
 	test_ctx_t *ctx = (test_ctx_t *)user_ptr;
 	if (!strstr(sdp, "typ relay")) return;
+	++ctx->relay_count2;
 	printf("Candidate 2 (relay): %s\n", sdp);
 	juice_add_remote_candidate(ctx->agent1, sdp);
 }
@@ -288,4 +292,169 @@ int test_turn_relay() {
 
 #undef MAKE_SERVER
 	return ret;
+}
+
+int test_turn_udp_preferred(void) {
+	const char *turn_host     = getenv("TURN_HOST");
+	const char *turn_port_str = getenv("TURN_PORT");
+	const char *turn_username = getenv("TURN_USERNAME");
+	const char *turn_password = getenv("TURN_PASSWORD");
+
+	if (!turn_host || !turn_port_str || !turn_username || !turn_password) {
+		printf("TURN_HOST, TURN_PORT, TURN_USERNAME, and TURN_PASSWORD must be set\n");
+		return 0;
+	}
+
+	juice_set_log_level(JUICE_LOG_LEVEL_DEBUG);
+
+	uint16_t turn_port = (uint16_t)atoi(turn_port_str);
+
+	static const struct {
+		juice_concurrency_mode_t mode;
+		const char *mode_name;
+	} modes[] = {
+		{JUICE_CONCURRENCY_MODE_POLL,   "poll"},
+		{JUICE_CONCURRENCY_MODE_THREAD, "thread"},
+	};
+
+	// Scenario 1 "STUN+TCP": STUN server (UDP, type=SERVER) + TCP TURN only.
+	//   TCP starts STANDBY; STUN participates in udp_probe_count; activates after STUN settles.
+	//   Expected: one TCP relay gathered, TCP transport selected.
+	// Scenario 2 "STUN+UDP+TCP": STUN + UDP TURN + TCP TURN.
+	//   Both SERVER and UDP RELAY entries in udp_probe_count;
+	//   UDP relay success cancels TCP fallback.
+	//   Expected: one UDP relay gathered, UDP transport selected.
+	static const struct {
+		const char *label;
+		bool use_udp_turn;
+		juice_turn_transport_t expected_transport;
+	} scenarios[] = {
+		{ "STUN+TCP",     false, JUICE_TURN_TRANSPORT_TCP },
+		{ "STUN+UDP+TCP", true,  JUICE_TURN_TRANSPORT_UDP },
+	};
+
+	for (int s = 0; s < 2; ++s) {
+		for (int m = 0; m < 2; ++m) {
+			juice_concurrency_mode_t mode = modes[m].mode;
+			const char *mn = modes[m].mode_name;
+
+			printf("\n=== TURN UDP preferred [%s %s] ===\n", scenarios[s].label, mn);
+
+			test_ctx_t ctx;
+			memset(&ctx, 0, sizeof(ctx));
+
+			juice_config_t config1, config2;
+			memset(&config1, 0, sizeof(config1));
+			memset(&config2, 0, sizeof(config2));
+			config1.concurrency_mode = config2.concurrency_mode = mode;
+			config1.cb_state_changed = config2.cb_state_changed = on_state_changed;
+			config1.cb_candidate      = on_candidate1;
+			config2.cb_candidate      = on_candidate2;
+			config1.cb_gathering_done = on_gathering_done1;
+			config2.cb_gathering_done = on_gathering_done2;
+			config1.cb_recv = config2.cb_recv = on_recv;
+			config1.user_ptr = config2.user_ptr = &ctx;
+			// STUN server (UDP SERVER entry) participates in TCP fallback probe count
+			config1.stun_server_host = config2.stun_server_host = turn_host;
+			config1.stun_server_port = config2.stun_server_port = turn_port;
+
+			ctx.agent1 = juice_create(&config1);
+			ctx.agent2 = juice_create(&config2);
+
+			juice_turn_server_t ts;
+			memset(&ts, 0, sizeof(ts));
+			ts.host = turn_host; ts.port = turn_port;
+			ts.username = turn_username; ts.password = turn_password;
+			if (scenarios[s].use_udp_turn) {
+				juice_add_turn_server(ctx.agent1, &ts);
+				juice_add_turn_server(ctx.agent2, &ts);
+			}
+			juice_add_turn_server_tcp(ctx.agent1, &ts);
+			juice_add_turn_server_tcp(ctx.agent2, &ts);
+
+			char sdp1[JUICE_MAX_SDP_STRING_LEN], sdp2[JUICE_MAX_SDP_STRING_LEN];
+			juice_get_local_description(ctx.agent1, sdp1, JUICE_MAX_SDP_STRING_LEN);
+			juice_set_remote_description(ctx.agent2, sdp1);
+			juice_get_local_description(ctx.agent2, sdp2, JUICE_MAX_SDP_STRING_LEN);
+			juice_set_remote_description(ctx.agent1, sdp2);
+
+			juice_gather_candidates(ctx.agent1);
+			for (int t = 0; t < TIMEOUT_GATHER_MS && !ctx.gathering_done1; t += POLL_MS)
+				sleep_ms(POLL_MS);
+
+			juice_gather_candidates(ctx.agent2);
+			for (int t = 0; t < TIMEOUT_GATHER_MS && !ctx.gathering_done2; t += POLL_MS)
+				sleep_ms(POLL_MS);
+
+			for (int t = 0; t < TIMEOUT_CONNECT_MS; t += POLL_MS) {
+				juice_state_t s1 = ctx.state1, s2 = ctx.state2;
+				bool both_terminal =
+				    (s1 == JUICE_STATE_COMPLETED || s1 == JUICE_STATE_CONNECTED ||
+				     s1 == JUICE_STATE_FAILED) &&
+				    (s2 == JUICE_STATE_COMPLETED || s2 == JUICE_STATE_CONNECTED ||
+				     s2 == JUICE_STATE_FAILED);
+				if (both_terminal && ctx.recv_count1 >= SEND_COUNT && ctx.recv_count2 >= SEND_COUNT)
+					break;
+				sleep_ms(POLL_MS);
+			}
+
+			bool success = true;
+			const char *exp_transport_name =
+			    scenarios[s].expected_transport == JUICE_TURN_TRANSPORT_UDP ? "UDP" : "TCP";
+
+			juice_state_t state1 = juice_get_state(ctx.agent1);
+			juice_state_t state2 = juice_get_state(ctx.agent2);
+			if (state1 != JUICE_STATE_COMPLETED && state1 != JUICE_STATE_CONNECTED) {
+				printf("Agent 1 did not connect (state=%s)\n", juice_state_to_string(state1));
+				success = false;
+			}
+			if (state2 != JUICE_STATE_COMPLETED && state2 != JUICE_STATE_CONNECTED) {
+				printf("Agent 2 did not connect (state=%s)\n", juice_state_to_string(state2));
+				success = false;
+			}
+
+			printf("Relay candidates gathered: agent1=%d (expected 1) agent2=%d (expected 1)\n",
+			       ctx.relay_count1, ctx.relay_count2);
+			if (ctx.relay_count1 != 1) {
+				printf("Expected 1 relay candidate for agent 1, got %d\n", ctx.relay_count1);
+				success = false;
+			}
+			if (ctx.relay_count2 != 1) {
+				printf("Expected 1 relay candidate for agent 2, got %d\n", ctx.relay_count2);
+				success = false;
+			}
+
+			int transport1 = juice_get_selected_relay_transport(ctx.agent1);
+			int transport2 = juice_get_selected_relay_transport(ctx.agent2);
+			printf("Selected relay transport: agent1=%d agent2=%d (expected: %s)\n",
+			       transport1, transport2, exp_transport_name);
+			if (transport1 != (int)scenarios[s].expected_transport) {
+				printf("Agent 1: expected %s relay transport, got %d\n", exp_transport_name,
+				       transport1);
+				success = false;
+			}
+			if (transport2 != (int)scenarios[s].expected_transport) {
+				printf("Agent 2: expected %s relay transport, got %d\n", exp_transport_name,
+				       transport2);
+				success = false;
+			}
+
+			if (ctx.recv_count1 < SEND_COUNT || ctx.recv_count2 < SEND_COUNT) {
+				printf("Message counts: agent1=%d/%d agent2=%d/%d\n",
+				       ctx.recv_count1, SEND_COUNT, ctx.recv_count2, SEND_COUNT);
+				success = false;
+			}
+
+			juice_destroy(ctx.agent1);
+			juice_destroy(ctx.agent2);
+
+			if (!success) {
+				printf("TURN UDP preferred [%s %s]: Failure\n\n", scenarios[s].label, mn);
+				return -1;
+			}
+			printf("TURN UDP preferred [%s %s]: Success\n\n", scenarios[s].label, mn);
+		}
+	}
+
+	return 0;
 }

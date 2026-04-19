@@ -403,9 +403,12 @@ static void agent_resolve_turn_servers(juice_agent_t *agent, juice_turn_server_t
 			}
 			if (record) {
 				bool is_duplicate = false;
+				juice_turn_transport_t this_transport =
+				    is_tcp ? JUICE_TURN_TRANSPORT_TCP : JUICE_TURN_TRANSPORT_UDP;
 				for (int k = 0; k < agent->entries_count; ++k) {
 					agent_stun_entry_t *entry = agent->entries + k;
 					if (entry->type == AGENT_STUN_ENTRY_TYPE_RELAY &&
+					    entry->transport == this_transport &&
 					    addr_record_is_equal(&entry->record, record, true)) {
 						is_duplicate = true;
 						break;
@@ -467,6 +470,27 @@ int agent_resolve_servers(juice_agent_t *agent) {
 		                           agent->config.turn_servers_count, false, &count);
 		agent_resolve_turn_servers(agent, agent->turn_servers_tcp,
 		                           agent->turn_servers_tcp_count, true, &count);
+
+		// If any UDP probe exists, park all TCP relay entries as standby fallbacks
+		bool any_udp_probe = (agent->config.stun_server_host != NULL);
+		for (int i = 0; i < agent->entries_count && !any_udp_probe; i++) {
+			agent_stun_entry_t *e = agent->entries + i;
+			if (e->type == AGENT_STUN_ENTRY_TYPE_RELAY &&
+			    e->transport == JUICE_TURN_TRANSPORT_UDP)
+				any_udp_probe = true;
+		}
+		if (any_udp_probe) {
+			for (int i = 0; i < agent->entries_count; i++) {
+				agent_stun_entry_t *e = agent->entries + i;
+				if (e->type == AGENT_STUN_ENTRY_TYPE_RELAY &&
+				    e->transport == JUICE_TURN_TRANSPORT_TCP) {
+					e->state = AGENT_STUN_ENTRY_STATE_STANDBY;
+					e->next_transmission = 0;
+					e->is_tcp_fallback = true;
+					JLOG_DEBUG("TCP relay entry %d set as global UDP fallback", i);
+				}
+			}
+		}
 	}
 
 	// STUN server resolution
@@ -512,6 +536,16 @@ int agent_resolve_servers(juice_agent_t *agent) {
 		} else {
 			JLOG_ERROR("STUN server address resolution failed");
 		}
+	}
+
+	// Count UDP probes for TCP fallback tracking (all entries now added)
+	agent->tcp_fallback_udp_probe_count = 0;
+	agent->tcp_fallback_udp_probes_reached = 0;
+	for (int i = 0; i < agent->entries_count; i++) {
+		agent_stun_entry_t *e = agent->entries + i;
+		if (e->type == AGENT_STUN_ENTRY_TYPE_SERVER ||
+		    (e->type == AGENT_STUN_ENTRY_TYPE_RELAY && e->transport == JUICE_TURN_TRANSPORT_UDP))
+			agent->tcp_fallback_udp_probe_count++;
 	}
 
 	agent_update_gathering_done(agent);
@@ -951,6 +985,24 @@ int agent_conn_tcp_state(juice_agent_t *agent, const addr_record_t *dst, tcp_sta
 	return -1;
 }
 
+void agent_conn_turn_tcp_state(juice_agent_t *agent, tcp_state_t state) {
+	for (int i = 0; i < agent->entries_count; ++i) {
+		agent_stun_entry_t *entry = agent->entries + i;
+		if (entry->type != AGENT_STUN_ENTRY_TYPE_RELAY ||
+		    entry->transport != JUICE_TURN_TRANSPORT_TCP ||
+		    entry->state != AGENT_STUN_ENTRY_STATE_PENDING)
+			continue;
+		if (state == TCP_STATE_FAILED) {
+			JLOG_WARN("TURN TCP connection failed, marking relay entry %d as failed", i);
+			entry->state = AGENT_STUN_ENTRY_STATE_FAILED;
+			agent_update_gathering_done(agent);
+		} else if (state == TCP_STATE_CONNECTED) {
+			// Reset so bookkeeping processes the entry immediately for TURN Allocate
+			entry->next_transmission = 0;
+		}
+	}
+}
+
 int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 	JLOG_VERBOSE("Bookkeeping...");
 
@@ -988,8 +1040,11 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 						JLOG_INFO("Initiating TURN TCP connection");
 						conn_turn_tcp_connect(agent, &entry->record);
 						entry->turn_tcp_connect_initiated = true;
+						// Park until TCP connects or fails; reset by agent_conn_turn_tcp_state
+						entry->next_transmission =
+						    current_timestamp() + STUN_TCP_TIMEOUT;
 					}
-					JLOG_DEBUG("STUN entry %d: Waiting for TURN TCP connection", i);
+					JLOG_VERBOSE("STUN entry %d: Waiting for TURN TCP connection", i);
 					continue; // woken by conn_interrupt from turn_tcp_on_state_change
 				}
 			}
@@ -1031,6 +1086,30 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 					} else {
 						entry->next_transmission = now + entry->retransmission_timeout;
 						entry->retransmission_timeout *= 2;
+					}
+					// When all UDP probes hit N retransmissions, activate TCP fallback
+					if (agent->tcp_fallback_udp_probe_count > 0 &&
+					    (entry->type == AGENT_STUN_ENTRY_TYPE_SERVER ||
+					     (entry->type == AGENT_STUN_ENTRY_TYPE_RELAY &&
+					      entry->transport == JUICE_TURN_TRANSPORT_UDP)) &&
+					    entry->retransmissions ==
+					        MAX_STUN_SERVER_RETRANSMISSION_COUNT - 1 -
+					            TURN_TCP_FALLBACK_RETRANSMISSIONS) {
+						if (++agent->tcp_fallback_udp_probes_reached >=
+						    agent->tcp_fallback_udp_probe_count) {
+							for (int j = 0; j < agent->entries_count; j++) {
+								agent_stun_entry_t *tcp = agent->entries + j;
+								if (tcp->type == AGENT_STUN_ENTRY_TYPE_RELAY &&
+								    tcp->transport == JUICE_TURN_TRANSPORT_TCP &&
+								    tcp->state == AGENT_STUN_ENTRY_STATE_STANDBY) {
+									JLOG_INFO("All UDP probes slow after %d retransmissions, "
+									          "activating TCP TURN fallback",
+									          TURN_TCP_FALLBACK_RETRANSMISSIONS);
+									tcp->state = AGENT_STUN_ENTRY_STATE_PENDING;
+									agent_arm_transmission(agent, tcp, 0);
+								}
+							}
+						}
 					}
 					continue;
 				}
@@ -1884,6 +1963,11 @@ int agent_process_turn_allocate(juice_agent_t *agent, const stun_message_t *msg,
 
 		JLOG_DEBUG("TURN allocate successful");
 
+		if (entry->state == AGENT_STUN_ENTRY_STATE_CANCELLED) {
+			JLOG_DEBUG("TURN allocation response for cancelled TCP entry, ignoring");
+			return 0;
+		}
+
 		if (!msg->relayed.len) {
 			JLOG_ERROR("Expected relayed address in TURN Allocate response");
 			entry->state = AGENT_STUN_ENTRY_STATE_FAILED;
@@ -2674,6 +2758,59 @@ void agent_update_pac_timer(juice_agent_t *agent) {
 
 void agent_update_gathering_done(juice_agent_t *agent) {
 	JLOG_VERBOSE("Updating gathering status");
+
+	// Cancel TCP fallbacks if any UDP relay succeeded
+	bool any_udp_relay_succeeded = false;
+	for (int i = 0; i < agent->entries_count; ++i) {
+		agent_stun_entry_t *e = agent->entries + i;
+		if (e->type == AGENT_STUN_ENTRY_TYPE_RELAY &&
+		    e->transport == JUICE_TURN_TRANSPORT_UDP &&
+		    (e->state == AGENT_STUN_ENTRY_STATE_SUCCEEDED ||
+		     e->state == AGENT_STUN_ENTRY_STATE_SUCCEEDED_KEEPALIVE)) {
+			any_udp_relay_succeeded = true;
+			break;
+		}
+	}
+	if (any_udp_relay_succeeded) {
+		for (int i = 0; i < agent->entries_count; ++i) {
+			agent_stun_entry_t *e = agent->entries + i;
+			if (e->type == AGENT_STUN_ENTRY_TYPE_RELAY &&
+			    e->transport == JUICE_TURN_TRANSPORT_TCP && e->is_tcp_fallback &&
+			    (e->state == AGENT_STUN_ENTRY_STATE_STANDBY ||
+			     e->state == AGENT_STUN_ENTRY_STATE_PENDING)) {
+				JLOG_DEBUG("UDP relay succeeded, cancelling TCP fallback entry %d", i);
+				e->state = AGENT_STUN_ENTRY_STATE_CANCELLED;
+				e->next_transmission = 0;
+			}
+		}
+	}
+	// Activate STANDBY TCP fallbacks if all UDP probes settled without relay success
+	if (!any_udp_relay_succeeded) {
+		bool any_udp_probe_active = false;
+		for (int i = 0; i < agent->entries_count; ++i) {
+			agent_stun_entry_t *e = agent->entries + i;
+			if ((e->type == AGENT_STUN_ENTRY_TYPE_SERVER ||
+			     (e->type == AGENT_STUN_ENTRY_TYPE_RELAY &&
+			      e->transport == JUICE_TURN_TRANSPORT_UDP)) &&
+			    e->state == AGENT_STUN_ENTRY_STATE_PENDING) {
+				any_udp_probe_active = true;
+				break;
+			}
+		}
+		if (!any_udp_probe_active) {
+			for (int i = 0; i < agent->entries_count; ++i) {
+				agent_stun_entry_t *e = agent->entries + i;
+				if (e->type == AGENT_STUN_ENTRY_TYPE_RELAY &&
+				    e->transport == JUICE_TURN_TRANSPORT_TCP &&
+				    e->state == AGENT_STUN_ENTRY_STATE_STANDBY) {
+					JLOG_INFO("All UDP probes settled, activating TCP fallback entry %d", i);
+					e->state = AGENT_STUN_ENTRY_STATE_PENDING;
+					agent_arm_transmission(agent, e, 0);
+				}
+			}
+		}
+	}
+
 	for (int i = 0; i < agent->entries_count; ++i) {
 		agent_stun_entry_t *entry = agent->entries + i;
 		if (entry->type != AGENT_STUN_ENTRY_TYPE_CHECK &&
@@ -2864,4 +3001,19 @@ void agent_translate_host_candidate_entry(juice_agent_t *agent, agent_stun_entry
 #else
 	(void)agent;
 #endif
+}
+
+int agent_get_selected_relay_transport(juice_agent_t *agent) {
+	ice_candidate_pair_t *pair = agent->selected_pair;
+	if (!pair || !pair->local || pair->local->type != ICE_CANDIDATE_TYPE_RELAYED)
+		return -1;
+
+	for (int i = 0; i < agent->entries_count; ++i) {
+		agent_stun_entry_t *entry = agent->entries + i;
+		if (entry->type == AGENT_STUN_ENTRY_TYPE_RELAY &&
+		    addr_is_equal((const struct sockaddr *)&entry->relayed.addr,
+		                  (const struct sockaddr *)&pair->local->resolved.addr, true))
+			return (int)entry->transport;
+	}
+	return -1;
 }

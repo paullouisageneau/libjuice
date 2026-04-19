@@ -455,6 +455,7 @@ static void ice_tcp_on_state_change(juice_agent_t *agent, tcp_conn_t *tc, tcp_st
 static void turn_tcp_on_state_change(juice_agent_t *agent, tcp_conn_t *tc, tcp_state_t state) {
 	(void)tc;
 	JLOG_INFO("TURN TCP state changed: %s", tcp_state_to_string(state));
+	agent_conn_turn_tcp_state(agent, state);
 	if (state == TCP_STATE_CONNECTED || state == TCP_STATE_FAILED)
 		conn_interrupt(agent);
 }
