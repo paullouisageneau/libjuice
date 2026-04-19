@@ -9,6 +9,9 @@
 #include "juice/juice.h"
 
 #include <stdio.h>
+#ifdef _WIN32
+#include <winsock2.h>
+#endif
 
 int test_crc32(void);
 int test_base64(void);
@@ -19,6 +22,8 @@ int test_mux(void);
 int test_notrickle(void);
 int test_gathering(void);
 int test_turn(void);
+int test_turn_relay(void);
+int test_turn_udp_preferred(void);
 int test_conflict(void);
 int test_bind(void);
 int test_ufrag(void);
@@ -28,6 +33,11 @@ int test_stun_unhandled_no_host(void);
 int test_stun_unhandled_unhandle(void);
 int test_tcp(void);
 int test_tcp_bad_candidate(void);
+int test_tcp_ice_read_unit(void);
+int test_tcp_stun_read_unit(void);
+int test_tcp_stun_max_size(void);
+int test_tcp_ice_write_eagain(void);
+int test_turn_tcp_fail(void);
 
 #ifndef NO_SERVER
 int test_server(void);
@@ -66,14 +76,24 @@ int main(int argc, char **argv) {
 		return -1;
 	}
 
-// Disabled as the Open Relay TURN server is unreliable
-/*
-	printf("\nRunning TURN connectivity test...\n");
+	printf("\nRunning TURN tests...\n");
 	if (test_turn()) {
-		fprintf(stderr, "TURN connectivity test failed\n");
+		fprintf(stderr, "TURN tests failed\n");
 		return -1;
 	}
-*/
+
+	printf("\nRunning TURN relay combination tests...\n");
+	if (test_turn_relay()) {
+		fprintf(stderr, "TURN relay combination tests failed\n");
+		return -1;
+	}
+
+	printf("\nRunning TURN UDP-preferred test...\n");
+	if (test_turn_udp_preferred()) {
+		fprintf(stderr, "TURN UDP-preferred test failed\n");
+		return -1;
+	}
+
 	printf("\nRunning thread-mode connectivity test...\n");
 	if (test_thread()) {
 		fprintf(stderr, "Thread-mode connectivity test failed\n");
@@ -122,6 +142,43 @@ int main(int argc, char **argv) {
 		return -2;
 	}
 
+#ifdef _WIN32
+	{ WSADATA wsa; WSAStartup(MAKEWORD(2, 2), &wsa); }
+#endif
+
+	printf("\nRunning ICE-TCP read unit tests...\n");
+	if (test_tcp_ice_read_unit()) {
+		fprintf(stderr, "ICE-TCP read unit tests failed\n");
+		return -2;
+	}
+
+	printf("\nRunning TURN-TCP read unit tests...\n");
+	if (test_tcp_stun_read_unit()) {
+		fprintf(stderr, "TURN-TCP read unit tests failed\n");
+		return -2;
+	}
+
+	printf("\nRunning TURN-TCP max message size tests...\n");
+	if (test_tcp_stun_max_size()) {
+		fprintf(stderr, "TURN-TCP max message size tests failed\n");
+		return -2;
+	}
+
+	printf("\nRunning ICE-TCP write EAGAIN sign test...\n");
+	if (test_tcp_ice_write_eagain()) {
+		fprintf(stderr, "ICE-TCP write EAGAIN sign test failed\n");
+		return -2;
+	}
+
+	printf("\nRunning TURN TCP connection failure test...\n");
+	if (test_turn_tcp_fail()) {
+		fprintf(stderr, "TURN TCP connection failure test failed\n");
+		return -1;
+	}
+
+#ifdef _WIN32
+	WSACleanup();
+#endif
 
 #ifndef _WIN32
 	// windows fails to read STUN message from listen socket:
