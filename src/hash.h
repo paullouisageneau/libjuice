@@ -16,8 +16,8 @@
 #define HASH_SHA1_SIZE 24
 #define HASH_SHA256_SIZE 32
 
-void hash_md5(const void *message, size_t size, void *digest);
-void hash_sha1(const void *message, size_t size, void *digest);
-void hash_sha256(const void *message, size_t size, void *digest);
+void juice_hash_md5(const void *message, size_t size, void *digest);
+void juice_hash_sha1(const void *message, size_t size, void *digest);
+void juice_hash_sha256(const void *message, size_t size, void *digest);
 
 #endif
