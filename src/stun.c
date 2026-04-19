@@ -70,10 +70,10 @@ static size_t generate_hmac_key(const stun_message_t *msg, const char *password,
 
 		switch (msg->credentials.password_algorithm) {
 		case STUN_PASSWORD_ALGORITHM_SHA256:
-			hash_sha256(input, input_len, key);
+			juice_hash_sha256(input, input_len, key);
 			return HASH_SHA256_SIZE;
 		default:
-			hash_md5(input, input_len, key);
+			juice_hash_md5(input, input_len, key);
 			return HASH_MD5_SIZE;
 		}
 	} else {
@@ -1188,7 +1188,7 @@ void stun_compute_userhash(const char *username, const char *realm, uint8_t *out
 	if (input_len >= MAX_USERHASH_INPUT_LEN)
 		input_len = MAX_USERHASH_INPUT_LEN - 1;
 
-	hash_sha256(input, input_len, out);
+	juice_hash_sha256(input, input_len, out);
 }
 
 void stun_process_credentials(const stun_credentials_t *credentials, stun_credentials_t *dst) {
