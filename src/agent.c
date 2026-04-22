@@ -1046,7 +1046,7 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 				// STUN binding requests sent for consent freshness also serve the keepalive purpose
 				// (i.e., to keep NAT bindings alive). Because of that, dedicated keepalives (e.g.,
 				// STUN Binding Indications) are not sent on candidate pairs where consent requests
-				// are sent, in accordance with Section 20.2.3 of [RFC5245].
+				// are sent, in accordance with Section 20.2.3 of [RFC5245].
 				ret = agent_send_stun_binding(agent, entry, STUN_CLASS_REQUEST, 0, NULL, NULL);
 #endif
 				break;
