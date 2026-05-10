@@ -97,6 +97,48 @@ The option `USE_NETTLE` allows to use the Nettle library instead of the internal
 $ make USE_NETTLE=1
 ```
 
+## Running tests
+
+After building with CMake, run the test binary directly:
+
+```bash
+# Linux / macOS
+$ ./build/tests
+
+# Windows
+$ build\Debug\tests.exe
+```
+
+### TURN tests
+
+The TURN connectivity tests (`test_turn` and `test_turn_relay`) require a TURN server and are skipped if these environment variables are not set:
+
+| Variable | Description |
+|---|---|
+| `TURN_HOST` | TURN server hostname |
+| `TURN_PORT` | TURN server port |
+| `TURN_USERNAME` | TURN username |
+| `TURN_PASSWORD` | TURN password |
+
+`test_turn_relay` additionally accepts a second TURN server for testing asymmetric relay combinations (e.g. one side UDP, the other TCP). If not set, the second server falls back to the first:
+
+| Variable | Description |
+|---|---|
+| `TURN_HOST2` | Second TURN server hostname (optional) |
+| `TURN_PORT2` | Second TURN server port (optional) |
+| `TURN_USERNAME2` | Second TURN username (optional) |
+| `TURN_PASSWORD2` | Second TURN password (optional) |
+
+Example:
+
+```bash
+$ export TURN_HOST=turn.example.com
+$ export TURN_PORT=3478
+$ export TURN_USERNAME=user
+$ export TURN_PASSWORD=password
+$ ./build/tests
+```
+
 ## Example
 
 See [test/connectivity.c](https://github.com/paullouisageneau/libjuice/blob/master/test/connectivity.c) for a complete local connection example.

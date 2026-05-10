@@ -58,12 +58,12 @@ int test_mux() {
 	config1.user_ptr = NULL;
 	agent1 = juice_create(&config1);
 
-	// Agent 2: Create agent in mux mode on port 60000
+	// Agent 2: Create agent in mux mode on port 45000
 	juice_config_t config2;
 	memset(&config2, 0, sizeof(config2));
 	config2.concurrency_mode = JUICE_CONCURRENCY_MODE_MUX;
-	config2.local_port_range_begin = 60000;
-	config2.local_port_range_end = 60000;
+	config2.local_port_range_begin = 45000;
+	config2.local_port_range_end = 45000;
 	config2.cb_state_changed = on_state_changed2;
 	config2.cb_candidate = on_candidate2;
 	config2.cb_gathering_done = on_gathering_done2;
@@ -132,13 +132,13 @@ int test_mux() {
 	                                             remoteAddr, JUICE_MAX_ADDRESS_STRING_LEN) == 0)) {
 		printf("Local address  1: %s\n", localAddr);
 		printf("Remote address 1: %s\n", remoteAddr);
-		success &= endswith(remoteAddr, ":60000");
+		success &= endswith(remoteAddr, ":45000");
 	}
 	if (success &= (juice_get_selected_addresses(agent2, localAddr, JUICE_MAX_ADDRESS_STRING_LEN,
 	                                             remoteAddr, JUICE_MAX_ADDRESS_STRING_LEN) == 0)) {
 		printf("Local address  2: %s\n", localAddr);
 		printf("Remote address 2: %s\n", remoteAddr);
-		success &= endswith(localAddr, ":60000");
+		success &= endswith(localAddr, ":45000");
 	}
 
 	// Agent 1: destroy

@@ -617,7 +617,8 @@ int conn_mux_interrupt(juice_agent_t *agent) {
 }
 
 int conn_mux_send(juice_agent_t *agent, const addr_record_t *dst, const char *data, size_t size,
-                  int ds) {
+                  int ds, bool use_turn_tcp) {
+	(void)use_turn_tcp;
 	conn_impl_t *conn_impl = agent->conn_impl;
 	registry_impl_t *registry_impl = conn_impl->registry->impl;
 
