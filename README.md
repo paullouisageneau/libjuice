@@ -103,3 +103,7 @@ See [test/connectivity.c](https://github.com/paullouisageneau/libjuice/blob/mast
 
 See [test/server.c](https://github.com/paullouisageneau/libjuice/blob/master/test/server.c) for a server example.
 
+## Contributing
+
+See [CONTRIBUTING.md](https://github.com/paullouisageneau/libdatachannel/blob/master/CONTRIBUTING.md) for contribution guidelines.
+
