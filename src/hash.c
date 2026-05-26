@@ -12,6 +12,7 @@
 #include <nettle/md5.h>
 #include <nettle/sha1.h>
 #include <nettle/sha2.h>
+#include <nettle/version.h>
 #else
 #include "picohash.h"
 #endif
@@ -21,7 +22,11 @@ void juice_hash_md5(const void *message, size_t size, void *digest) {
 	struct md5_ctx ctx;
 	md5_init(&ctx);
 	md5_update(&ctx, size, message);
+#if NETTLE_VERSION_MAJOR >= 4
+	md5_digest(&ctx, digest);
+#else
 	md5_digest(&ctx, HASH_MD5_SIZE, digest);
+#endif
 #else
 	picohash_ctx_t ctx;
 	picohash_init_md5(&ctx);
@@ -35,7 +40,11 @@ void juice_hash_sha1(const void *message, size_t size, void *digest) {
 	struct sha1_ctx ctx;
 	sha1_init(&ctx);
 	sha1_update(&ctx, size, message);
+#if NETTLE_VERSION_MAJOR >= 4
+	sha1_digest(&ctx, digest);
+#else
 	sha1_digest(&ctx, HASH_SHA1_SIZE, digest);
+#endif
 #else
 	picohash_ctx_t ctx;
 	picohash_init_sha1(&ctx);
@@ -49,7 +58,11 @@ void juice_hash_sha256(const void *message, size_t size, void *digest) {
 	struct sha256_ctx ctx;
 	sha256_init(&ctx);
 	sha256_update(&ctx, size, message);
+#if NETTLE_VERSION_MAJOR >= 4
+	sha256_digest(&ctx, digest);
+#else
 	sha256_digest(&ctx, HASH_SHA256_SIZE, digest);
+#endif
 #else
 	picohash_ctx_t ctx;
 	picohash_init_sha256(&ctx);
