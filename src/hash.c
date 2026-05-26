@@ -16,7 +16,7 @@
 #include "picohash.h"
 #endif
 
-void hash_md5(const void *message, size_t size, void *digest) {
+void juice_hash_md5(const void *message, size_t size, void *digest) {
 #if USE_NETTLE
 	struct md5_ctx ctx;
 	md5_init(&ctx);
@@ -30,7 +30,7 @@ void hash_md5(const void *message, size_t size, void *digest) {
 #endif
 }
 
-void hash_sha1(const void *message, size_t size, void *digest) {
+void juice_hash_sha1(const void *message, size_t size, void *digest) {
 #if USE_NETTLE
 	struct sha1_ctx ctx;
 	sha1_init(&ctx);
@@ -44,7 +44,7 @@ void hash_sha1(const void *message, size_t size, void *digest) {
 #endif
 }
 
-void hash_sha256(const void *message, size_t size, void *digest) {
+void juice_hash_sha256(const void *message, size_t size, void *digest) {
 #if USE_NETTLE
 	struct sha256_ctx ctx;
 	sha256_init(&ctx);
