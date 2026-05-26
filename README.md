@@ -105,5 +105,5 @@ See [test/server.c](https://github.com/paullouisageneau/libjuice/blob/master/tes
 
 ## Contributing
 
-See [CONTRIBUTING.md](https://github.com/paullouisageneau/libdatachannel/blob/master/CONTRIBUTING.md) for contribution guidelines.
+See [CONTRIBUTING.md](https://github.com/paullouisageneau/libjuice/blob/master/CONTRIBUTING.md) for contribution guidelines.
 

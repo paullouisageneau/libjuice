@@ -1,18 +1,18 @@
-# libdatachannel - Contribution guidelines
+# libjuice - Contribution guidelines
 
 Glad to have you here, your contributions are welcome!
 
 ## Submitting pull requests
 
-Pull requests can be submitted at <https://github.com/paullouisageneau/libdatachannel/pulls>. Please ensure that you are familiar with the following guidelines before submitting pull requests.
+Pull requests can be submitted at <https://github.com/paullouisageneau/libjuice/pulls>. Please ensure that you are familiar with the following guidelines before submitting pull requests.
 
-For larger contributions, you are encouraged to open an issue first at <https://github.com/paullouisageneau/libdatachannel/issues> to discuss your idea. You do not need to wait for approval before submitting a pull request.
+For larger contributions, you are encouraged to open an issue first at <https://github.com/paullouisageneau/libjuice/issues> to discuss your idea. You do not need to wait for approval before submitting a pull request.
 
 All contributions should be written in English.
 
 ## Licensing
 
-By submitting a pull request, you agree that your contribution will be licensed under the MPL 2.0, see [LICENSE](https://github.com/paullouisageneau/libdatachannel/blob/master/LICENSE).
+By submitting a pull request, you agree that your contribution will be licensed under the MPL 2.0, see [LICENSE](https://github.com/paullouisageneau/libjuice/blob/master/LICENSE).
 
 ## Generative AI tools
 
