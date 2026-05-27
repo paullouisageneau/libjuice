@@ -10,6 +10,7 @@
 
 #if USE_NETTLE
 #include <nettle/hmac.h>
+#include <nettle/version.h>
 #else
 #include "picohash.h"
 #endif
@@ -19,7 +20,11 @@ void hmac_sha1(const void *message, size_t size, const void *key, size_t key_siz
 	struct hmac_sha1_ctx ctx;
 	hmac_sha1_set_key(&ctx, key_size, key);
 	hmac_sha1_update(&ctx, size, message);
+#if NETTLE_VERSION_MAJOR >= 4
+	hmac_sha1_digest(&ctx, digest);
+#else
 	hmac_sha1_digest(&ctx, HMAC_SHA1_SIZE, digest);
+#endif
 #else
 	picohash_ctx_t ctx;
 	picohash_init_hmac(&ctx, picohash_init_sha1, key, key_size);
@@ -33,7 +38,11 @@ void hmac_sha256(const void *message, size_t size, const void *key, size_t key_s
 	struct hmac_sha256_ctx ctx;
 	hmac_sha256_set_key(&ctx, key_size, key);
 	hmac_sha256_update(&ctx, size, message);
+#if NETTLE_VERSION_MAJOR >= 4
+	hmac_sha256_digest(&ctx, digest);
+#else
 	hmac_sha256_digest(&ctx, HMAC_SHA256_SIZE, digest);
+#endif
 #else
 	picohash_ctx_t ctx;
 	picohash_init_hmac(&ctx, picohash_init_sha256, key, key_size);
