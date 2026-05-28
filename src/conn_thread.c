@@ -250,7 +250,11 @@ int conn_thread_send(juice_agent_t *agent, const addr_record_t *dst, const char 
 
 	if (conn_impl->send_ds >= 0 && conn_impl->send_ds != ds) {
 		JLOG_VERBOSE("Setting Differentiated Services field to 0x%X", ds);
+#ifdef _WIN32
+		if (udp_set_diffserv_qwave(conn_impl->sock, ds, agent) == 0)
+#else
 		if (udp_set_diffserv(conn_impl->sock, ds) == 0)
+#endif
 			conn_impl->send_ds = ds;
 		else
 			conn_impl->send_ds = -1; // disable for next time
