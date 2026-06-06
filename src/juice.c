@@ -74,6 +74,17 @@ JUICE_EXPORT int juice_add_turn_server(juice_agent_t *agent, const juice_turn_se
 	return JUICE_ERR_SUCCESS;
 }
 
+JUICE_EXPORT int juice_add_turn_server_tcp(juice_agent_t *agent,
+                                           const juice_turn_server_t *turn_server) {
+	if (!agent || !turn_server)
+		return JUICE_ERR_INVALID;
+
+	if (agent_add_turn_server_tcp(agent, turn_server) < 0)
+		return JUICE_ERR_FAILED;
+
+	return JUICE_ERR_SUCCESS;
+}
+
 JUICE_EXPORT int juice_set_remote_gathering_done(juice_agent_t *agent) {
 	if (!agent)
 		return JUICE_ERR_INVALID;
@@ -138,6 +149,15 @@ JUICE_EXPORT int juice_get_selected_addresses(juice_agent_t *agent, char *local,
 		return JUICE_ERR_FAILED;
 
 	return JUICE_ERR_SUCCESS;
+}
+
+JUICE_EXPORT int juice_get_selected_relay_transport(juice_agent_t *agent) {
+	if (!agent)
+		return -1;
+	conn_lock(agent);
+	int ret = agent_get_selected_relay_transport(agent);
+	conn_unlock(agent);
+	return ret;
 }
 
 int juice_set_local_ice_attributes(juice_agent_t *agent, const char *ufrag, const char *pwd)
