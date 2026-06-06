@@ -221,14 +221,14 @@ int conn_poll_prepare(conn_registry_t *registry, pfds_record_t *pfds, timestamp_
 			if (!tc || tc->sock == INVALID_SOCKET) {
 				continue;
 			}
-			struct pollfd *pfd = pfds->pfds + i;
-			pfd->fd = tc->sock;
+			struct pollfd *tcp_pfd = pfds->pfds + i;
+			tcp_pfd->fd = tc->sock;
 			if (tc->state == TCP_STATE_CONNECTING) {
-				pfd->events = POLLOUT;
+				tcp_pfd->events = POLLOUT;
 			} else {
-				pfd->events = POLLIN;
+				tcp_pfd->events = POLLIN;
 				if (tc->write.pending) {
-					pfd->events |= POLLOUT;
+					tcp_pfd->events |= POLLOUT;
 				}
 			}
 			i++;
