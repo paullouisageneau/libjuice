@@ -137,11 +137,12 @@ int tcp_ice_read(socket_t sock, tcp_read_context_t *context) {
 
 		context->bytes_read += len;
 
-		if(context->bytes_read == 2)
+		if (context->bytes_read == 2) {
+			// Header complete: decode the RFC4571 length
 			context->length = ntohs(context->header);
-
-		if (context->length == 0)
-			context->bytes_read = 0; // discard empty datagram
+			if (context->length == 0)
+				context->bytes_read = 0; // discard empty datagram, restart on next frame
+		}
 	}
 
 	context->pending = false;
