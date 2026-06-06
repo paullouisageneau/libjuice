@@ -954,7 +954,7 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 	*next_timestamp = now + 6000000;
 
 	if (agent->state == JUICE_STATE_DISCONNECTED || agent->state == JUICE_STATE_GATHERING)
-		return 0;		
+		return 0;
 
 	for (int i = 0; i < agent->entries_count; ++i) {
 		agent_stun_entry_t *entry = agent->entries + i;
@@ -2338,7 +2338,6 @@ int agent_add_local_relayed_candidate(juice_agent_t *agent, const agent_stun_ent
 	JLOG_DEBUG("Gathered relayed candidate: %s", buffer);
 
 	// Relayed candidates must be differenciated, so match them with already known remote candidates
-	// TODO: why - turn-tcp
 	ice_candidate_t *local = agent->local.candidates + agent->local.candidates_count - 1;
 	for (int i = 0; i < agent->remote.candidates_count; ++i) {
 		ice_candidate_t *remote = agent->remote.candidates + i;

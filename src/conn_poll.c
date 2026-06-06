@@ -135,23 +135,6 @@ void conn_poll_registry_cleanup(conn_registry_t *registry) {
 	registry->impl = NULL;
 }
 
-static nfds_t prepare_tcp_pfd(struct pollfd *pfds, nfds_t i, tcp_conn_t *tc) {
-	if (tc && tc->sock != INVALID_SOCKET) {
-		struct pollfd *pfd = pfds + i;
-		pfd->fd = tc->sock;
-		if (tc->state == TCP_STATE_CONNECTING) {
-			pfd->events = POLLOUT;
-		} else {
-			pfd->events = POLLIN;
-			if (tc->write.pending) {
-				pfd->events |= POLLOUT;
-			}
-		}
-		return i + 1;
-	}
-	return i;
-}
-
 static tcp_conn_t *conn_poll_find_tcp(conn_impl_t *conn_impl, const addr_record_t *dst) {
 	for (int k = 0; k < CONN_MAX_TCP; ++k) {
 		tcp_conn_t *tc = conn_impl->tcp[k];
@@ -234,7 +217,21 @@ int conn_poll_prepare(conn_registry_t *registry, pfds_record_t *pfds, timestamp_
 		i++;
 
 		for (int k = 0; k < CONN_MAX_TCP; ++k) {
-			i = prepare_tcp_pfd(pfds->pfds, i, conn_impl->tcp[k]);
+			const tcp_conn_t *tc = conn_impl->tcp[k];
+			if (!tc || tc->sock == INVALID_SOCKET) {
+				continue;
+			}
+			struct pollfd *pfd = pfds->pfds + i;
+			pfd->fd = tc->sock;
+			if (tc->state == TCP_STATE_CONNECTING) {
+				pfd->events = POLLOUT;
+			} else {
+				pfd->events = POLLIN;
+				if (tc->write.pending) {
+					pfd->events |= POLLOUT;
+				}
+			}
+			i++;
 		}
 	}
 
