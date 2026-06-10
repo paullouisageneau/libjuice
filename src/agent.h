@@ -204,6 +204,8 @@ int agent_process_turn_allocate(juice_agent_t *agent, const stun_message_t *msg,
                                 agent_stun_entry_t *entry);
 int agent_send_turn_allocate_request(juice_agent_t *agent, const agent_stun_entry_t *entry,
                                      stun_method_t method);
+int agent_send_turn_allocate_request_lifetime(juice_agent_t *agent, const agent_stun_entry_t *entry,
+                                     stun_method_t method, uint32_t lifetime);
 int agent_process_turn_create_permission(juice_agent_t *agent, const stun_message_t *msg,
                                          agent_stun_entry_t *entry);
 int agent_send_turn_create_permission_request(juice_agent_t *agent, agent_stun_entry_t *entry,
