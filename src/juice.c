@@ -30,6 +30,47 @@ JUICE_EXPORT void juice_destroy(juice_agent_t *agent) {
 		agent_destroy(agent);
 }
 
+JUICE_EXPORT int juice_close_turn_allocation(juice_agent_t *agent) {
+	if (!agent)
+		return JUICE_ERR_INVALID;
+
+	JLOG_DEBUG("Sending TURN Refresh(0) for all relay entries");
+
+	for (int i = 0; i < agent->entries_count; ++i) {
+		agent_stun_entry_t *entry = &agent->entries[i];
+
+		// Only refresh relay entries with an active TURN allocation
+		if (entry->type != AGENT_STUN_ENTRY_TYPE_RELAY){
+			JLOG_VERBOSE("Skipping entry %d: not a relay entry", i);
+			continue;
+		}
+
+		if (!entry->turn){
+			JLOG_VERBOSE("Skipping entry %d: no active TURN allocation", i);
+			continue;
+		}
+
+		JLOG_INFO("Sending Refresh(0) for entry %d", i);
+
+		int ret = agent_send_turn_allocate_request_lifetime(
+						agent,
+						entry,
+						STUN_METHOD_REFRESH,
+						0  // lifetime of 0 to close the allocation
+		);
+
+		if (ret < 0) {
+			JLOG_WARN("Failed to send TURN Refresh(0) for entry %d with error code %d", i, ret);
+		}else{
+			JLOG_VERBOSE("Successfully sent TURN Refresh(0) for entry %d", i);
+		}
+	}
+
+	JLOG_DEBUG("Finished sending TURN Refresh(0) for all relay entries");
+
+	return JUICE_ERR_SUCCESS;
+}
+
 JUICE_EXPORT int juice_gather_candidates(juice_agent_t *agent) {
 	if (!agent)
 		return JUICE_ERR_INVALID;
