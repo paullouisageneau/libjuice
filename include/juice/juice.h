@@ -121,6 +121,7 @@ typedef struct juice_config {
 JUICE_EXPORT juice_agent_t *juice_create(const juice_config_t *config);
 JUICE_EXPORT void juice_destroy(juice_agent_t *agent);
 
+JUICE_EXPORT int juice_close_turn_allocation(juice_agent_t *agent);
 JUICE_EXPORT int juice_gather_candidates(juice_agent_t *agent);
 JUICE_EXPORT int juice_get_local_description(juice_agent_t *agent, char *buffer, size_t size);
 JUICE_EXPORT int juice_set_remote_description(juice_agent_t *agent, const char *sdp);
