@@ -74,6 +74,10 @@ static int copy_turn_server(juice_turn_server_t *dst, const juice_turn_server_t 
 	return 0;
 }
 
+static bool entry_is_tcp(agent_stun_entry_t *entry) {
+	return (entry->pair && entry->pair->remote->transport != ICE_CANDIDATE_TRANSPORT_UDP);
+}
+
 juice_agent_t *agent_create(const juice_config_t *config) {
 	JLOG_VERBOSE("Creating agent");
 
@@ -875,18 +879,20 @@ void agent_register_entry_for_candidate_pair(juice_agent_t *agent, ice_candidate
 int agent_conn_tcp_state(juice_agent_t *agent, const addr_record_t *dst, tcp_state_t state) {
 	for (int i = 0; i < agent->entries_count; ++i) {
 		agent_stun_entry_t *entry = agent->entries + i;
-		if (entry->pair && entry->pair->remote->transport != ICE_CANDIDATE_TRANSPORT_UDP &&
-		    addr_record_is_equal(&entry->record, dst, true)) {
-			entry->pair->tcp_state = state;
+		if (entry_is_tcp(entry) && addr_record_is_equal(&entry->record, dst, true)) {
+			entry->tcp_state = state;
 			switch (state) {
 			case TCP_STATE_CONNECTED:
 				agent_arm_transmission(agent, entry, 0); // transmit now
 				break;
 			case TCP_STATE_DISCONNECTED:
 			case TCP_STATE_FAILED:
-				entry->pair->state = ICE_CANDIDATE_PAIR_STATE_FAILED;
 				entry->state = AGENT_STUN_ENTRY_STATE_FAILED;
 				entry->next_transmission = 0;
+
+				if(entry->pair)
+					entry->pair->state = ICE_CANDIDATE_PAIR_STATE_FAILED;
+
 				conn_interrupt(agent);
 				break;
 			default:
@@ -916,11 +922,11 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 			if (entry->next_transmission > now)
 				continue;
 
-			if (entry->pair && entry->pair->remote->transport != ICE_CANDIDATE_TRANSPORT_UDP) {
-			    if (entry->pair->tcp_state == TCP_STATE_DISCONNECTED)
+			if (entry_is_tcp(entry)) {
+			    if (entry->tcp_state == TCP_STATE_DISCONNECTED)
 					conn_tcp_connect(agent, &entry->record); // First attempt a TCP connection
 
-				if(entry->pair->tcp_state != TCP_STATE_CONNECTED)
+				if(entry->tcp_state != TCP_STATE_CONNECTED)
 					continue;
 			}
 
@@ -992,7 +998,7 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 		}
 		// STUN keepalives
 		else if (entry->state == AGENT_STUN_ENTRY_STATE_SUCCEEDED_KEEPALIVE) {
-#if JUICE_DISABLE_CONSENT_FRESHNESS
+#if defined(JUICE_DISABLE_CONSENT_FRESHNESS) && JUICE_DISABLE_CONSENT_FRESHNESS
 			// No expiration
 #else
 			// Consent freshness expiration
@@ -1028,7 +1034,7 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 				ret = agent_send_stun_binding(agent, entry, STUN_CLASS_REQUEST, 0, NULL, NULL);
 				break;
 			default:
-#if JUICE_DISABLE_CONSENT_FRESHNESS
+#if defined(JUICE_DISABLE_CONSENT_FRESHNESS) && JUICE_DISABLE_CONSENT_FRESHNESS
 				// RFC 8445 11. Keepalives:
 				// All endpoints MUST send keepalives for each data session. [...] STUN keepalives
 				// MUST be used when an ICE agent is a full ICE implementation and is communicating
@@ -1040,7 +1046,7 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 				// STUN binding requests sent for consent freshness also serve the keepalive purpose
 				// (i.e., to keep NAT bindings alive). Because of that, dedicated keepalives (e.g.,
 				// STUN Binding Indications) are not sent on candidate pairs where consent requests
-				// are sent, in accordance with Section 20.2.3 of [RFC5245].
+				// are sent, in accordance with Section 20.2.3 of [RFC5245].
 				ret = agent_send_stun_binding(agent, entry, STUN_CLASS_REQUEST, 0, NULL, NULL);
 #endif
 				break;
@@ -1230,7 +1236,7 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 		if (entry->next_transmission && *next_timestamp > entry->next_transmission)
 			*next_timestamp = entry->next_transmission;
 
-#if JUICE_DISABLE_CONSENT_FRESHNESS
+#if defined(JUICE_DISABLE_CONSENT_FRESHNESS) && JUICE_DISABLE_CONSENT_FRESHNESS
 		// No expiration
 #else
 		if (entry->state == AGENT_STUN_ENTRY_STATE_SUCCEEDED_KEEPALIVE && entry->pair &&
@@ -1956,7 +1962,7 @@ int agent_process_turn_allocate(juice_agent_t *agent, const stun_message_t *msg,
 }
 
 int agent_send_turn_allocate_request_lifetime(juice_agent_t *agent, const agent_stun_entry_t *entry,
-                                              stun_method_t method, uint32_t lifetime) {
+                                              stun_method_t method) {
 	if (method != STUN_METHOD_ALLOCATE && method != STUN_METHOD_REFRESH)
 		return -1;
 
@@ -1980,7 +1986,7 @@ int agent_send_turn_allocate_request_lifetime(juice_agent_t *agent, const agent_
 
 	msg.lifetime = lifetime / 1000; // seconds
 	msg.lifetime_set = true;
-
+	
 	// Include allocation attributes in Allocate request only
 	if (method == STUN_METHOD_ALLOCATE) {
 		msg.requested_transport = true;
@@ -2541,7 +2547,7 @@ void agent_arm_keepalive(juice_agent_t *agent, agent_stun_entry_t *entry) {
 		period = STUN_KEEPALIVE_PERIOD;
 		break;
 	default:
-#if JUICE_DISABLE_CONSENT_FRESHNESS
+#if defined(JUICE_DISABLE_CONSENT_FRESHNESS) && JUICE_DISABLE_CONSENT_FRESHNESS
 		period = STUN_KEEPALIVE_PERIOD;
 #else
 		period = MIN_CONSENT_CHECK_PERIOD +
@@ -2562,7 +2568,7 @@ void agent_arm_transmission(juice_agent_t *agent, agent_stun_entry_t *entry, tim
 	entry->next_transmission = current_timestamp() + delay;
 
 	if (entry->state == AGENT_STUN_ENTRY_STATE_PENDING) {
-		if (entry->pair && entry->pair->remote->transport != ICE_CANDIDATE_TRANSPORT_UDP) {
+		if (entry_is_tcp(entry)) {
 			entry->retransmission_timeout = STUN_TCP_TIMEOUT;
 			entry->retransmissions = 0; // do not retransmit
 		} else {
@@ -2764,7 +2770,7 @@ void agent_translate_host_candidate_entry(juice_agent_t *agent, agent_stun_entry
 	if (!entry->pair || entry->pair->remote->type != ICE_CANDIDATE_TYPE_HOST)
 		return;
 
-#if JUICE_ENABLE_LOCAL_ADDRESS_TRANSLATION
+#if defined(JUICE_ENABLE_LOCAL_ADDRESS_TRANSLATION) && JUICE_ENABLE_LOCAL_ADDRESS_TRANSLATION
 	for (int i = 0; i < agent->local.candidates_count; ++i) {
 		ice_candidate_t *candidate = agent->local.candidates + i;
 		if (candidate->type != ICE_CANDIDATE_TYPE_HOST)
