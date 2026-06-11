@@ -36,6 +36,8 @@ JUICE_EXPORT int juice_close_turn_allocation(juice_agent_t *agent) {
 
 	JLOG_DEBUG("Sending TURN Refresh(0) for all relay entries");
 
+	conn_lock(agent);
+	
 	for (int i = 0; i < agent->entries_count; ++i) {
 		agent_stun_entry_t *entry = &agent->entries[i];
 
@@ -65,6 +67,8 @@ JUICE_EXPORT int juice_close_turn_allocation(juice_agent_t *agent) {
 			JLOG_VERBOSE("Successfully sent TURN Refresh(0) for entry %d", i);
 		}
 	}
+
+	conn_unlock(agent);
 
 	JLOG_DEBUG("Finished sending TURN Refresh(0) for all relay entries");
 
