@@ -1962,7 +1962,7 @@ int agent_process_turn_allocate(juice_agent_t *agent, const stun_message_t *msg,
 }
 
 int agent_send_turn_allocate_request_lifetime(juice_agent_t *agent, const agent_stun_entry_t *entry,
-                                              stun_method_t method) {
+                                              stun_method_t method, uint32_t lifetime) {
 	if (method != STUN_METHOD_ALLOCATE && method != STUN_METHOD_REFRESH)
 		return -1;
 
