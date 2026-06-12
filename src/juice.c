@@ -37,7 +37,7 @@ JUICE_EXPORT int juice_close_turn_allocation(juice_agent_t *agent) {
 	JLOG_DEBUG("Sending TURN Refresh(0) for all relay entries");
 
 	conn_lock(agent);
-	
+
 	for (int i = 0; i < agent->entries_count; ++i) {
 		agent_stun_entry_t *entry = &agent->entries[i];
 
@@ -52,18 +52,26 @@ JUICE_EXPORT int juice_close_turn_allocation(juice_agent_t *agent) {
 			continue;
 		}
 
+		if (!entry->transaction_id_expired) {
+			JLOG_WARN("Entry %d has a pending STUN transaction, overwriting", i);
+		}
+
 		JLOG_INFO("Sending Refresh(0) for entry %d", i);
+
+		juice_random(entry->transaction_id, STUN_TRANSACTION_ID_SIZE);
+		entry->transaction_id_expired = false;
 
 		int ret = agent_send_turn_allocate_request_lifetime(
 						agent,
 						entry,
 						STUN_METHOD_REFRESH,
-						0  // lifetime of 0 to close the allocation
+						0  // lifetime of 0 to request to close the allocation
 		);
 
 		if (ret < 0) {
 			JLOG_WARN("Failed to send TURN Refresh(0) for entry %d with error code %d", i, ret);
-		}else{
+			entry->transaction_id_expired = true;
+		} else {
 			JLOG_VERBOSE("Successfully sent TURN Refresh(0) for entry %d", i);
 		}
 	}
@@ -73,6 +81,7 @@ JUICE_EXPORT int juice_close_turn_allocation(juice_agent_t *agent) {
 	JLOG_DEBUG("Finished sending TURN Refresh(0) for all relay entries");
 
 	return JUICE_ERR_SUCCESS;
+}
 }
 
 JUICE_EXPORT int juice_gather_candidates(juice_agent_t *agent) {
