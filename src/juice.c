@@ -82,7 +82,6 @@ JUICE_EXPORT int juice_close_turn_allocation(juice_agent_t *agent) {
 
 	return JUICE_ERR_SUCCESS;
 }
-}
 
 JUICE_EXPORT int juice_gather_candidates(juice_agent_t *agent) {
 	if (!agent)
