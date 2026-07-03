@@ -268,7 +268,7 @@ int test_turn_relay() {
 
 	int ret = 0;
 
-	for (int m = 0; m < 2; ++m) {
+	for (int m = 0; m < (int)(sizeof(modes) / sizeof(modes[0])); ++m) {
 		juice_concurrency_mode_t mode = modes[m].mode;
 		const char *mn = modes[m].mode_name;
 		char name[64];
@@ -334,7 +334,7 @@ int test_turn_udp_preferred(void) {
 	};
 
 	for (int s = 0; s < 2; ++s) {
-		for (int m = 0; m < 2; ++m) {
+		for (int m = 0; m < (int)(sizeof(modes) / sizeof(modes[0])); ++m) {
 			juice_concurrency_mode_t mode = modes[m].mode;
 			const char *mn = modes[m].mode_name;
 

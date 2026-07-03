@@ -253,12 +253,19 @@ int tcp_stun_read(socket_t sock, tcp_read_context_t *context) {
 			memcpy(&payload_len, context->buffer + 2, sizeof(uint16_t));
 			payload_len = ntohs(payload_len);
 
+			// Compute the total length in 32 bits to avoid overflowing the 16-bit length field
+			uint32_t total;
 			if (first_byte <= 0x3F)
-				context->length = STUN_HEADER_SIZE + payload_len;
+				total = (uint32_t)STUN_HEADER_SIZE + payload_len;
 			else if (first_byte <= 0x4F)
-				context->length = CHANNEL_DATA_HEADER_SIZE + ((payload_len + 3) & ~3u);
+				total = (uint32_t)CHANNEL_DATA_HEADER_SIZE + (((uint32_t)payload_len + 3) & ~3u);
 			else
 				return -SECONNRESET; // neither STUN nor ChannelData: invalid framing
+
+			if (total > UINT16_MAX)
+				return -SECONNRESET; // length does not fit the framing, treat as invalid
+
+			context->length = (uint16_t)total;
 		}
 	}
 

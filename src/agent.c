@@ -391,7 +391,7 @@ static void agent_resolve_turn_servers(juice_agent_t *agent, juice_turn_server_t
 			if (records_count > DEFAULT_MAX_RECORDS_COUNT)
 				records_count = DEFAULT_MAX_RECORDS_COUNT;
 
-			JLOG_INFO("Using TURN server %s:%s over %s%", hostname, service, (socktype == SOCK_DGRAM ? "UDP" : "TCP"));
+			JLOG_INFO("Using TURN server %s:%s over %s", hostname, service, (socktype == SOCK_DGRAM ? "UDP" : "TCP"));
 
 			addr_record_t *record = NULL;
 			for (int j = 0; j < records_count; ++j) {
@@ -696,6 +696,10 @@ int agent_add_turn_server_tcp(juice_agent_t *agent, const juice_turn_server_t *t
 		JLOG_WARN("Unable to add TURN server, candidates gathering already started");
 		return -1;
 	}
+	if (agent->config.concurrency_mode != JUICE_CONCURRENCY_MODE_POLL) {
+		JLOG_WARN("TURN over TCP is only supported in poll concurrency mode");
+		return -1;
+	}
 	return agent_add_turn_server_to_list(&agent->turn_servers_tcp,
 	                               &agent->turn_servers_tcp_count, turn_server);
 }
@@ -933,6 +937,9 @@ int agent_conn_tcp_state(juice_agent_t *agent, const addr_record_t *dst, tcp_sta
 
 				if(entry->pair)
 					entry->pair->state = ICE_CANDIDATE_PAIR_STATE_FAILED;
+
+				if (entry->type != AGENT_STUN_ENTRY_TYPE_CHECK)
+					agent_update_gathering_done(agent);
 
 				conn_interrupt(agent);
 				break;
@@ -1906,6 +1913,21 @@ int agent_process_turn_allocate(juice_agent_t *agent, const stun_message_t *msg,
 			char relayed_str[ADDR_MAX_STRING_LEN];
 			addr_record_to_string(&entry->relayed, relayed_str, ADDR_MAX_STRING_LEN);
 			JLOG_INFO("Allocated TURN relayed address %s", relayed_str);
+		}
+
+		if (!entry_is_tcp(entry)) {
+			// A relay obtained over UDP is preferred: cancel TURN TCP entries that have not
+			// started connecting yet
+			for (int i = 0; i < agent->entries_count; ++i) {
+				agent_stun_entry_t *other_entry = agent->entries + i;
+				if (other_entry->type == AGENT_STUN_ENTRY_TYPE_RELAY && entry_is_tcp(other_entry) &&
+				    other_entry->state == AGENT_STUN_ENTRY_STATE_PENDING &&
+				    other_entry->tcp_state == TCP_STATE_DISCONNECTED) {
+					JLOG_DEBUG("STUN entry %d: Cancelled TURN TCP entry as a relay was obtained over UDP", i);
+					other_entry->state = AGENT_STUN_ENTRY_STATE_CANCELLED;
+					other_entry->next_transmission = 0;
+				}
+			}
 		}
 
 		agent_update_gathering_done(agent);

@@ -683,35 +683,54 @@ void conn_poll_tcp_connect(juice_agent_t *agent, const addr_record_t *dst, tcp_f
 
 	mutex_lock(&conn_impl->registry->mutex);
 	mutex_lock(&conn_impl->send_mutex);
+
 	tcp_conn_t *tc = conn_poll_find_tcp(conn_impl, dst);
-	if (!tc) {
-		int k = 0;
+	int k = -1;
+	if (tc) {
+		if (tc->sock != INVALID_SOCKET)
+			goto done; // a connection to this destination already exists
+
+		// Reuse the slot of a previously closed connection to the same destination
+		for (k = 0; k < CONN_MAX_TCP; ++k) {
+			if (conn_impl->tcp[k] == tc) break;
+		}
+		tcp_conn_init(tc, framing);
+	} else {
 		for (k = 0; k < CONN_MAX_TCP; ++k) {
 			if (!conn_impl->tcp[k]) {
 				tc = calloc(1, sizeof(tcp_conn_t));
-				if (tc) {
-					tcp_conn_init(tc, framing);
-					conn_impl->tcp[k] = tc;
+				if (!tc) {
+					JLOG_ERROR("Memory allocation for TCP connection failed");
+					goto done;
 				}
+				tcp_conn_init(tc, framing);
+				conn_impl->tcp[k] = tc;
 				break;
 			}
 		}
-		if (tc) {
-			const char *label = tcp_framing_to_string(tc->framing);
-			char dst_str[ADDR_MAX_STRING_LEN];
-			addr_record_to_string(dst, dst_str, ADDR_MAX_STRING_LEN);
-			JLOG_DEBUG("Attempting %s connection to %s", label, dst_str);
-			tc->sock = tcp_create_socket(dst);
-			if (tc->sock == INVALID_SOCKET) {
-				JLOG_WARN("%s socket creation failed for %s", label, dst_str);
-				free(tc);
-				conn_impl->tcp[k] = NULL;
-			} else {
-				memcpy(&tc->dst, dst, sizeof(tc->dst));
-				conn_poll_change_tcp_state(agent, tc, TCP_STATE_CONNECTING);
-			}
+		if (k == CONN_MAX_TCP) {
+			JLOG_WARN("No free TCP connection slot available");
+			goto done;
 		}
 	}
+
+	{
+		const char *label = tcp_framing_to_string(tc->framing);
+		char dst_str[ADDR_MAX_STRING_LEN];
+		addr_record_to_string(dst, dst_str, ADDR_MAX_STRING_LEN);
+		JLOG_DEBUG("Attempting %s connection to %s", label, dst_str);
+		tc->sock = tcp_create_socket(dst);
+		if (tc->sock == INVALID_SOCKET) {
+			JLOG_WARN("%s socket creation failed for %s", label, dst_str);
+			free(tc);
+			conn_impl->tcp[k] = NULL;
+		} else {
+			memcpy(&tc->dst, dst, sizeof(tc->dst));
+			conn_poll_change_tcp_state(agent, tc, TCP_STATE_CONNECTING);
+		}
+	}
+
+done:
 	mutex_unlock(&conn_impl->send_mutex);
 	mutex_unlock(&conn_impl->registry->mutex);
 }
