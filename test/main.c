@@ -169,13 +169,11 @@ int main(int argc, char **argv) {
 		fprintf(stderr, "ICE-TCP write EAGAIN sign test failed\n");
 		return -2;
 	}
-/*
 	printf("\nRunning TURN TCP connection failure test...\n");
 	if (test_turn_tcp_fail()) {
 		fprintf(stderr, "TURN TCP connection failure test failed\n");
 		return -1;
 	}
-*/
 #ifdef _WIN32
 	WSACleanup();
 #endif
