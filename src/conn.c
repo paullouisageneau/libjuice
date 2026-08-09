@@ -254,13 +254,15 @@ int conn_send(juice_agent_t *agent, const addr_record_t *dst, const char *data, 
 	return get_agent_mode_entry(agent)->send_func(agent, dst, data, size, ds);
 }
 
-void conn_tcp_connect(juice_agent_t *agent, const addr_record_t *dst) {
+void conn_tcp_connect(juice_agent_t *agent, const addr_record_t *dst, tcp_framing_t framing) {
 	if (!agent->conn_impl)
 		return;
 
 	conn_mode_entry_t *entry = get_agent_mode_entry(agent);
 	if (entry->tcp_connect_func)
-		entry->tcp_connect_func(agent, dst);
+		entry->tcp_connect_func(agent, dst, framing);
+	else
+		JLOG_WARN("TCP connect not supported in this concurrency mode");
 }
 
 int conn_get_addrs(juice_agent_t *agent, addr_record_t *records, size_t size) {
