@@ -21,6 +21,7 @@ For a STUN/TURN server application based on libjuice, see [Violet](https://githu
 
 The library implements a simplified full ICE agent ([RFC5245](https://www.rfc-editor.org/rfc/rfc5245.html) then [RFC8445](https://www.rfc-editor.org/rfc/rfc8445.html)) featuring:
 - STUN protocol ([RFC5389](https://www.rfc-editor.org/rfc/rfc5389.html) then [RFC8489](https://www.rfc-editor.org/rfc/rfc8489.html))
+- NAT behavior discovery attributes in the STUN protocol layer ([RFC5780](https://www.rfc-editor.org/rfc/rfc5780.html)): CHANGE-REQUEST, RESPONSE-ORIGIN, OTHER-ADDRESS, RESPONSE-PORT, and PADDING
 - TURN relaying ([RFC5766](https://www.rfc-editor.org/rfc/rfc5766.html) then [RFC8656](https://www.rfc-editor.org/rfc/rfc8656.html))
 - TCP candidates ([RFC6544](https://www.rfc-editor.org/rfc/rfc6544.html))
 - ICE Consent freshness ([RFC7675](https://www.rfc-editor.org/rfc/rfc7675.html))
@@ -34,7 +35,7 @@ The limitations compared to a fully-featured ICE agent are:
 - Only one component is supported, which is sufficient for WebRTC Data Channels and multiplexed RTP+RTCP.
 - Only [RFC8828](https://www.rfc-editor.org/rfc/rfc8828) mode 2 is supported (default route + all local addresses).
 
-It also implements a lightweight STUN/TURN server ([RFC8489](https://www.rfc-editor.org/rfc/rfc8489.html) and [RFC8656](https://www.rfc-editor.org/rfc/rfc8656.html)). The server can be disabled at compile-time with the `NO_SERVER` flag.
+It also implements a lightweight STUN/TURN server ([RFC8489](https://www.rfc-editor.org/rfc/rfc8489.html) and [RFC8656](https://www.rfc-editor.org/rfc/rfc8656.html)). It adds RESPONSE-ORIGIN to Binding responses and honors RESPONSE-PORT, but as it listens on a single address it does not support NAT behavior discovery: it never advertises OTHER-ADDRESS and answers 420 to CHANGE-REQUEST, as [RFC5780](https://www.rfc-editor.org/rfc/rfc5780.html) mandates in that case. The server can be disabled at compile-time with the `NO_SERVER` flag.
 
 ## Dependencies
 
