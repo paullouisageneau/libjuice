@@ -102,6 +102,7 @@ struct stun_attr {
 typedef enum stun_attr_type {
 	// Comprehension-required
 	STUN_ATTR_MAPPED_ADDRESS = 0x0001,
+	STUN_ATTR_CHANGE_REQUEST = 0x0003,
 	STUN_ATTR_USERNAME = 0x0006,
 	STUN_ATTR_MESSAGE_INTEGRITY = 0x0008,
 	STUN_ATTR_ERROR_CODE = 0x0009,
@@ -114,6 +115,8 @@ typedef enum stun_attr_type {
 	STUN_ATTR_XOR_MAPPED_ADDRESS = 0x0020,
 	STUN_ATTR_PRIORITY = 0x0024,
 	STUN_ATTR_USE_CANDIDATE = 0x0025,
+	STUN_ATTR_PADDING = 0x0026,
+	STUN_ATTR_RESPONSE_PORT = 0x0027,
 
 	// Comprehension-optional
 	STUN_ATTR_PASSWORD_ALGORITHMS = 0x8002,
@@ -123,6 +126,8 @@ typedef enum stun_attr_type {
 	STUN_ATTR_FINGERPRINT = 0x8028,
 	STUN_ATTR_ICE_CONTROLLED = 0x8029,
 	STUN_ATTR_ICE_CONTROLLING = 0x802A,
+	STUN_ATTR_RESPONSE_ORIGIN = 0x802B,
+	STUN_ATTR_OTHER_ADDRESS = 0x802C,
 
 	// Attributes for TURN
 	// See https://www.rfc-editor.org/rfc/rfc8656.html#section-18
@@ -300,6 +305,13 @@ typedef enum stun_password_algorithm {
 // RFC 5766: When forming a CreatePermission request, the client MUST include at least one XOR-PEER-ADDRESS attribute, and MAY include more than one such attribute.
 #define STUN_MAX_PEER_ADDRESSES 8
 
+#define STUN_MAX_UNKNOWN_ATTRIBUTES 8
+
+// RFC 5780: The CHANGE-REQUEST attribute contains two flags to control the IP address and port that
+// the server uses to send the response
+#define STUN_CHANGE_REQUEST_IP 0x04
+#define STUN_CHANGE_REQUEST_PORT 0x02
+
 typedef struct stun_credentials {
 	char username[STUN_MAX_USERNAME_LEN];
 	char realm[STUN_MAX_REALM_LEN];
@@ -320,7 +332,21 @@ typedef struct stun_message {
 	uint64_t ice_controlling;
 	uint64_t ice_controlled;
 	bool use_candidate;
+	uint16_t unknown_attributes[STUN_MAX_UNKNOWN_ATTRIBUTES];
+	size_t unknown_attributes_count;
 	addr_record_t mapped;
+
+	// RFC 5780
+	uint32_t change_request;
+	bool has_change_request;
+	bool change_ip;
+	bool change_port;
+	uint16_t response_port;
+	bool has_response_port;
+	const char *padding;
+	size_t padding_size;
+	addr_record_t response_origin;
+	addr_record_t other_address;
 
 	stun_credentials_t credentials;
 
