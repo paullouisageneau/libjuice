@@ -38,7 +38,19 @@ timestamp_t current_timestamp() {
 	return (timestamp_t)GetTickCount();
 #else // POSIX
 	struct timespec ts;
-	if (clock_gettime(CLOCK_MONOTONIC, &ts))
+	/*
+	 * ICE consent and TURN allocation deadlines continue to elapse while a
+	 * machine is suspended. CLOCK_MONOTONIC stops during suspend on Linux,
+	 * which leaves those deadlines artificially fresh after resume and can
+	 * delay failure detection for several minutes. CLOCK_BOOTTIME has the same
+	 * monotonic guarantees and includes suspended time.
+	 */
+#ifdef CLOCK_BOOTTIME
+	const clockid_t clock_id = CLOCK_BOOTTIME;
+#else
+	const clockid_t clock_id = CLOCK_MONOTONIC;
+#endif
+	if (clock_gettime(clock_id, &ts))
 		return 0;
 	return (timestamp_t)ts.tv_sec * 1000 + (timestamp_t)ts.tv_nsec / 1000000;
 #endif
