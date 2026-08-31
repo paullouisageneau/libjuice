@@ -452,7 +452,7 @@ inline void _picohash_sha1_final(_picohash_sha1_ctx_t *s, void *digest)
     _picohash_sha1_add_uncounted(s, (uint8_t)(s->byteCount >> 5));
     _picohash_sha1_add_uncounted(s, (uint8_t)(s->byteCount << 3));
 
-#ifndef SHA_BIG_ENDIAN
+#ifndef _PICOHASH_BIG_ENDIAN
     { // Swap byte order back
         int i;
         for (i = 0; i < 5; i++) {
