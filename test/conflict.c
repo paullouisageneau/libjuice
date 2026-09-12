@@ -8,6 +8,8 @@
 
 #include "juice/juice.h"
 
+#include "agent.h"
+
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -37,7 +39,8 @@ static void on_gathering_done2(juice_agent_t *agent, void *user_ptr);
 static void on_recv1(juice_agent_t *agent, const char *data, size_t size, void *user_ptr);
 static void on_recv2(juice_agent_t *agent, const char *data, size_t size, void *user_ptr);
 
-int test_conflict() {
+static int test_conflict_with_roles(agent_mode_t mode1, agent_mode_t mode2,
+                                   uint64_t tiebreaker1, uint64_t tiebreaker2) {
 	juice_set_log_level(JUICE_LOG_LEVEL_DEBUG);
 
 	// Agent 1: Create agent
@@ -80,6 +83,13 @@ int test_conflict() {
 
 	// Agent 2: Receive description from agent 1
 	juice_set_remote_description(agent2, sdp1);
+
+	if (mode1 != AGENT_MODE_UNKNOWN) {
+		agent1->mode = mode1;
+		agent2->mode = mode2;
+		agent1->ice_tiebreaker = tiebreaker1;
+		agent2->ice_tiebreaker = tiebreaker2;
+	}
 
 	// Agent 1: Gather candidates (and send them to agent 2)
 	juice_gather_candidates(agent1);
@@ -131,6 +141,20 @@ int test_conflict() {
 		printf("Failure\n");
 		return -1;
 	}
+}
+
+int test_conflict(void) {
+	if (test_conflict_with_roles(AGENT_MODE_UNKNOWN, AGENT_MODE_UNKNOWN, 0, 0))
+		return -1;
+
+	const agent_mode_t modes[] = {AGENT_MODE_CONTROLLING, AGENT_MODE_CONTROLLED};
+	for (size_t i = 0; i < sizeof(modes) / sizeof(modes[0]); ++i) {
+		if (test_conflict_with_roles(modes[i], modes[i], 0, 1) ||
+		    test_conflict_with_roles(modes[i], modes[i], 1, 0) ||
+		    test_conflict_with_roles(modes[i], modes[1 - i], 0, 1))
+			return -1;
+	}
+	return 0;
 }
 
 // Agent 1: on state changed

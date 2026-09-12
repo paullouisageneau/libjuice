@@ -58,7 +58,8 @@ int test_stun(void) {
 	if (msg.priority != 0x6e0001ff)
 		return -1;
 
-	if (msg.ice_controlled != 0x932ff9b151263b36LL)
+	if (!msg.has_ice_controlled || msg.has_ice_controlling ||
+	    msg.ice_controlled != 0x932ff9b151263b36LL)
 		return -1;
 
 	if (!msg.has_integrity)
@@ -150,6 +151,53 @@ int test_stun(void) {
 
 	if(msg.error_code != STUN_ERROR_INTERNAL_VALIDATION_FAILED)
 		return -1;
+
+	uint8_t role_message[] = {
+	    0x00, 0x01, 0x00, 0x0c,
+	    0x21, 0x12, 0xa4, 0x42,
+	    0x00, 0x00, 0x00, 0x00,
+	    0x00, 0x00, 0x00, 0x00,
+	    0x00, 0x00, 0x00, 0x00,
+	    0x80, 0x29, 0x00, 0x08,
+	    0x00, 0x00, 0x00, 0x00,
+	    0x00, 0x00, 0x00, 0x00,
+	};
+	for (int controlling = 0; controlling < 2; ++controlling) {
+		role_message[21] = controlling ? 0x2a : 0x29;
+		memset(&msg, 0, sizeof(msg));
+		if (_juice_stun_read(role_message, sizeof(role_message), &msg) <= 0 ||
+		    msg.has_ice_controlling != (bool)controlling ||
+		    msg.has_ice_controlled != !controlling || msg.ice_controlling || msg.ice_controlled)
+			return -1;
+	}
+
+	const uint64_t tiebreakers[] = {0, 1, UINT64_MAX};
+	for (unsigned int roles = 0; roles < 4; ++roles) {
+		for (size_t i = 0; i < sizeof(tiebreakers) / sizeof(tiebreakers[0]); ++i) {
+			memset(&msg, 0, sizeof(msg));
+			msg.msg_class = STUN_CLASS_REQUEST;
+			msg.msg_method = STUN_METHOD_BINDING;
+			msg.has_ice_controlling = (roles & 1) != 0;
+			msg.has_ice_controlled = (roles & 2) != 0;
+			msg.ice_controlling = tiebreakers[i];
+			msg.ice_controlled = tiebreakers[i];
+
+			uint8_t buffer[256];
+			int len = _juice_stun_write(buffer, sizeof(buffer), &msg, "password");
+			if (len <= 0)
+				return -1;
+
+			stun_message_t parsed;
+			memset(&parsed, 0, sizeof(parsed));
+			if (_juice_stun_read(buffer, len, &parsed) <= 0 ||
+			    parsed.has_ice_controlling != msg.has_ice_controlling ||
+			    parsed.has_ice_controlled != msg.has_ice_controlled ||
+			    parsed.ice_controlling != (msg.has_ice_controlling ? tiebreakers[i] : 0) ||
+			    parsed.ice_controlled != (msg.has_ice_controlled ? tiebreakers[i] : 0) ||
+			    !_juice_stun_check_integrity(buffer, len, &parsed, "password"))
+				return -1;
+		}
+	}
 
 	return 0;
 }
