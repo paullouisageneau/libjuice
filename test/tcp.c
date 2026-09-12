@@ -95,6 +95,7 @@ void run_passive_ice_tcp(socket_t server_socket) {
 		msg.msg_method = STUN_METHOD_BINDING;
 		msg.priority = 0;
 		msg.ice_controlling = 0;
+		msg.has_ice_controlling = false;
 
 		char buffer[STUN_WRITE_BUFFER_SIZE];
 		if ((len = _juice_stun_write(buffer, STUN_WRITE_BUFFER_SIZE, &msg, ICE_PWD)) < 0)
