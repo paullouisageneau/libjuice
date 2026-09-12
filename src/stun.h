@@ -319,6 +319,8 @@ typedef struct stun_message {
 	uint32_t priority;
 	uint64_t ice_controlling;
 	uint64_t ice_controlled;
+	bool has_ice_controlling;
+	bool has_ice_controlled;
 	bool use_candidate;
 	addr_record_t mapped;
 
