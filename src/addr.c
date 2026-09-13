@@ -285,12 +285,12 @@ int addr_resolve(const char *hostname, const char *service, int socktype, addr_r
 	return ret;
 }
 
-bool addr_is_numeric_hostname(const char *hostname) {
+bool addr_is_numeric_hostname(const char *hostname, int socktype) {
 	struct addrinfo hints;
 	memset(&hints, 0, sizeof(hints));
 	hints.ai_family = AF_UNSPEC;
-	hints.ai_socktype = SOCK_DGRAM;
-	hints.ai_protocol = IPPROTO_UDP;
+	hints.ai_socktype = socktype;
+	hints.ai_protocol = socktype == SOCK_DGRAM ? IPPROTO_UDP : IPPROTO_TCP;
 	hints.ai_flags = AI_NUMERICHOST | AI_NUMERICSERV;
 	struct addrinfo *ai_list = NULL;
 	if (getaddrinfo(hostname, "9", &hints, &ai_list))
