@@ -319,7 +319,7 @@ int ice_generate_sdp(const ice_description_t *description, char *buffer, size_t 
 			if (description->finished)
 				ret = snprintf(begin, end - begin, "a=end-of-candidates\r\na=ice-options:ice2\r\n");
 			else
-				ret = snprintf(begin, end - begin, "a=ice-options:ice2,trickle\r\n");
+				ret = snprintf(begin, end - begin, "a=ice-options:ice2 trickle\r\n");
 		}
 		if (ret < 0)
 			return -1;
