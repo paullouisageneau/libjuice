@@ -490,7 +490,7 @@ int conn_mux_recv(conn_registry_t *registry, char *buffer, size_t size, addr_rec
 	JLOG_VERBOSE("Receiving datagram");
 	registry_impl_t *registry_impl = registry->impl;
 	int len;
-	while ((len = udp_recvfrom(registry_impl->sock, buffer, size, src)) == 0) {
+	while ((len = udp_recvfrom(registry_impl->sock, buffer, size, src, NULL)) == 0) {
 		// Empty datagram (used to interrupt)
 	}
 

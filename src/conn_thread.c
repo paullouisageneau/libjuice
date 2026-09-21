@@ -111,7 +111,7 @@ int conn_thread_process(juice_agent_t *agent, struct pollfd *pfd) {
 int conn_thread_recv(socket_t sock, char *buffer, size_t size, addr_record_t *src) {
 	JLOG_VERBOSE("Receiving datagram");
 	int len;
-	while ((len = udp_recvfrom(sock, buffer, size, src)) == 0) {
+	while ((len = udp_recvfrom(sock, buffer, size, src, NULL)) == 0) {
 		// Empty datagram (used to interrupt)
 	}
 

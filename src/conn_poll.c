@@ -291,7 +291,7 @@ void conn_poll_process_udp(juice_agent_t *agent, struct pollfd *pfd) {
 int conn_poll_recv_udp(socket_t sock, char *buffer, size_t size, addr_record_t *src) {
 	JLOG_VERBOSE("Receiving datagram");
 	int len;
-	while ((len = udp_recvfrom(sock, buffer, size, src)) == 0) {
+	while ((len = udp_recvfrom(sock, buffer, size, src, NULL)) == 0) {
 		// Empty datagram, ignore
 	}
 
@@ -445,7 +445,7 @@ int conn_poll_process(conn_registry_t *registry, pfds_record_t *pfds) {
 #ifdef _WIN32
 		char dummy;
 		addr_record_t src;
-		while (udp_recvfrom(interrupt_pfd->fd, &dummy, 1, &src) >= 0) {
+		while (udp_recvfrom(interrupt_pfd->fd, &dummy, 1, &src, NULL) >= 0) {
 			// Ignore
 		}
 #else

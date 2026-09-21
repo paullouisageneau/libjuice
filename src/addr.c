@@ -198,7 +198,8 @@ int addr_to_string(const struct sockaddr *sa, char *buffer, size_t size) {
 		goto error;
 	}
 
-	int len = snprintf(buffer, size, "%s:%s", host, service);
+	int len = addr_get_port(sa) ? snprintf(buffer, size, "%s:%s", host, service)
+	                            : snprintf(buffer, size, "%s", host);
 	if (len < 0 || (size_t)len >= size)
 		goto error;
 
