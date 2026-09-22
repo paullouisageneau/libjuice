@@ -32,11 +32,7 @@ static conn_mode_entry_t mode_entries[MODE_ENTRIES_SIZE] = {
      NULL, NULL, NULL, MUTEX_INITIALIZER, NULL}
 };
 
-#define MODE_ENTRIES_SIZE 3
-
-static conn_mode_entry_t mode_entries[MODE_ENTRIES_SIZE];
-
-conn_mode_entry_t *get_mode_entry(juice_concurrency_mode_t mode) {
+static conn_mode_entry_t *get_mode_entry(juice_concurrency_mode_t mode) {
 	assert(mode >= 0 && mode < MODE_ENTRIES_SIZE);
 	return mode_entries + (int)mode;
 }

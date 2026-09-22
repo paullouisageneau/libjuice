@@ -54,7 +54,6 @@ typedef struct conn_mode_entry {
 	conn_registry_t *registry;
 } conn_mode_entry_t;
 
-conn_mode_entry_t *conn_get_mode_entry(juice_concurrency_mode_t mode);
 int conn_create(juice_agent_t *agent, udp_socket_config_t *config);
 void conn_destroy(juice_agent_t *agent);
 void conn_lock(juice_agent_t *agent);
