@@ -78,6 +78,54 @@ static bool entry_is_tcp(agent_stun_entry_t *entry) {
 	return (entry->pair && entry->pair->remote->transport != ICE_CANDIDATE_TRANSPORT_UDP);
 }
 
+static const addr_record_t *pinned_source(juice_agent_t *agent, const agent_stun_entry_t *entry) {
+	if (!atomic_load(&agent->source_pinned) || entry != agent->source_entry)
+		return NULL;
+
+	return &agent->source;
+}
+
+static void pin_local_source(juice_agent_t *agent, agent_stun_entry_t *entry,
+                             const addr_record_t *local) {
+	char local_str[ADDR_MAX_STRING_LEN];
+
+	if (!agent->config.pin_local_address)
+		return;
+
+	// Pinning once keeps agent->source stable for the lock-free reader in agent_send()
+	if (agent->source_entry) {
+		if (agent->source_entry != entry)
+			JLOG_DEBUG("Not pinning the local source address, another pair was nominated first");
+
+		return;
+	}
+
+	agent->source_entry = entry;
+
+	if (entry->relay_entry || entry_is_tcp(entry)) {
+		JLOG_WARN("Unable to pin the local source address of a relayed or ICE-TCP pair");
+		return;
+	}
+
+	if (!local || !local->len) {
+		JLOG_WARN("Unable to pin the local source address, it was not reported");
+		return;
+	}
+
+	if (local->addr.ss_family != AF_INET6) {
+		JLOG_DEBUG("Not pinning the local source address, the nominated pair is not IPv6");
+		return;
+	}
+
+	agent->source = *local;
+	atomic_store(&agent->source_pinned, true);
+
+	if (JLOG_INFO_ENABLED) {
+		addr_record_to_string(local, local_str, ADDR_MAX_STRING_LEN);
+		JLOG_INFO("Pinned local source address %s", local_str);
+	}
+}
+
 juice_agent_t *agent_create(const juice_config_t *config) {
 	JLOG_VERBOSE("Creating agent");
 
@@ -103,6 +151,7 @@ juice_agent_t *agent_create(const juice_config_t *config) {
 	agent->config.bind_address = alloc_string_copy(config->bind_address, &alloc_failed);
 	agent->config.local_port_range_begin = config->local_port_range_begin;
 	agent->config.local_port_range_end = config->local_port_range_end;
+	agent->config.pin_local_address = config->pin_local_address;
 	agent->config.cb_state_changed = config->cb_state_changed;
 	agent->config.cb_candidate = config->cb_candidate;
 	agent->config.cb_gathering_done = config->cb_gathering_done;
@@ -684,12 +733,13 @@ int agent_send(juice_agent_t *agent, const char *data, size_t size, int ds) {
 		return ret;
 	}
 
-	return agent_direct_send(agent, &selected_entry->record, data, size, ds);
+	return agent_direct_send(agent, &selected_entry->record, pinned_source(agent, selected_entry),
+	                         data, size, ds);
 }
 
-int agent_direct_send(juice_agent_t *agent, const addr_record_t *dst, const char *data, size_t size,
-                      int ds) {
-	return conn_send(agent, dst, data, size, ds);
+int agent_direct_send(juice_agent_t *agent, const addr_record_t *dst, const addr_record_t *local,
+                      const char *data, size_t size, int ds) {
+	return conn_send(agent, dst, local, data, size, ds);
 }
 
 int agent_relay_send(juice_agent_t *agent, agent_stun_entry_t *entry, const addr_record_t *dst,
@@ -724,7 +774,7 @@ int agent_relay_send(juice_agent_t *agent, agent_stun_entry_t *entry, const addr
 		return -1;
 	}
 
-	return agent_direct_send(agent, &entry->record, buffer, size, ds);
+	return agent_direct_send(agent, &entry->record, NULL, buffer, size, ds);
 }
 
 int agent_channel_send(juice_agent_t *agent, agent_stun_entry_t *entry, const addr_record_t *record,
@@ -750,7 +800,7 @@ int agent_channel_send(juice_agent_t *agent, agent_stun_entry_t *entry, const ad
 		return -1;
 	}
 
-	return agent_direct_send(agent, &entry->record, buffer, len, ds);
+	return agent_direct_send(agent, &entry->record, NULL, buffer, len, ds);
 }
 
 juice_state_t agent_get_state(juice_agent_t *agent) {
@@ -782,8 +832,9 @@ int agent_conn_update(juice_agent_t *agent, timestamp_t *next_timestamp) {
 	return agent_bookkeeping(agent, next_timestamp);
 }
 
-int agent_conn_recv(juice_agent_t *agent, char *buf, size_t len, const addr_record_t *src) {
-	agent_input(agent, buf, len, src, NULL);
+int agent_conn_recv(juice_agent_t *agent, char *buf, size_t len, const addr_record_t *src,
+                    const addr_record_t *local) {
+	agent_input(agent, buf, len, src, local, NULL);
 	return 0; // ignore errors
 }
 
@@ -794,7 +845,7 @@ int agent_conn_fail(juice_agent_t *agent) {
 }
 
 int agent_input(juice_agent_t *agent, char *buf, size_t len, const addr_record_t *src,
-                const addr_record_t *relayed) {
+                const addr_record_t *local, const addr_record_t *relayed) {
 	JLOG_VERBOSE("Received datagram, size=%d", len);
 
 	if (agent->state == JUICE_STATE_DISCONNECTED || agent->state == JUICE_STATE_GATHERING)
@@ -817,7 +868,7 @@ int agent_input(juice_agent_t *agent, char *buf, size_t len, const addr_record_t
 			JLOG_ERROR("STUN message reading failed");
 			return -1;
 		}
-		return agent_dispatch_stun(agent, buf, len, &msg, src, relayed);
+		return agent_dispatch_stun(agent, buf, len, &msg, src, local, relayed);
 	}
 
 	if (JLOG_DEBUG_ENABLED) {
@@ -1349,7 +1400,8 @@ int agent_verify_credentials(juice_agent_t *agent, const agent_stun_entry_t *ent
 }
 
 int agent_dispatch_stun(juice_agent_t *agent, void *buf, size_t size, stun_message_t *msg,
-                        const addr_record_t *src, const addr_record_t *relayed) {
+                        const addr_record_t *src, const addr_record_t *local,
+                        const addr_record_t *relayed) {
 	if (msg->msg_method == STUN_METHOD_BINDING && msg->has_integrity) {
 		JLOG_VERBOSE("STUN message is from the remote peer");
 		// Verify the message now
@@ -1392,7 +1444,7 @@ int agent_dispatch_stun(juice_agent_t *agent, void *buf, size_t size, stun_messa
 			JLOG_WARN("Missing integrity in STUN Binding message from remote peer, ignoring");
 			return -1;
 		}
-		return agent_process_stun_binding(agent, msg, entry, src, relayed);
+		return agent_process_stun_binding(agent, msg, entry, src, local, relayed);
 
 	case STUN_METHOD_ALLOCATE:
 	case STUN_METHOD_REFRESH:
@@ -1428,7 +1480,7 @@ int agent_dispatch_stun(juice_agent_t *agent, void *buf, size_t size, stun_messa
 
 int agent_process_stun_binding(juice_agent_t *agent, const stun_message_t *msg,
                                agent_stun_entry_t *entry, const addr_record_t *src,
-                               const addr_record_t *relayed) {
+                               const addr_record_t *local, const addr_record_t *relayed) {
 
 	switch (msg->msg_class) {
 	case STUN_CLASS_REQUEST: {
@@ -1498,6 +1550,7 @@ int agent_process_stun_binding(juice_agent_t *agent, const stun_message_t *msg,
 			if (pair->state == ICE_CANDIDATE_PAIR_STATE_SUCCEEDED) {
 				JLOG_DEBUG("Got a nominated pair (controlled)");
 				pair->nominated = true;
+				pin_local_source(agent, entry, local);
 			} else if (!pair->nomination_requested) {
 				JLOG_DEBUG("Pair nomination requested (controlled)");
 				pair->nomination_requested = true;
@@ -1596,6 +1649,7 @@ int agent_process_stun_binding(juice_agent_t *agent, const stun_message_t *msg,
 				JLOG_DEBUG("Got a nominated pair (%s)",
 				           agent->mode == AGENT_MODE_CONTROLLING ? "controlling" : "controlled");
 				pair->nominated = true;
+				pin_local_source(agent, entry, local);
 			}
 		} else if (entry->type == AGENT_STUN_ENTRY_TYPE_SERVER) {
 			agent_update_gathering_done(agent);
@@ -1780,7 +1834,8 @@ int agent_send_stun_binding(juice_agent_t *agent, agent_stun_entry_t *entry, stu
 	}
 
 	// Direct send
-	int ret = agent_direct_send(agent, &entry->record, buffer, size, 0);
+	int ret =
+	    agent_direct_send(agent, &entry->record, pinned_source(agent, entry), buffer, size, 0);
 	if (ret < 0) {
 		if (ret == -SENETUNREACH)
 			JLOG_INFO("STUN binding failed: Network unreachable");
@@ -2003,7 +2058,7 @@ int agent_send_turn_allocate_request(juice_agent_t *agent, const agent_stun_entr
 		JLOG_ERROR("STUN message write failed");
 		return -1;
 	}
-	if (agent_direct_send(agent, &entry->record, buffer, size, 0) < 0) {
+	if (agent_direct_send(agent, &entry->record, NULL, buffer, size, 0) < 0) {
 		JLOG_WARN("STUN message send failed");
 		return -1;
 	}
@@ -2100,7 +2155,7 @@ int agent_send_turn_create_permission_request(juice_agent_t *agent, agent_stun_e
 		JLOG_ERROR("STUN message write failed");
 		return -1;
 	}
-	if (agent_direct_send(agent, &entry->record, buffer, size, ds) < 0) {
+	if (agent_direct_send(agent, &entry->record, NULL, buffer, size, ds) < 0) {
 		JLOG_WARN("STUN message send failed");
 		return -1;
 	}
@@ -2208,7 +2263,7 @@ int agent_send_turn_channel_bind_request(juice_agent_t *agent, agent_stun_entry_
 		JLOG_ERROR("STUN message write failed");
 		return -1;
 	}
-	if (agent_direct_send(agent, &entry->record, buffer, size, ds) < 0) {
+	if (agent_direct_send(agent, &entry->record, NULL, buffer, size, ds) < 0) {
 		JLOG_WARN("STUN message send failed");
 		return -1;
 	}
@@ -2236,7 +2291,7 @@ int agent_process_turn_data(juice_agent_t *agent, const stun_message_t *msg,
 		return -1;
 	}
 	const addr_record_t *peer = msg->peers;
-	return agent_input(agent, (char *)msg->data, msg->data_size, peer, &entry->relayed);
+	return agent_input(agent, (char *)msg->data, msg->data_size, peer, NULL, &entry->relayed);
 }
 
 int agent_process_channel_data(juice_agent_t *agent, agent_stun_entry_t *entry, char *buf,
@@ -2263,7 +2318,7 @@ int agent_process_channel_data(juice_agent_t *agent, agent_stun_entry_t *entry, 
 		return -1;
 	}
 
-	return agent_input(agent, buf, length, &src, &entry->relayed);
+	return agent_input(agent, buf, length, &src, NULL, &entry->relayed);
 }
 
 int agent_add_local_relayed_candidate(juice_agent_t *agent, const addr_record_t *record) {

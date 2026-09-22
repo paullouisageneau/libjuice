@@ -246,12 +246,12 @@ int conn_interrupt(juice_agent_t *agent) {
 	return get_agent_mode_entry(agent)->interrupt_func(agent);
 }
 
-int conn_send(juice_agent_t *agent, const addr_record_t *dst, const char *data, size_t size,
-              int ds) {
+int conn_send(juice_agent_t *agent, const addr_record_t *dst, const addr_record_t *local,
+              const char *data, size_t size, int ds) {
 	if (!agent->conn_impl)
 		return -1;
 
-	return get_agent_mode_entry(agent)->send_func(agent, dst, data, size, ds);
+	return get_agent_mode_entry(agent)->send_func(agent, dst, local, data, size, ds);
 }
 
 void conn_tcp_connect(juice_agent_t *agent, const addr_record_t *dst) {
