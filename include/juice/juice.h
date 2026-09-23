@@ -109,6 +109,10 @@ typedef struct juice_config {
 	uint16_t local_port_range_begin;
 	uint16_t local_port_range_end;
 
+	// Keep sending from the local address of the nominated pair, IPv6 only. Sending fails
+	// once that address is removed, instead of silently moving to another one.
+	bool pin_local_address;
+
 	juice_cb_state_changed_t cb_state_changed;
 	juice_cb_candidate_t cb_candidate;
 	juice_cb_gathering_done_t cb_gathering_done;

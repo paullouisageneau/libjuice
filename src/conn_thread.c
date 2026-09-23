@@ -31,7 +31,8 @@ typedef struct conn_impl {
 int conn_thread_run(juice_agent_t *agent);
 int conn_thread_prepare(juice_agent_t *agent, struct pollfd *pfd, timestamp_t *next_timestamp);
 int conn_thread_process(juice_agent_t *agent, struct pollfd *pfd);
-int conn_thread_recv(socket_t sock, char *buffer, size_t size, addr_record_t *src);
+int conn_thread_recv(socket_t sock, char *buffer, size_t size, addr_record_t *src,
+                     addr_record_t *local);
 
 static thread_return_t THREAD_CALL conn_thread_entry(void *arg) {
 	thread_set_name_self("juice agent");
@@ -59,6 +60,8 @@ int conn_thread_prepare(juice_agent_t *agent, struct pollfd *pfd, timestamp_t *n
 
 int conn_thread_process(juice_agent_t *agent, struct pollfd *pfd) {
 	conn_impl_t *conn_impl = agent->conn_impl;
+	addr_record_t local;
+
 	mutex_lock(&conn_impl->mutex);
 	if (conn_impl->stopped) {
 		mutex_unlock(&conn_impl->mutex);
@@ -76,8 +79,8 @@ int conn_thread_process(juice_agent_t *agent, struct pollfd *pfd) {
 		char buffer[BUFFER_SIZE];
 		addr_record_t src;
 		int ret;
-		while ((ret = conn_thread_recv(conn_impl->sock, buffer, BUFFER_SIZE, &src)) > 0) {
-			if (agent_conn_recv(agent, buffer, (size_t)ret, &src) != 0) {
+		while ((ret = conn_thread_recv(conn_impl->sock, buffer, BUFFER_SIZE, &src, &local)) > 0) {
+			if (agent_conn_recv(agent, buffer, (size_t)ret, &src, &local) != 0) {
 				JLOG_WARN("Agent receive failed");
 				mutex_unlock(&conn_impl->mutex);
 				return -1;
@@ -108,10 +111,11 @@ int conn_thread_process(juice_agent_t *agent, struct pollfd *pfd) {
 	return 0;
 }
 
-int conn_thread_recv(socket_t sock, char *buffer, size_t size, addr_record_t *src) {
+int conn_thread_recv(socket_t sock, char *buffer, size_t size, addr_record_t *src,
+                     addr_record_t *local) {
 	JLOG_VERBOSE("Receiving datagram");
 	int len;
-	while ((len = udp_recvfrom(sock, buffer, size, src)) == 0) {
+	while ((len = udp_recvfrom(sock, buffer, size, src, local)) == 0) {
 		// Empty datagram (used to interrupt)
 	}
 
@@ -242,8 +246,8 @@ int conn_thread_interrupt(juice_agent_t *agent) {
 	return 0;
 }
 
-int conn_thread_send(juice_agent_t *agent, const addr_record_t *dst, const char *data, size_t size,
-                     int ds) {
+int conn_thread_send(juice_agent_t *agent, const addr_record_t *dst, const addr_record_t *local,
+                     const char *data, size_t size, int ds) {
 	conn_impl_t *conn_impl = agent->conn_impl;
 
 	mutex_lock(&conn_impl->send_mutex);
@@ -258,7 +262,7 @@ int conn_thread_send(juice_agent_t *agent, const addr_record_t *dst, const char 
 
 	JLOG_VERBOSE("Sending datagram, size=%d", size);
 
-	int ret = udp_sendto(conn_impl->sock, data, size, dst);
+	int ret = udp_sendto_from(conn_impl->sock, data, size, dst, local);
 	if (ret < 0) {
 		ret = -sockerrno;
 		if (sockerrno == SEAGAIN || sockerrno == SEWOULDBLOCK)

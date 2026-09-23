@@ -53,7 +53,8 @@ typedef struct pfds_record {
 int conn_poll_prepare(conn_registry_t *registry, pfds_record_t *pfds, timestamp_t *next_timestamp);
 int conn_poll_process(conn_registry_t *registry, pfds_record_t *pfds);
 void conn_poll_process_udp(juice_agent_t *agent, struct pollfd *pfd);
-int conn_poll_recv_udp(socket_t sock, char *buffer, size_t size, addr_record_t *src);
+int conn_poll_recv_udp(socket_t sock, char *buffer, size_t size, addr_record_t *src,
+                       addr_record_t *local);
 void conn_poll_process_tcp(juice_agent_t *agent, struct pollfd *pfd);
 void conn_poll_change_tcp_fail(juice_agent_t *agent);
 void conn_poll_change_tcp_state(juice_agent_t *agent, tcp_state_t state);
@@ -228,6 +229,7 @@ error:
 
 void conn_poll_process_udp(juice_agent_t *agent, struct pollfd *pfd) {
 	conn_impl_t *conn_impl = agent->conn_impl;
+	addr_record_t local;
 
 	if (pfd->revents & POLLNVAL) {
 		JLOG_WARN("Invalid socket");
@@ -246,12 +248,12 @@ void conn_poll_process_udp(juice_agent_t *agent, struct pollfd *pfd) {
 		int ret = 0;
 		int left = 1000; // limit for fairness between sockets
 		while (left--) {
-			if ((ret = conn_poll_recv_udp(conn_impl->udp_sock, buffer, BUFFER_SIZE,
-							&src)) <= 0) {
+			if ((ret = conn_poll_recv_udp(conn_impl->udp_sock, buffer, BUFFER_SIZE, &src,
+			                              &local)) <= 0) {
 				break;
 			}
 
-			if (agent_conn_recv(agent, buffer, (size_t)ret, &src) != 0) {
+			if (agent_conn_recv(agent, buffer, (size_t)ret, &src, &local) != 0) {
 				JLOG_WARN("Agent receive failed");
 				conn_impl->state = CONN_STATE_FINISHED;
 				break;
@@ -288,10 +290,11 @@ void conn_poll_process_udp(juice_agent_t *agent, struct pollfd *pfd) {
 
 }
 
-int conn_poll_recv_udp(socket_t sock, char *buffer, size_t size, addr_record_t *src) {
+int conn_poll_recv_udp(socket_t sock, char *buffer, size_t size, addr_record_t *src,
+                       addr_record_t *local) {
 	JLOG_VERBOSE("Receiving datagram");
 	int len;
-	while ((len = udp_recvfrom(sock, buffer, size, src)) == 0) {
+	while ((len = udp_recvfrom(sock, buffer, size, src, local)) == 0) {
 		// Empty datagram, ignore
 	}
 
@@ -361,7 +364,8 @@ void conn_poll_process_tcp(juice_agent_t *agent, struct pollfd *pfd) {
 				break;
 			}
 
-			if (agent_conn_recv(agent, context->buffer, (size_t)ret, &conn_impl->tcp_dst) != 0) {
+			if (agent_conn_recv(agent, context->buffer, (size_t)ret, &conn_impl->tcp_dst, NULL) !=
+			    0) {
 				JLOG_WARN("Agent receive failed");
 				conn_impl->state = CONN_STATE_FINISHED;
 				break;
@@ -445,7 +449,7 @@ int conn_poll_process(conn_registry_t *registry, pfds_record_t *pfds) {
 #ifdef _WIN32
 		char dummy;
 		addr_record_t src;
-		while (udp_recvfrom(interrupt_pfd->fd, &dummy, 1, &src) >= 0) {
+		while (udp_recvfrom(interrupt_pfd->fd, &dummy, 1, &src, NULL) >= 0) {
 			// Ignore
 		}
 #else
@@ -610,8 +614,8 @@ int conn_poll_interrupt(juice_agent_t *agent) {
 	return 0;
 }
 
-int conn_poll_send(juice_agent_t *agent, const addr_record_t *dst, const char *data, size_t size,
-                   int ds) {
+int conn_poll_send(juice_agent_t *agent, const addr_record_t *dst, const addr_record_t *local,
+                   const char *data, size_t size, int ds) {
 	conn_impl_t *conn_impl = agent->conn_impl;
 
 	mutex_lock(&conn_impl->send_mutex);
@@ -638,7 +642,7 @@ int conn_poll_send(juice_agent_t *agent, const addr_record_t *dst, const char *d
 				conn_impl->send_ds = -1; // disable for next time
 		}
 
-		ret = udp_sendto(conn_impl->udp_sock, data, size, dst);
+		ret = udp_sendto_from(conn_impl->udp_sock, data, size, dst, local);
 		if (ret < 0)
 			ret = -sockerrno;
 	}

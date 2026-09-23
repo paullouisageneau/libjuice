@@ -215,7 +215,8 @@ static int grow_map(registry_impl_t *impl, int new_size) {
 
 int conn_mux_prepare(conn_registry_t *registry, struct pollfd *pfd, timestamp_t *next_timestamp);
 int conn_mux_process(conn_registry_t *registry, struct pollfd *pfd);
-int conn_mux_recv(conn_registry_t *registry, char *buffer, size_t size, addr_record_t *src);
+int conn_mux_recv(conn_registry_t *registry, char *buffer, size_t size, addr_record_t *src,
+                  addr_record_t *local);
 void conn_mux_fail(conn_registry_t *registry);
 int conn_mux_run(conn_registry_t *registry);
 
@@ -420,6 +421,8 @@ static juice_agent_t *lookup_agent(conn_registry_t *registry, char *buf, size_t 
 }
 
 int conn_mux_process(conn_registry_t *registry, struct pollfd *pfd) {
+	addr_record_t local;
+
 	mutex_lock(&registry->mutex);
 
 	if (pfd->revents & POLLNVAL || pfd->revents & POLLERR) {
@@ -435,7 +438,7 @@ int conn_mux_process(conn_registry_t *registry, struct pollfd *pfd) {
 		int left = 1000; // limit to ensure update is run and new agents are processed
 		int ret;
 		while (left--) {
-			if ((ret = conn_mux_recv(registry, buffer, BUFFER_SIZE, &src)) <= 0) {
+			if ((ret = conn_mux_recv(registry, buffer, BUFFER_SIZE, &src, &local)) <= 0) {
 				break;
 			}
 
@@ -452,7 +455,7 @@ int conn_mux_process(conn_registry_t *registry, struct pollfd *pfd) {
 			}
 
 			conn_impl_t *conn_impl = agent->conn_impl;
-			if (agent_conn_recv(agent, buffer, (size_t)ret, &src) != 0) {
+			if (agent_conn_recv(agent, buffer, (size_t)ret, &src, &local) != 0) {
 				JLOG_WARN("Agent receive failed");
 				conn_impl->finished = true;
 				continue;
@@ -486,11 +489,12 @@ int conn_mux_process(conn_registry_t *registry, struct pollfd *pfd) {
 	return 0;
 }
 
-int conn_mux_recv(conn_registry_t *registry, char *buffer, size_t size, addr_record_t *src) {
+int conn_mux_recv(conn_registry_t *registry, char *buffer, size_t size, addr_record_t *src,
+                  addr_record_t *local) {
 	JLOG_VERBOSE("Receiving datagram");
 	registry_impl_t *registry_impl = registry->impl;
 	int len;
-	while ((len = udp_recvfrom(registry_impl->sock, buffer, size, src)) == 0) {
+	while ((len = udp_recvfrom(registry_impl->sock, buffer, size, src, local)) == 0) {
 		// Empty datagram (used to interrupt)
 	}
 
@@ -616,8 +620,8 @@ int conn_mux_interrupt(juice_agent_t *agent) {
 	return conn_mux_interrupt_registry(registry);
 }
 
-int conn_mux_send(juice_agent_t *agent, const addr_record_t *dst, const char *data, size_t size,
-                  int ds) {
+int conn_mux_send(juice_agent_t *agent, const addr_record_t *dst, const addr_record_t *local,
+                  const char *data, size_t size, int ds) {
 	conn_impl_t *conn_impl = agent->conn_impl;
 	registry_impl_t *registry_impl = conn_impl->registry->impl;
 
@@ -633,7 +637,7 @@ int conn_mux_send(juice_agent_t *agent, const addr_record_t *dst, const char *da
 
 	JLOG_VERBOSE("Sending datagram, size=%d", size);
 
-	int ret = udp_sendto(registry_impl->sock, data, size, dst);
+	int ret = udp_sendto_from(registry_impl->sock, data, size, dst, local);
 	if (ret < 0) {
 		ret = -sockerrno;
 		if (sockerrno == SEAGAIN || sockerrno == SEWOULDBLOCK)
