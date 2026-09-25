@@ -23,11 +23,11 @@
 #define _PICOHASH_BIG_ENDIAN
 #elif defined __LITTLE_ENDIAN__
 /* override */
-#elif defined __BYTE_ORDER
+#elif defined __BYTE_ORDER__
 #if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
 #define _PICOHASH_BIG_ENDIAN
 #endif
-#else               // ! defined __LITTLE_ENDIAN__
+#else               // ! defined __BYTE_ORDER__
 #include <endian.h> // machine/endian.h
 #if BYTE_ORDER == BIG_ENDIAN
 #define _PICOHASH_BIG_ENDIAN
