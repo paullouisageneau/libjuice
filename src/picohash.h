@@ -23,11 +23,11 @@
 #define _PICOHASH_BIG_ENDIAN
 #elif defined __LITTLE_ENDIAN__
 /* override */
-#elif defined __BYTE_ORDER
+#elif defined __BYTE_ORDER__
 #if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
 #define _PICOHASH_BIG_ENDIAN
 #endif
-#else               // ! defined __LITTLE_ENDIAN__
+#else               // ! defined __BYTE_ORDER__
 #include <endian.h> // machine/endian.h
 #if BYTE_ORDER == BIG_ENDIAN
 #define _PICOHASH_BIG_ENDIAN
@@ -452,7 +452,7 @@ inline void _picohash_sha1_final(_picohash_sha1_ctx_t *s, void *digest)
     _picohash_sha1_add_uncounted(s, (uint8_t)(s->byteCount >> 5));
     _picohash_sha1_add_uncounted(s, (uint8_t)(s->byteCount << 3));
 
-#ifndef SHA_BIG_ENDIAN
+#ifndef _PICOHASH_BIG_ENDIAN
     { // Swap byte order back
         int i;
         for (i = 0; i < 5; i++) {
