@@ -1437,7 +1437,7 @@ int agent_process_stun_binding(juice_agent_t *agent, const stun_message_t *msg,
 			return -1;
 
 		ice_candidate_pair_t *pair = entry->pair;
-		if (msg->ice_controlling == msg->ice_controlled) {
+		if (msg->has_ice_controlling == msg->has_ice_controlled) {
 			JLOG_WARN("Controlling and controlled attributes mismatch in request");
 			agent_send_stun_binding(agent, entry, STUN_CLASS_RESP_ERROR, 400, msg->transaction_id,
 			                        NULL);
@@ -1451,7 +1451,7 @@ int agent_process_stun_binding(juice_agent_t *agent, const stun_message_t *msg,
 		//  ERROR-CODE attribute with a value of 487 (Role Conflict) but retains its role.
 		//  * If the agent's tiebreaker value is less than the contents of the ICE-CONTROLLING
 		//  attribute, the agent switches to the controlled role.
-		if (agent->mode == AGENT_MODE_CONTROLLING && msg->ice_controlling) {
+		if (agent->mode == AGENT_MODE_CONTROLLING && msg->has_ice_controlling) {
 			JLOG_WARN("ICE role conflict (both controlling)");
 			if (agent->ice_tiebreaker >= msg->ice_controlling) {
 				JLOG_DEBUG("Asking remote peer to switch roles");
@@ -1471,9 +1471,9 @@ int agent_process_stun_binding(juice_agent_t *agent, const stun_message_t *msg,
 		//  * If the agent's tiebreaker value is less than the contents of the ICE-CONTROLLED
 		//  attribute, the agent generates a Binding error response and includes an ERROR-CODE
 		//  attribute with a value of 487 (Role Conflict) but retains its role.
-		if (agent->mode == AGENT_MODE_CONTROLLED && msg->ice_controlled) {
+		if (agent->mode == AGENT_MODE_CONTROLLED && msg->has_ice_controlled) {
 			JLOG_WARN("ICE role conflict (both controlled)");
-			if (agent->ice_tiebreaker >= msg->ice_controlling) {
+			if (agent->ice_tiebreaker >= msg->ice_controlled) {
 				JLOG_DEBUG("Switching to controlling role");
 				agent->mode = AGENT_MODE_CONTROLLING;
 				agent_update_candidate_pairs(agent);
@@ -1485,7 +1485,7 @@ int agent_process_stun_binding(juice_agent_t *agent, const stun_message_t *msg,
 			break;
 		}
 		if (msg->use_candidate) {
-			if (!msg->ice_controlling) {
+			if (!msg->has_ice_controlling) {
 				JLOG_WARN("STUN message use_candidate missing ice_controlling attribute");
 				agent_send_stun_binding(agent, entry, STUN_CLASS_RESP_ERROR, 400,
 				                        msg->transaction_id, NULL);
@@ -1713,8 +1713,9 @@ int agent_send_stun_binding(juice_agent_t *agent, agent_stun_entry_t *entry, stu
 			snprintf(msg.credentials.username, STUN_MAX_USERNAME_LEN, "%s:%s",
 			         agent->remote.ice_ufrag, agent->local.ice_ufrag);
 			password = agent->remote.ice_pwd;
-			msg.ice_controlling = agent->mode == AGENT_MODE_CONTROLLING ? agent->ice_tiebreaker : 0;
-			msg.ice_controlled = agent->mode == AGENT_MODE_CONTROLLED ? agent->ice_tiebreaker : 0;
+			msg.has_ice_controlling = agent->mode == AGENT_MODE_CONTROLLING;
+			msg.has_ice_controlled = agent->mode == AGENT_MODE_CONTROLLED;
+			msg.ice_controlling = msg.ice_controlled = agent->ice_tiebreaker;
 
 			// RFC 8445 7.1.1. PRIORITY
 			// The PRIORITY attribute MUST be included in a Binding request and be set to the value
