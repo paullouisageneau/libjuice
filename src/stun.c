@@ -130,6 +130,22 @@ int stun_write(void *buf, size_t size, const stun_message_t *msg, const char *pa
 			goto overflow;
 		pos += len;
 	}
+	if (msg->unknown_attributes_count) {
+		JLOG_VERBOSE("Writing unknown attributes");
+		size_t count = msg->unknown_attributes_count;
+		if (count > STUN_MAX_UNKNOWN_ATTRIBUTES)
+			count = STUN_MAX_UNKNOWN_ATTRIBUTES;
+
+		uint16_t attributes[STUN_MAX_UNKNOWN_ATTRIBUTES];
+		for (size_t i = 0; i < count; ++i)
+			attributes[i] = htons(msg->unknown_attributes[i]);
+
+		len = stun_write_attr(pos, end - pos, STUN_ATTR_UNKNOWN_ATTRIBUTES, attributes,
+		                      count * sizeof(uint16_t));
+		if (len <= 0)
+			goto overflow;
+		pos += len;
+	}
 	if (msg->mapped.len) {
 		JLOG_VERBOSE("Writing XOR mapped address");
 		uint8_t value[32];
@@ -139,6 +155,60 @@ int stun_write(void *buf, size_t size, const stun_message_t *msg, const char *pa
 		    value, 32, (const struct sockaddr *)&msg->mapped.addr, msg->mapped.len, mask);
 		if (value_len > 0) {
 			len = stun_write_attr(pos, end - pos, STUN_ATTR_XOR_MAPPED_ADDRESS, value, value_len);
+			if (len <= 0)
+				goto overflow;
+			pos += len;
+		}
+	}
+	if (msg->has_change_request) {
+		JLOG_VERBOSE("Writing change request");
+		uint32_t change_request = htonl(msg->change_request);
+		len = stun_write_attr(pos, end - pos, STUN_ATTR_CHANGE_REQUEST, &change_request, 4);
+		if (len <= 0)
+			goto overflow;
+		pos += len;
+	}
+	if (msg->has_response_port) {
+		JLOG_VERBOSE("Writing response port");
+		// RFC 5780: The RESPONSE-PORT attribute is a 16-bit unsigned integer in network byte order
+		// followed by 2 bytes of padding
+		uint16_t response_port = htons(msg->response_port);
+		len = stun_write_attr(pos, end - pos, STUN_ATTR_RESPONSE_PORT, &response_port,
+		                      sizeof(response_port));
+		if (len <= 0)
+			goto overflow;
+		pos += len;
+	}
+	if (msg->padding && msg->padding_size) {
+		JLOG_VERBOSE("Writing padding");
+		len = stun_write_attr(pos, end - pos, STUN_ATTR_PADDING, msg->padding, msg->padding_size);
+		if (len <= 0)
+			goto overflow;
+		pos += len;
+	}
+	if (msg->response_origin.len) {
+		JLOG_VERBOSE("Writing response origin");
+		uint8_t value[32];
+		uint8_t zero_mask[16] = {0};
+		int value_len = stun_write_value_mapped_address(
+		    value, 32, (const struct sockaddr *)&msg->response_origin.addr, msg->response_origin.len,
+		    zero_mask);
+		if (value_len > 0) {
+			len = stun_write_attr(pos, end - pos, STUN_ATTR_RESPONSE_ORIGIN, value, value_len);
+			if (len <= 0)
+				goto overflow;
+			pos += len;
+		}
+	}
+	if (msg->other_address.len) {
+		JLOG_VERBOSE("Writing other address");
+		uint8_t value[32];
+		uint8_t zero_mask[16] = {0};
+		int value_len = stun_write_value_mapped_address(
+		    value, 32, (const struct sockaddr *)&msg->other_address.addr, msg->other_address.len,
+		    zero_mask);
+		if (value_len > 0) {
+			len = stun_write_attr(pos, end - pos, STUN_ATTR_OTHER_ADDRESS, value, value_len);
 			if (len <= 0)
 				goto overflow;
 			pos += len;
@@ -659,6 +729,51 @@ int stun_read_attr(const void *data, size_t size, stun_message_t *msg, uint8_t *
 			return -1;
 		break;
 	}
+	case STUN_ATTR_CHANGE_REQUEST: {
+		JLOG_VERBOSE("Reading change request");
+		if (length != 4) {
+			JLOG_DEBUG("STUN change request length invalid, length=%zu", length);
+			return -1;
+		}
+		msg->change_request = ntohl(*((uint32_t *)attr->value));
+		msg->has_change_request = true;
+		msg->change_ip = (msg->change_request & STUN_CHANGE_REQUEST_IP) != 0;
+		msg->change_port = (msg->change_request & STUN_CHANGE_REQUEST_PORT) != 0;
+		break;
+	}
+	case STUN_ATTR_RESPONSE_PORT: {
+		JLOG_VERBOSE("Reading response port");
+		// The value is a 16-bit port followed by 2 bytes of padding, which implementations either
+		// account for in the attribute length or leave to the regular attribute padding
+		if (length != 2 && length != 4) {
+			JLOG_DEBUG("STUN response port length invalid, length=%zu", length);
+			return -1;
+		}
+		msg->response_port = ntohs(*((uint16_t *)attr->value));
+		msg->has_response_port = true;
+		break;
+	}
+	case STUN_ATTR_PADDING: {
+		JLOG_VERBOSE("Reading padding");
+		msg->padding = (const char *)attr->value;
+		msg->padding_size = length;
+		break;
+	}
+	case STUN_ATTR_RESPONSE_ORIGIN: {
+		JLOG_VERBOSE("Reading response origin");
+		uint8_t zero_mask[16] = {0};
+		if (stun_read_value_mapped_address(attr->value, length, &msg->response_origin, zero_mask) <
+		    0)
+			return -1;
+		break;
+	}
+	case STUN_ATTR_OTHER_ADDRESS: {
+		JLOG_VERBOSE("Reading other address");
+		uint8_t zero_mask[16] = {0};
+		if (stun_read_value_mapped_address(attr->value, length, &msg->other_address, zero_mask) < 0)
+			return -1;
+		break;
+	}
 	case STUN_ATTR_ALTERNATE_SERVER: {
 		JLOG_VERBOSE("Reading alternate server");
 		uint8_t zero_mask[16] = {0};
@@ -696,9 +811,12 @@ int stun_read_attr(const void *data, size_t size, stun_message_t *msg, uint8_t *
 	case STUN_ATTR_UNKNOWN_ATTRIBUTES: {
 		JLOG_VERBOSE("Reading STUN unknown attributes");
 		const uint16_t *attributes = (const uint16_t *)attr->value;
-		for (int i = 0; i < (int)ntohs(attr->length) / 2; ++i) {
+		msg->unknown_attributes_count = 0;
+		for (size_t i = 0; i < length / sizeof(uint16_t); ++i) {
 			stun_attr_type_t type = (stun_attr_type_t)ntohs(attributes[i]);
 			JLOG_INFO("Got unknown attribute response for attribute 0x%X", (unsigned int)type);
+			if (msg->unknown_attributes_count < STUN_MAX_UNKNOWN_ATTRIBUTES)
+				msg->unknown_attributes[msg->unknown_attributes_count++] = (uint16_t)type;
 		}
 		break;
 	}

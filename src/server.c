@@ -88,6 +88,28 @@ static void delete_allocation(server_turn_alloc_t *alloc) {
 	alloc->credentials = NULL;
 }
 
+// RFC 5780: The RESPONSE-ORIGIN attribute is inserted by the server and indicates the source IP
+// address and port the response was sent from
+static void init_response_origin(juice_server_t *server) {
+	if (server->config.external_address && *server->config.external_address != '\0') {
+		char service[8];
+		snprintf(service, sizeof(service), "%hu", server->config.port);
+		int count = addr_resolve(server->config.external_address, service, SOCK_DGRAM,
+		                         server->response_origin, 2);
+		server->response_origin_count = count > 0 ? (count < 2 ? count : 2) : 0;
+		return;
+	}
+
+	// The origin is only known if the socket is bound to a specific address
+	addr_record_t record;
+	if (udp_get_bound_addr(server->sock, &record) == 0 &&
+	    !addr_is_any((struct sockaddr *)&record.addr)) {
+		addr_unmap_inet6_v4mapped((struct sockaddr *)&record.addr, &record.len);
+		server->response_origin[0] = record;
+		server->response_origin_count = 1;
+	}
+}
+
 static thread_return_t THREAD_CALL server_thread_entry(void *arg) {
 	thread_set_name_self("juice server");
 	server_run((juice_server_t *)arg);
@@ -184,6 +206,7 @@ juice_server_t *server_create(const juice_server_config_t *config) {
 
 	server->config.port = udp_get_port(server->sock);
 	server->nonce_key_timestamp = 0;
+	init_response_origin(server);
 	if (server->config.max_peers == 0)
 		server->config.max_peers = SERVER_DEFAULT_MAX_PEERS;
 
@@ -782,7 +805,7 @@ int server_dispatch_stun(juice_server_t *server, void *buf, size_t size, stun_me
 }
 
 int server_answer_stun_binding(juice_server_t *server, const uint8_t *transaction_id,
-                               const addr_record_t *src) {
+                               const addr_record_t *src, const addr_record_t *dst) {
 	JLOG_DEBUG("Answering STUN Binding request");
 
 	stun_message_t ans;
@@ -792,6 +815,13 @@ int server_answer_stun_binding(juice_server_t *server, const uint8_t *transactio
 	ans.mapped = *src;
 	memcpy(ans.transaction_id, transaction_id, STUN_TRANSACTION_ID_SIZE);
 
+	for (int i = 0; i < server->response_origin_count; ++i) {
+		if (server->response_origin[i].addr.ss_family == src->addr.ss_family) {
+			ans.response_origin = server->response_origin[i];
+			break;
+		}
+	}
+
 	char buffer[BUFFER_SIZE];
 	int size = stun_write(buffer, BUFFER_SIZE, &ans, NULL);
 	if (size <= 0) {
@@ -799,7 +829,7 @@ int server_answer_stun_binding(juice_server_t *server, const uint8_t *transactio
 		return -1;
 	}
 
-	if (server_send(server, src, buffer, size) < 0) {
+	if (server_send(server, dst, buffer, size) < 0) {
 		JLOG_WARN("STUN message send failed, errno=%d", sockerrno);
 		return -1;
 	}
@@ -825,6 +855,23 @@ int server_answer_stun_error(juice_server_t *server, const uint8_t *transaction_
 	return server_stun_send(server, src, &ans, credentials ? credentials->password : NULL);
 }
 
+static int server_answer_stun_unknown_attribute(juice_server_t *server, const stun_message_t *msg,
+                                                const addr_record_t *src, uint16_t attr_type) {
+	JLOG_DEBUG("Answering STUN error response with code 420 for attribute 0x%X",
+	           (unsigned int)attr_type);
+
+	stun_message_t ans;
+	memset(&ans, 0, sizeof(ans));
+	ans.msg_class = STUN_CLASS_RESP_ERROR;
+	ans.msg_method = msg->msg_method;
+	ans.error_code = 420; // Unknown Attribute
+	ans.unknown_attributes[0] = attr_type;
+	ans.unknown_attributes_count = 1;
+	memcpy(ans.transaction_id, msg->transaction_id, STUN_TRANSACTION_ID_SIZE);
+
+	return server_stun_send(server, src, &ans, NULL);
+}
+
 int server_process_stun_binding(juice_server_t *server, const stun_message_t *msg,
                                 const addr_record_t *src) {
 	if (JLOG_INFO_ENABLED) {
@@ -833,7 +880,32 @@ int server_process_stun_binding(juice_server_t *server, const stun_message_t *ms
 		JLOG_INFO("Got STUN binding from client %s", src_str);
 	}
 
-	return server_answer_stun_binding(server, msg->transaction_id, src);
+	// RFC 5780: The server MUST NOT process a request containing a RESPONSE-PORT and a PADDING
+	// attribute
+	if (msg->has_response_port && msg->padding) {
+		JLOG_DEBUG("Rejecting STUN Binding request with both RESPONSE-PORT and PADDING");
+		return server_answer_stun_error(server, msg->transaction_id, src, msg->msg_method,
+		                                400, // Bad Request
+		                                NULL);
+	}
+
+	// RFC 5780: If a server cannot allocate the same ports on two different IP address, then it
+	// MUST NOT include an OTHER-ADDRESS attribute in any Response and MUST respond with a 420
+	// (Unknown Attribute) to any Request with a CHANGE-REQUEST attribute.
+	// An empty CHANGE-REQUEST is accepted, as some clients add one to plain Binding requests.
+	if (msg->change_ip || msg->change_port) {
+		JLOG_DEBUG("Rejecting STUN Binding request with CHANGE-REQUEST, the server has a single "
+		           "address");
+		return server_answer_stun_unknown_attribute(server, msg, src, STUN_ATTR_CHANGE_REQUEST);
+	}
+
+	addr_record_t dst = *src;
+	if (msg->has_response_port) {
+		addr_set_port((struct sockaddr *)&dst.addr, msg->response_port);
+		JLOG_DEBUG("Sending STUN Binding response to response port %hu", msg->response_port);
+	}
+
+	return server_answer_stun_binding(server, msg->transaction_id, src, &dst);
 }
 
 int server_process_turn_allocate(juice_server_t *server, const stun_message_t *msg,
