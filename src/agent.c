@@ -1713,9 +1713,13 @@ int agent_send_stun_binding(juice_agent_t *agent, agent_stun_entry_t *entry, stu
 			snprintf(msg.credentials.username, STUN_MAX_USERNAME_LEN, "%s:%s",
 			         agent->remote.ice_ufrag, agent->local.ice_ufrag);
 			password = agent->remote.ice_pwd;
-			msg.has_ice_controlling = agent->mode == AGENT_MODE_CONTROLLING;
-			msg.has_ice_controlled = agent->mode == AGENT_MODE_CONTROLLED;
-			msg.ice_controlling = msg.ice_controlled = agent->ice_tiebreaker;
+			if (agent->mode == AGENT_MODE_CONTROLLING) {
+			    msg.has_ice_controlling = true;
+			    msg.ice_controlling = agent->ice_tiebreaker;
+			} else if (agent->mode == AGENT_MODE_CONTROLLED) {
+			    msg.has_ice_controlled = true;
+			    msg.ice_controlled = agent->ice_tiebreaker;
+			}
 
 			// RFC 8445 7.1.1. PRIORITY
 			// The PRIORITY attribute MUST be included in a Binding request and be set to the value
