@@ -86,8 +86,10 @@ static int test_conflict_with_roles(agent_mode_t mode1, agent_mode_t mode2,
 
 	if (mode1 != AGENT_MODE_UNKNOWN) {
 		agent1->mode = mode1;
-		agent2->mode = mode2;
 		agent1->ice_tiebreaker = tiebreaker1;
+	}
+	if (mode2 != AGENT_MODE_UNKNOWN) {
+		agent2->mode = mode2;
 		agent2->ice_tiebreaker = tiebreaker2;
 	}
 
