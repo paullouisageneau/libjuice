@@ -23,8 +23,8 @@ static void sleep(unsigned int secs) { Sleep(secs * 1000); }
 #define BUFFER_SIZE 4096
 
 static juice_agent_t *agent;
-static bool success = false;
-static bool done = false;
+volatile bool success = false;
+volatile bool done = false;
 
 static void on_state_changed(juice_agent_t *agent, juice_state_t state, void *user_ptr);
 static void on_candidate(juice_agent_t *agent, const char *sdp, void *user_ptr);
