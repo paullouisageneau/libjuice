@@ -442,7 +442,7 @@ int server_recv(juice_server_t *server) {
 	while (true) {
 		char buffer[BUFFER_SIZE];
 		addr_record_t record;
-		int len = udp_recvfrom(server->sock, buffer, BUFFER_SIZE, &record);
+		int len = udp_recvfrom(server->sock, buffer, BUFFER_SIZE, &record, NULL);
 		if (len < 0) {
 			if (sockerrno == SEAGAIN || sockerrno == SEWOULDBLOCK) {
 				JLOG_VERBOSE("No more datagrams to receive");
@@ -468,7 +468,7 @@ int server_forward(juice_server_t *server, server_turn_alloc_t *alloc) {
 	while (true) {
 		char buffer[BUFFER_SIZE];
 		addr_record_t record;
-		int len = udp_recvfrom(alloc->sock, buffer, BUFFER_SIZE, &record);
+		int len = udp_recvfrom(alloc->sock, buffer, BUFFER_SIZE, &record, NULL);
 		if (len < 0) {
 			if (sockerrno == SEAGAIN || sockerrno == SEWOULDBLOCK) {
 				break;
