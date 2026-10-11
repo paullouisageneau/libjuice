@@ -60,6 +60,8 @@ typedef struct juice_server {
 	juice_credentials_list_t *credentials; // Credentials are stored in this list
 	uint8_t nonce_key[SERVER_NONCE_KEY_SIZE];
 	timestamp_t nonce_key_timestamp;
+	addr_record_t response_origin[2]; // one per address family
+	int response_origin_count;
 	socket_t sock;
 	thread_t thread;
 	mutex_t mutex;
@@ -98,7 +100,7 @@ void server_prepare_credentials(juice_server_t *server, const addr_record_t *src
 int server_dispatch_stun(juice_server_t *server, void *buf, size_t size, stun_message_t *msg,
                          const addr_record_t *src);
 int server_answer_stun_binding(juice_server_t *server, const uint8_t *transaction_id,
-                               const addr_record_t *src);
+                               const addr_record_t *src, const addr_record_t *dst);
 int server_answer_stun_error(juice_server_t *server, const uint8_t *transaction_id,
                              const addr_record_t *src, stun_method_t method, unsigned int code,
                              const juice_server_credentials_t *credentials);

@@ -9,10 +9,15 @@
 #include "juice/juice.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 
 int test_crc32(void);
 int test_base64(void);
 int test_stun(void);
+int test_rfc5780(void);
+#ifndef _WIN32
+int test_rfc5780_public(void);
+#endif
 int test_connectivity(void);
 int test_thread(void);
 int test_mux(void);
@@ -53,6 +58,22 @@ int main(int argc, char **argv) {
 		fprintf(stderr, "STUN parsing implementation test failed\n");
 		return -3;
 	}
+
+	printf("\nRunning RFC 5780 NAT behavior discovery test...\n");
+	if (test_rfc5780()) {
+		fprintf(stderr, "RFC 5780 NAT behavior discovery test failed\n");
+		return -3;
+	}
+
+#ifndef _WIN32
+	if (getenv("JUICE_RUN_PUBLIC_STUN_TESTS")) {
+		printf("\nRunning RFC 5780 public STUN server test...\n");
+		if (test_rfc5780_public()) {
+			fprintf(stderr, "RFC 5780 public STUN server test failed\n");
+			return -3;
+		}
+	}
+#endif
 
 	printf("\nRunning candidates gathering test...\n");
 	if (test_gathering()) {
