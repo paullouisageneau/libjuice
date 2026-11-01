@@ -28,6 +28,7 @@ int test_stun_unhandled_no_host(void);
 int test_stun_unhandled_unhandle(void);
 int test_tcp(void);
 int test_tcp_bad_candidate(void);
+int test_tcp_pending_connect(void);
 
 #ifndef NO_SERVER
 int test_server(void);
@@ -119,6 +120,12 @@ int main(int argc, char **argv) {
 	printf("\nRunning TCP Bad Candidate test...\n");
 	if (test_tcp_bad_candidate()) {
 		fprintf(stderr, "TCP bad candidate test failed\n");
+		return -2;
+	}
+
+	printf("\nRunning TCP pending connection test...\n");
+	if (test_tcp_pending_connect()) {
+		fprintf(stderr, "TCP pending connection test failed\n");
 		return -2;
 	}
 
