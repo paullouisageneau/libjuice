@@ -13,6 +13,7 @@
 int test_crc32(void);
 int test_base64(void);
 int test_stun(void);
+int test_selected_transport(void);
 int test_connectivity(void);
 int test_thread(void);
 int test_mux(void);
@@ -57,6 +58,12 @@ int main(int argc, char **argv) {
 	printf("\nRunning candidates gathering test...\n");
 	if (test_gathering()) {
 		fprintf(stderr, "Candidates gathering test failed\n");
+		return -1;
+	}
+
+	printf("\nRunning selected remote transport address test...\n");
+	if (test_selected_transport()) {
+		fprintf(stderr, "Selected remote transport address test failed\n");
 		return -1;
 	}
 

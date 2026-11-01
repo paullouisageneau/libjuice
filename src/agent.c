@@ -778,6 +778,20 @@ int agent_get_selected_candidate_pair(juice_agent_t *agent, ice_candidate_t *loc
 	return 0;
 }
 
+int agent_get_selected_remote_transport_address(juice_agent_t *agent, addr_record_t *remote) {
+	conn_lock(agent);
+	agent_stun_entry_t *entry = atomic_load(&agent->selected_entry);
+	if (!entry || !entry->pair) {
+		conn_unlock(agent);
+		return -1;
+	}
+
+	// Report the selected peer endpoint, not the TURN server used to relay traffic.
+	*remote = entry->record;
+	conn_unlock(agent);
+	return 0;
+}
+
 int agent_conn_update(juice_agent_t *agent, timestamp_t *next_timestamp) {
 	return agent_bookkeeping(agent, next_timestamp);
 }
