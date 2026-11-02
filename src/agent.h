@@ -148,9 +148,10 @@ struct juice_agent {
 	timestamp_t nomination_timestamp;
 	bool gathering_done;
 
+	mutex_t mutex; // Locks the agent while it has no connection, see conn_lock()
 	conn_registry_t *registry;
 	int conn_index;
-	void *conn_impl;
+	atomic_ptr(void) conn_impl;
 
 	thread_t resolver_thread;
 	bool resolver_thread_started;

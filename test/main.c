@@ -28,6 +28,7 @@ int test_stun_unhandled_no_host(void);
 int test_stun_unhandled_unhandle(void);
 int test_tcp(void);
 int test_tcp_bad_candidate(void);
+int test_calls_during_gathering(void);
 
 #ifndef NO_SERVER
 int test_server(void);
@@ -122,6 +123,11 @@ int main(int argc, char **argv) {
 		return -2;
 	}
 
+	printf("\nRunning calls during gathering test...\n");
+	if (test_calls_during_gathering()) {
+		fprintf(stderr, "Calls during gathering test failed\n");
+		return -1;
+	}
 
 #ifndef _WIN32
 	// windows fails to read STUN message from listen socket:

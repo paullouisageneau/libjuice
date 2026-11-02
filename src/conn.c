@@ -163,7 +163,10 @@ int conn_create(juice_agent_t *agent, udp_socket_config_t *config) {
 			memset(registry->agents + i, 0, (new_size - i) * sizeof(juice_agent_t *));
 		}
 
+		// Lock the agent while creating the connection, see conn_lock()
+		mutex_lock(&agent->mutex);
 		if (get_agent_mode_entry(agent)->init_func(agent, registry, config)) {
+			mutex_unlock(&agent->mutex);
 			release_registry(entry, registry); // unlocks the registry
 			mutex_unlock(&entry->mutex);
 			return -1;
@@ -173,15 +176,19 @@ int conn_create(juice_agent_t *agent, udp_socket_config_t *config) {
 		agent->conn_index = i;
 		++registry->agents_count;
 
+		mutex_unlock(&agent->mutex);
 		mutex_unlock(&registry->mutex);
 
 	} else {
+		mutex_lock(&agent->mutex);
 		if (get_agent_mode_entry(agent)->init_func(agent, NULL, config)) {
+			mutex_unlock(&agent->mutex);
 			mutex_unlock(&entry->mutex);
 			return -1;
 		}
 
 		agent->conn_index = -1;
+		mutex_unlock(&agent->mutex);
 	}
 
 	mutex_unlock(&entry->mutex);
@@ -222,15 +229,24 @@ void conn_destroy(juice_agent_t *agent) {
 }
 
 void conn_lock(juice_agent_t *agent) {
-	if (!agent->conn_impl)
-		return;
+	if (!agent->conn_impl) {
+		// No connection yet, lock the agent instead
+		mutex_lock(&agent->mutex);
+		if (!agent->conn_impl) // the connection is created with the agent locked
+			return;
+
+		mutex_unlock(&agent->mutex);
+	}
 
 	get_agent_mode_entry(agent)->lock_func(agent);
 }
 
 void conn_unlock(juice_agent_t *agent) {
-	if (!agent->conn_impl)
+	if (!agent->conn_impl) {
+		// The connection can't be created while the agent is locked
+		mutex_unlock(&agent->mutex);
 		return;
+	}
 
 	get_agent_mode_entry(agent)->unlock_func(agent);
 }
