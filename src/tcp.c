@@ -140,7 +140,12 @@ int tcp_ice_read(socket_t sock, tcp_ice_read_context_t *context) {
 
 	context->pending = false;
 	assert(context->length > 0);
-	return (int)context->length;
+
+	uint16_t length = context->length;
+	if (length > TCP_ICE_BUFFER_SIZE)
+		length = TCP_ICE_BUFFER_SIZE;
+
+	return (int)length;
 }
 
 JUICE_EXPORT int _juice_tcp_ice_write(socket_t sock, const char *data, size_t size, tcp_ice_write_context_t *context) {
