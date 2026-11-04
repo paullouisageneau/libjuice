@@ -140,19 +140,6 @@ JUICE_EXPORT int juice_get_selected_addresses(juice_agent_t *agent, char *local,
 	return JUICE_ERR_SUCCESS;
 }
 
-JUICE_EXPORT int juice_get_selected_remote_transport_address(juice_agent_t *agent, char *remote,
-                                                             size_t remote_size) {
-	if (!agent || !remote || !remote_size)
-		return JUICE_ERR_INVALID;
-
-	addr_record_t address;
-	if (agent_get_selected_remote_transport_address(agent, &address))
-		return JUICE_ERR_NOT_AVAIL;
-
-	return addr_record_to_string(&address, remote, remote_size) < 0 ? JUICE_ERR_FAILED
-	                                                             : JUICE_ERR_SUCCESS;
-}
-
 int juice_set_local_ice_attributes(juice_agent_t *agent, const char *ufrag, const char *pwd)
 {
 	if (!ufrag || !pwd)

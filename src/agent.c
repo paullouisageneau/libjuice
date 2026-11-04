@@ -549,7 +549,11 @@ int agent_set_remote_description(juice_agent_t *agent, const char *sdp) {
 		return JUICE_ERR_FAILED;
 	}
 
-	agent->remote = remote;
+	// Preserve existing candidates referenced by active pairs.
+	strcpy(agent->remote.ice_ufrag, remote.ice_ufrag);
+	strcpy(agent->remote.ice_pwd, remote.ice_pwd);
+	agent->remote.ice_lite = remote.ice_lite;
+	agent->remote.finished = agent->remote.finished || remote.finished;
 
 	agent_update_pac_timer(agent);
 
@@ -569,9 +573,13 @@ int agent_set_remote_description(juice_agent_t *agent, const char *sdp) {
 	for (int i = 0; i < agent->candidate_pairs_count; ++i) {
 		agent_unfreeze_candidate_pair(agent, agent->candidate_pairs + i);
 	}
-	JLOG_DEBUG("Adding %d candidates from remote description", (int)agent->remote.candidates_count);
-	for (int i = 0; i < agent->remote.candidates_count; ++i) {
-		ice_candidate_t *remote = agent->remote.candidates + i;
+	JLOG_DEBUG("Adding %d candidates from remote description", (int)remote.candidates_count);
+	for (int i = 0; i < remote.candidates_count; ++i) {
+		if (ice_add_candidate(remote.candidates + i, &agent->remote)) {
+			JLOG_WARN("Failed to add candidate from remote description");
+			continue;
+		}
+		ice_candidate_t *remote = agent->remote.candidates + agent->remote.candidates_count - 1;
 		if (agent_add_candidate_pairs_for_remote(agent, remote))
 			JLOG_WARN("Failed to add candidate pair");
 	}
@@ -774,20 +782,6 @@ int agent_get_selected_candidate_pair(juice_agent_t *agent, ice_candidate_t *loc
 	if (remote)
 		*remote = *pair->remote;
 
-	conn_unlock(agent);
-	return 0;
-}
-
-int agent_get_selected_remote_transport_address(juice_agent_t *agent, addr_record_t *remote) {
-	conn_lock(agent);
-	agent_stun_entry_t *entry = atomic_load(&agent->selected_entry);
-	if (!entry || !entry->pair) {
-		conn_unlock(agent);
-		return -1;
-	}
-
-	// Report the selected peer endpoint, not the TURN server used to relay traffic.
-	*remote = entry->record;
 	conn_unlock(agent);
 	return 0;
 }
