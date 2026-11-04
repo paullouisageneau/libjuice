@@ -28,6 +28,8 @@ static int wait_for_gathering(const bool *done) {
 static juice_agent_t *agent1;
 static juice_agent_t *agent2;
 static bool non_relay_candidate_emitted;
+static bool mixed_mode;
+static bool mixed_peer_host_emitted;
 
 typedef struct candidate_observation {
 	bool host;
@@ -58,10 +60,12 @@ static void on_candidate2(juice_agent_t *agent, const char *sdp, void *user_ptr)
 	(void)agent;
 	(void)user_ptr;
 	fprintf(stderr, "Agent 2 candidate: %s\n", sdp);
-	if (!strstr(sdp, " typ relay")) {
+	if (!strstr(sdp, mixed_mode ? " typ host" : " typ relay")) {
 		non_relay_candidate_emitted = true;
 		return;
 	}
+	if (mixed_mode)
+		mixed_peer_host_emitted = true;
 	if (juice_add_remote_candidate(agent1, sdp) < 0)
 		fprintf(stderr, "Agent 1 rejected relayed candidate: %s\n", sdp);
 }
@@ -155,7 +159,6 @@ static int test_no_direct_fallback(uint16_t port, const char *username, const ch
 
 	juice_config_t relay_config;
 	memset(&relay_config, 0, sizeof(relay_config));
-	relay_config.relay_only = true;
 	relay_config.turn_servers = &turn;
 	relay_config.turn_servers_count = 1;
 	relay_config.cb_candidate = on_failure_candidate;
@@ -168,7 +171,9 @@ static int test_no_direct_fallback(uint16_t port, const char *username, const ch
 	peer_config.user_ptr = &peer_observation;
 	juice_agent_t *relay_agent = juice_create(&relay_config);
 	juice_agent_t *direct_peer = juice_create(&peer_config);
-	if (!relay_agent || !direct_peer) {
+	if (!relay_agent || !direct_peer ||
+	    juice_set_ice_transport_policy(relay_agent, JUICE_ICE_TRANSPORT_POLICY_RELAY) !=
+	        JUICE_ERR_SUCCESS) {
 		juice_destroy(relay_agent);
 		juice_destroy(direct_peer);
 		return -1;
@@ -181,9 +186,7 @@ static int test_no_direct_fallback(uint16_t port, const char *username, const ch
 		return -1;
 	}
 
-	// An unavailable TURN server can take about 23.5 seconds to exhaust its
-	// allocation retransmissions. Wait for gathering to finish before asserting
-	// that relay-only mode does not fall back to direct connectivity.
+	// Wait for TURN retries to finish before checking for direct fallback.
 	for (int i = 0; i < 30 && (!observation.done || !peer_observation.done); ++i)
 		sleep(1);
 	if (!observation.done || !peer_observation.done) {
@@ -241,6 +244,125 @@ static int test_no_direct_fallback(uint16_t port, const char *username, const ch
 	return success ? 0 : -1;
 }
 
+static int test_turn_connection(juice_turn_server_t *turn, bool use_mixed_mode) {
+	mixed_mode = use_mixed_mode;
+	juice_config_t config1;
+	memset(&config1, 0, sizeof(config1));
+	config1.turn_servers = turn;
+	config1.turn_servers_count = 1;
+	config1.stun_server_host = "127.0.0.1";
+	config1.stun_server_port = 3478;
+	config1.cb_candidate = on_candidate1;
+	config1.cb_state_changed = on_state_changed;
+	config1.cb_recv = on_data1;
+
+	juice_config_t config2 = config1;
+	if (mixed_mode) {
+		config2.turn_servers = NULL;
+		config2.turn_servers_count = 0;
+		config2.stun_server_host = NULL;
+		config2.bind_address = "127.0.0.1";
+	}
+	config2.cb_candidate = on_candidate2;
+	config2.cb_recv = on_data2;
+
+	agent1_received_data = false;
+	agent2_received_data = false;
+	mixed_peer_host_emitted = false;
+
+	non_relay_candidate_emitted = false;
+	agent1 = juice_create(&config1);
+	agent2 = juice_create(&config2);
+	if (!agent1 || !agent2 ||
+	    juice_set_ice_transport_policy(agent1, JUICE_ICE_TRANSPORT_POLICY_RELAY) !=
+	        JUICE_ERR_SUCCESS ||
+	    (!mixed_mode && juice_set_ice_transport_policy(agent2, JUICE_ICE_TRANSPORT_POLICY_RELAY) !=
+	                        JUICE_ERR_SUCCESS)) {
+		juice_destroy(agent1);
+		juice_destroy(agent2);
+		return -1;
+	}
+
+	char sdp1[JUICE_MAX_SDP_STRING_LEN];
+	char sdp2[JUICE_MAX_SDP_STRING_LEN];
+	if (juice_get_local_description(agent1, sdp1, sizeof(sdp1)) < 0 ||
+	    juice_get_local_description(agent2, sdp2, sizeof(sdp2)) < 0 ||
+	    juice_set_remote_description(agent1, sdp2) < 0 ||
+	    juice_set_remote_description(agent2, sdp1) < 0) {
+		juice_destroy(agent1);
+		juice_destroy(agent2);
+		return -1;
+	}
+
+	if (juice_gather_candidates(agent1) < 0 || juice_gather_candidates(agent2) < 0) {
+		juice_destroy(agent1);
+		juice_destroy(agent2);
+		agent1 = NULL;
+		agent2 = NULL;
+		return -1;
+	}
+
+	bool connected = false;
+	for (int i = 0; i < 20; ++i) {
+		juice_state_t state1 = juice_get_state(agent1);
+		juice_state_t state2 = juice_get_state(agent2);
+		if ((state1 == JUICE_STATE_CONNECTED || state1 == JUICE_STATE_COMPLETED) &&
+		    (state2 == JUICE_STATE_CONNECTED || state2 == JUICE_STATE_COMPLETED)) {
+			connected = true;
+			break;
+		}
+		sleep(1);
+	}
+
+	fprintf(stderr, "connected=%d state1=%s state2=%s non_relay=%d\n", connected,
+	        juice_state_to_string(juice_get_state(agent1)),
+	        juice_state_to_string(juice_get_state(agent2)), non_relay_candidate_emitted);
+	bool success = connected && !non_relay_candidate_emitted &&
+	               (!mixed_mode || mixed_peer_host_emitted);
+	if (success) {
+		static const char data1[] = "relay-only data from agent 1";
+		static const char data2[] = "relay-only data from agent 2";
+		if (juice_send(agent1, data1, sizeof(data1) - 1) < 0 ||
+		    juice_send(agent2, data2, sizeof(data2) - 1) < 0) {
+			success = false;
+		} else {
+			for (int i = 0; i < 5 && (!agent1_received_data || !agent2_received_data); ++i)
+				sleep(1);
+			success = agent1_received_data && agent2_received_data;
+		}
+		if (!success)
+			fprintf(stderr, "Relay-only TURN data test failed: agent1_received=%d agent2_received=%d\\n",
+			        agent1_received_data, agent2_received_data);
+	}
+	char local[JUICE_MAX_CANDIDATE_SDP_STRING_LEN];
+	char remote[JUICE_MAX_CANDIDATE_SDP_STRING_LEN];
+	if (success &&
+	    (juice_get_selected_candidates(agent1, local, sizeof(local), remote, sizeof(remote)) < 0 ||
+	     !strstr(local, " typ relay") ||
+	     !strstr(remote, mixed_mode ? " typ host" : " typ relay")))
+		success = false;
+	if (success &&
+	    (juice_get_selected_candidates(agent2, local, sizeof(local), remote, sizeof(remote)) < 0 ||
+	     !strstr(local, mixed_mode ? " typ host" : " typ relay") ||
+	     !strstr(remote, " typ relay")))
+		success = false;
+	if (success &&
+	    (juice_get_local_description(agent1, sdp1, sizeof(sdp1)) < 0 ||
+	     juice_get_local_description(agent2, sdp2, sizeof(sdp2)) < 0 ||
+	     strstr(sdp1, " typ host") || strstr(sdp1, " typ srflx") ||
+	     (mixed_mode ? !strstr(sdp2, " typ host") || strstr(sdp2, " typ relay")
+	                 : strstr(sdp2, " typ host") || strstr(sdp2, " typ srflx"))))
+		success = false;
+
+	printf("Relay-only TURN %s test: %s\n", mixed_mode ? "mixed-mode" : "relay-to-relay",
+	       success ? "passed" : "failed");
+	juice_destroy(agent1);
+	juice_destroy(agent2);
+	agent1 = NULL;
+	agent2 = NULL;
+	return success ? 0 : -1;
+}
+
 int test_relay_only_turn(void) {
 	juice_server_credentials_t credentials;
 	memset(&credentials, 0, sizeof(credentials));
@@ -276,109 +398,9 @@ int test_relay_only_turn(void) {
 	turn.username = "testuser";
 	turn.password = "testpass";
 
-	juice_config_t config1;
-	memset(&config1, 0, sizeof(config1));
-	config1.relay_only = true;
-	config1.turn_servers = &turn;
-	config1.turn_servers_count = 1;
-	config1.stun_server_host = "127.0.0.1";
-	config1.stun_server_port = 3478;
-	config1.cb_candidate = on_candidate1;
-	config1.cb_state_changed = on_state_changed;
-	config1.cb_recv = on_data1;
-
-	juice_config_t config2 = config1;
-	config2.cb_candidate = on_candidate2;
-	config2.cb_recv = on_data2;
-
-	agent1_received_data = false;
-	agent2_received_data = false;
-
-	non_relay_candidate_emitted = false;
-	agent1 = juice_create(&config1);
-	agent2 = juice_create(&config2);
-	if (!agent1 || !agent2) {
-		juice_destroy(agent1);
-		juice_destroy(agent2);
-		juice_server_destroy(server);
-		return -1;
-	}
-
-	char sdp1[JUICE_MAX_SDP_STRING_LEN];
-	char sdp2[JUICE_MAX_SDP_STRING_LEN];
-	if (juice_get_local_description(agent1, sdp1, sizeof(sdp1)) < 0 ||
-	    juice_get_local_description(agent2, sdp2, sizeof(sdp2)) < 0 ||
-	    juice_set_remote_description(agent1, sdp2) < 0 ||
-	    juice_set_remote_description(agent2, sdp1) < 0) {
-		juice_destroy(agent1);
-		juice_destroy(agent2);
-		juice_server_destroy(server);
-		return -1;
-	}
-
-	if (juice_gather_candidates(agent1) < 0 || juice_gather_candidates(agent2) < 0) {
-		juice_destroy(agent1);
-		juice_destroy(agent2);
-		agent1 = NULL;
-		agent2 = NULL;
-		juice_server_destroy(server);
-		return -1;
-	}
-
-	bool connected = false;
-	for (int i = 0; i < 20; ++i) {
-		juice_state_t state1 = juice_get_state(agent1);
-		juice_state_t state2 = juice_get_state(agent2);
-		if ((state1 == JUICE_STATE_CONNECTED || state1 == JUICE_STATE_COMPLETED) &&
-		    (state2 == JUICE_STATE_CONNECTED || state2 == JUICE_STATE_COMPLETED)) {
-			connected = true;
-			break;
-		}
-		sleep(1);
-	}
-
-	fprintf(stderr, "connected=%d state1=%s state2=%s non_relay=%d\n", connected,
-	        juice_state_to_string(juice_get_state(agent1)),
-	        juice_state_to_string(juice_get_state(agent2)), non_relay_candidate_emitted);
-	bool success = connected && !non_relay_candidate_emitted;
-	if (success) {
-		static const char data1[] = "relay-only data from agent 1";
-		static const char data2[] = "relay-only data from agent 2";
-		if (juice_send(agent1, data1, sizeof(data1) - 1) < 0 ||
-		    juice_send(agent2, data2, sizeof(data2) - 1) < 0) {
-			success = false;
-		} else {
-			for (int i = 0; i < 5 && (!agent1_received_data || !agent2_received_data); ++i)
-				sleep(1);
-			success = agent1_received_data && agent2_received_data;
-		}
-		if (!success)
-			fprintf(stderr, "Relay-only TURN data test failed: agent1_received=%d agent2_received=%d\\n",
-			        agent1_received_data, agent2_received_data);
-	}
-	char local[JUICE_MAX_CANDIDATE_SDP_STRING_LEN];
-	char remote[JUICE_MAX_CANDIDATE_SDP_STRING_LEN];
-	if (success &&
-	    (juice_get_selected_candidates(agent1, local, sizeof(local), remote, sizeof(remote)) < 0 ||
-	     !strstr(local, " typ relay") || !strstr(remote, " typ relay")))
-		success = false;
-	if (success &&
-	    (juice_get_selected_candidates(agent2, local, sizeof(local), remote, sizeof(remote)) < 0 ||
-	     !strstr(local, " typ relay") || !strstr(remote, " typ relay")))
-		success = false;
-	if (success &&
-	    (juice_get_local_description(agent1, sdp1, sizeof(sdp1)) < 0 ||
-	     juice_get_local_description(agent2, sdp2, sizeof(sdp2)) < 0 ||
-	     strstr(sdp1, " typ host") || strstr(sdp1, " typ srflx") ||
-	     strstr(sdp2, " typ host") || strstr(sdp2, " typ srflx")))
-		success = false;
-
-	printf("Relay-only TURN integration test: %s\n", success ? "passed" : "failed");
-	juice_destroy(agent1);
-	juice_destroy(agent2);
-	agent1 = NULL;
-	agent2 = NULL;
-	int result = success ? 0 : -1;
+	int result = test_turn_connection(&turn, false);
+	if (result == 0 && test_turn_connection(&turn, true) < 0)
+		result = -1;
 	if (result == 0 && test_default_all_stun() < 0)
 		result = -1;
 	if (result == 0 &&
