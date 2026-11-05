@@ -934,8 +934,13 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 			    if (entry->tcp_state == TCP_STATE_DISCONNECTED)
 					conn_tcp_connect(agent, &entry->record); // First attempt a TCP connection
 
-				if(entry->tcp_state != TCP_STATE_CONNECTED)
+				if (entry->tcp_state != TCP_STATE_CONNECTED) {
+					// Still connecting, agent_conn_tcp_state() will arm the entry on success or
+					// failure. Leaving the entry overdue would make bookkeeping run again
+					// immediately, polling in a loop until the connection times out.
+					entry->next_transmission = now + MIN_STUN_RETRANSMISSION_TIMEOUT;
 					continue;
+				}
 			}
 
 			if (entry->retransmissions >= 0) {

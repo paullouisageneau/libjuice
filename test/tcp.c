@@ -231,3 +231,63 @@ int test_tcp_bad_candidate() {
 	}
 }
 
+
+// Process CPU time, clock() measures wall time on Windows
+static double process_cpu_time() {
+#ifdef _WIN32
+	FILETIME creation_time, exit_time, kernel_time, user_time;
+	if (!GetProcessTimes(GetCurrentProcess(), &creation_time, &exit_time, &kernel_time,
+	                     &user_time))
+		return 0.0;
+	ULARGE_INTEGER kernel, user;
+	kernel.LowPart = kernel_time.dwLowDateTime;
+	kernel.HighPart = kernel_time.dwHighDateTime;
+	user.LowPart = user_time.dwLowDateTime;
+	user.HighPart = user_time.dwHighDateTime;
+	return (double)(kernel.QuadPart + user.QuadPart) / 1e7; // 100-nanosecond intervals
+#else
+	return (double)clock() / CLOCKS_PER_SEC;
+#endif
+}
+
+int test_tcp_pending_connect() {
+	juice_config_t config;
+	memset(&config, 0, sizeof(config));
+
+	juice_agent_t *agent = juice_create(&config);
+
+	if (juice_set_ice_tcp_mode(agent, JUICE_ICE_TCP_MODE_ACTIVE)) {
+		printf("Failure\n");
+		return -1;
+	}
+
+	char sdp[JUICE_MAX_SDP_STRING_LEN];
+	snprintf(sdp, JUICE_MAX_SDP_STRING_LEN,
+	         "a=ice-ufrag:ufrag\r\n"
+	         "a=ice-pwd:%s\r\n",
+	         ICE_PWD);
+	juice_set_remote_description(agent, sdp);
+
+	// TEST-NET-1 address: the SYN is normally dropped, so the connection stays pending
+	juice_add_remote_candidate(agent,
+	                           "a=candidate:1 1 TCP 2122316799 192.0.2.1 50001 typ host tcptype passive");
+
+	juice_gather_candidates(agent);
+	sleep(1);
+
+	// The agent must sleep while the connection is pending instead of polling in a loop
+	double start = process_cpu_time();
+	sleep(2);
+	double cpu_secs = process_cpu_time() - start;
+	printf("CPU time while connecting: %.3fs\n", cpu_secs);
+
+	juice_destroy(agent);
+
+	if (cpu_secs < 0.5) {
+		printf("Success\n");
+		return 0;
+	} else {
+		printf("Failure\n");
+		return -1;
+	}
+}
