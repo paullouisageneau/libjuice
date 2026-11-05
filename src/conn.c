@@ -8,6 +8,7 @@
 
 #include "conn.h"
 #include "agent.h"
+#include "conn_external.h"
 #include "conn_mux.h"
 #include "conn_poll.h"
 #include "conn_thread.h"
@@ -18,7 +19,7 @@
 
 #define INITIAL_REGISTRY_SIZE 16
 
-#define MODE_ENTRIES_SIZE 3
+#define MODE_ENTRIES_SIZE 4
 
 static conn_mode_entry_t mode_entries[MODE_ENTRIES_SIZE] = {
     {conn_poll_registry_init, conn_poll_registry_cleanup, conn_poll_init, conn_poll_cleanup,
@@ -29,6 +30,9 @@ static conn_mode_entry_t mode_entries[MODE_ENTRIES_SIZE] = {
      conn_mux_listen, conn_mux_get_registry, conn_mux_can_release_registry, MUTEX_INITIALIZER, NULL},
     {NULL, NULL, conn_thread_init, conn_thread_cleanup,
      conn_thread_lock, conn_thread_unlock, conn_thread_interrupt, conn_thread_send, NULL, conn_thread_get_addrs,
+     NULL, NULL, NULL, MUTEX_INITIALIZER, NULL},
+    {NULL, NULL, conn_external_init, conn_external_cleanup,
+     conn_external_lock, conn_external_unlock, conn_external_interrupt, conn_external_send, NULL, conn_external_get_addrs,
      NULL, NULL, NULL, MUTEX_INITIALIZER, NULL}
 };
 

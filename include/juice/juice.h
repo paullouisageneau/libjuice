@@ -88,7 +88,38 @@ typedef enum juice_concurrency_mode {
 	JUICE_CONCURRENCY_MODE_POLL = 0, // Connections share a single thread
 	JUICE_CONCURRENCY_MODE_MUX,      // Connections are multiplexed on a single UDP socket
 	JUICE_CONCURRENCY_MODE_THREAD,   // Each connection runs in its own thread
+	JUICE_CONCURRENCY_MODE_EXTERNAL, // The application owns the UDP socket and event loop
 } juice_concurrency_mode_t;
+
+// Callback used by external mode to send a datagram from the application's socket.
+// @param dst points to a struct sockaddr and @param dstlen is its length.
+// Return 0 on success, a negative value on failure.
+typedef int (*juice_sendto_cb)(void *user_ptr, const void *data, size_t size, const void *dst,
+                               int dstlen);
+
+typedef enum juice_address_family {
+	JUICE_ADDRESS_FAMILY_ANY = 0,
+	JUICE_ADDRESS_FAMILY_IPV4,
+	JUICE_ADDRESS_FAMILY_IPV6,
+} juice_address_family_t;
+
+typedef struct juice_external_io {
+	juice_sendto_cb sendto; // required in external mode
+
+	void *user_ptr;
+
+	// Local address of the application's socket. Set it to a concrete IP to
+	// advertise exactly one host candidate; leave NULL (or "0.0.0.0") to
+	// enumerate the interfaces.
+	const char *local_address;
+
+	// Port the application's socket is bound to. Required to build host
+	// candidates and match STUN server-reflexive mappings.
+	uint16_t local_port;
+
+	// Restrict enumerated addresses to a family. ANY enumerates IPv4 and IPv6.
+	juice_address_family_t address_family;
+} juice_external_io_t;
 
 typedef enum juice_ice_tcp_mode {
 	JUICE_ICE_TCP_MODE_NONE = 0, // ICE-TCP is disabled
@@ -116,6 +147,8 @@ typedef struct juice_config {
 
 	void *user_ptr;
 
+	juice_external_io_t external; // used when concurrency_mode is EXTERNAL
+
 } juice_config_t;
 
 JUICE_EXPORT juice_agent_t *juice_create(const juice_config_t *config);
@@ -138,6 +171,17 @@ JUICE_EXPORT int juice_set_local_ice_attributes(juice_agent_t *agent, const char
 JUICE_EXPORT const char *juice_state_to_string(juice_state_t state);
 JUICE_EXPORT int juice_mux_listen(const char *bind_address, int local_port, juice_cb_mux_incoming_t cb, void *user_ptr);
 JUICE_EXPORT int juice_set_ice_tcp_mode(juice_agent_t *agent, juice_ice_tcp_mode_t ice_tcp_mode);
+
+// External mode: feed a datagram received on the application's UDP socket to the
+// agent. @param src points to a struct sockaddr. Returns 1 if the datagram was
+// consumed by ICE/TURN, 0 if it is application data the caller must handle
+// itself, or a negative value on error.
+JUICE_EXPORT int juice_agent_input(juice_agent_t *agent, const void *data, size_t size,
+                                   const void *src, int srclen);
+
+// External mode: drive retransmissions, keepalives and consent checks. Call it
+// periodically (every 50-100 ms is enough) from the application's event loop.
+JUICE_EXPORT int juice_agent_tick(juice_agent_t *agent);
 
 // ICE server
 

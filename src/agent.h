@@ -180,6 +180,11 @@ int agent_get_selected_candidate_pair(juice_agent_t *agent, ice_candidate_t *loc
 
 int agent_conn_recv(juice_agent_t *agent, char *buf, size_t len, const addr_record_t *src);
 int agent_conn_update(juice_agent_t *agent, timestamp_t *next_timestamp);
+
+// External mode entry points. The application owns the UDP socket and calls
+// these from its own event loop.
+int agent_input_external(juice_agent_t *agent, char *buf, size_t len, const addr_record_t *src);
+int agent_tick_external(juice_agent_t *agent);
 int agent_conn_tcp_state(juice_agent_t *agent, const addr_record_t *dst, tcp_state_t state);
 int agent_conn_fail(juice_agent_t *agent);
 

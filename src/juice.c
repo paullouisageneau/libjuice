@@ -224,3 +224,37 @@ int juice_set_ice_tcp_mode(juice_agent_t *agent, juice_ice_tcp_mode_t ice_tcp_mo
 
 	return agent_set_ice_tcp_mode(agent, ice_tcp_mode);
 }
+
+JUICE_EXPORT int juice_agent_input(juice_agent_t *agent, const void *data, size_t size,
+                                   const void *src, int srclen) {
+	if (!agent || (!data && size) || (!src && srclen))
+		return JUICE_ERR_INVALID;
+
+	if (agent->config.concurrency_mode != JUICE_CONCURRENCY_MODE_EXTERNAL)
+		return JUICE_ERR_INVALID;
+
+	addr_record_t record;
+	memset(&record, 0, sizeof(record));
+	if (srclen < 0 || (size_t)srclen > sizeof(record.addr))
+		return JUICE_ERR_INVALID;
+
+	memcpy(&record.addr, src, (size_t)srclen);
+	record.len = (socklen_t)srclen;
+	record.socktype = SOCK_DGRAM;
+
+	int ret = agent_input_external(agent, (char *)data, size, &record);
+	if (ret < 0)
+		return JUICE_ERR_FAILED;
+
+	return ret;
+}
+
+JUICE_EXPORT int juice_agent_tick(juice_agent_t *agent) {
+	if (!agent)
+		return JUICE_ERR_INVALID;
+
+	if (agent->config.concurrency_mode != JUICE_CONCURRENCY_MODE_EXTERNAL)
+		return JUICE_ERR_INVALID;
+
+	return agent_tick_external(agent) < 0 ? JUICE_ERR_FAILED : JUICE_ERR_SUCCESS;
+}

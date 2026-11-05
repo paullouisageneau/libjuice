@@ -36,6 +36,35 @@ The limitations compared to a fully-featured ICE agent are:
 
 It also implements a lightweight STUN/TURN server ([RFC8489](https://www.rfc-editor.org/rfc/rfc8489.html) and [RFC8656](https://www.rfc-editor.org/rfc/rfc8656.html)). The server can be disabled at compile-time with the `NO_SERVER` flag.
 
+## External socket mode
+
+By default libjuice creates and owns the UDP socket(s) and runs its own polling thread. Applications that already have an event loop and a UDP socket (libuv, asyncio, a game loop, ...) can keep ownership of both with `JUICE_CONCURRENCY_MODE_EXTERNAL`: libjuice then only runs the ICE/STUN state machine and sends through a callback.
+
+```c
+static int sendto_cb(void *user_ptr, const void *data, size_t size, const void *dst, int dstlen) {
+    my_socket_t *sock = user_ptr;
+    return my_sendto(sock, data, size, (const struct sockaddr *)dst, (socklen_t)dstlen);
+}
+
+juice_config_t config = {0};
+config.concurrency_mode = JUICE_CONCURRENCY_MODE_EXTERNAL;
+config.external.sendto = sendto_cb;
+config.external.user_ptr = sock;
+config.external.local_address = NULL; // enumerate interfaces, or set a concrete IP
+config.external.local_port = my_socket_port(sock);
+config.external.address_family = JUICE_ADDRESS_FAMILY_IPV4;
+
+juice_agent_t *agent = juice_create(&config);
+```
+
+The application owns the socket and the event loop:
+
+- On every received datagram, call `juice_agent_input(agent, data, size, src, srclen)`. It returns `1` when the datagram was ICE/TURN control traffic and `0` when it is application data the application must handle itself. TURN ChannelData and relayed application data are consumed and delivered through `cb_recv`.
+- Call `juice_agent_tick(agent)` periodically (50-100 ms is enough) to drive retransmissions, keepalives and consent freshness.
+- All callbacks run synchronously on the caller's thread. Server hostnames are resolved synchronously in this mode.
+- ICE-TCP is not supported in this mode.
+- Once ICE completes, the application can send its own data directly on its socket; `juice_send()` remains available and goes through the `sendto` callback.
+
 ## Dependencies
 
 None!

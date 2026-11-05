@@ -29,6 +29,7 @@ int test_stun_unhandled_no_host(void);
 int test_stun_unhandled_unhandle(void);
 int test_tcp(void);
 int test_tcp_bad_candidate(void);
+int test_external(void);
 
 #ifndef NO_SERVER
 int test_server(void);
@@ -81,6 +82,12 @@ int main(int argc, char **argv) {
 		return -1;
 	}
 */
+	printf("\nRunning external-mode connectivity test...\n");
+	if (test_external()) {
+		fprintf(stderr, "External-mode connectivity test failed\n");
+		return -1;
+	}
+
 	printf("\nRunning thread-mode connectivity test...\n");
 	if (test_thread()) {
 		fprintf(stderr, "Thread-mode connectivity test failed\n");

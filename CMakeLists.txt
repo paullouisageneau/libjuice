@@ -41,6 +41,7 @@ set(LIBJUICE_SOURCES
 	${CMAKE_CURRENT_SOURCE_DIR}/src/crc32.c
 	${CMAKE_CURRENT_SOURCE_DIR}/src/const_time.c
 	${CMAKE_CURRENT_SOURCE_DIR}/src/conn.c
+	${CMAKE_CURRENT_SOURCE_DIR}/src/conn_external.c
 	${CMAKE_CURRENT_SOURCE_DIR}/src/conn_poll.c
 	${CMAKE_CURRENT_SOURCE_DIR}/src/conn_thread.c
 	${CMAKE_CURRENT_SOURCE_DIR}/src/conn_mux.c
@@ -77,6 +78,7 @@ set(TESTS_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/test/gathering.c
     ${CMAKE_CURRENT_SOURCE_DIR}/test/remote-description.c
     ${CMAKE_CURRENT_SOURCE_DIR}/test/connectivity.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/test/external.c
     ${CMAKE_CURRENT_SOURCE_DIR}/test/turn.c
     ${CMAKE_CURRENT_SOURCE_DIR}/test/thread.c
     ${CMAKE_CURRENT_SOURCE_DIR}/test/mux.c
@@ -120,9 +122,11 @@ target_link_libraries(juice-static PRIVATE Threads::Threads)
 if(WIN32)
 	target_link_libraries(juice PRIVATE
 		ws2_32 # winsock2
+		iphlpapi
 		bcrypt)
 	target_link_libraries(juice-static PRIVATE
 		ws2_32 # winsock2
+		iphlpapi
 		bcrypt)
 endif()
 
@@ -246,7 +250,7 @@ if(NOT NO_TESTS)
 	target_link_libraries(juice-tests juice-static Threads::Threads)
 
 	if(WIN32)
-		target_link_libraries(juice-tests ws2_32)
+		target_link_libraries(juice-tests ws2_32 iphlpapi)
 	endif()
 endif()
 

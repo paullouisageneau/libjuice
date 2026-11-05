@@ -108,6 +108,12 @@ juice_agent_t *agent_create(const juice_config_t *config) {
 	agent->config.cb_gathering_done = config->cb_gathering_done;
 	agent->config.cb_recv = config->cb_recv;
 	agent->config.user_ptr = config->user_ptr;
+	agent->config.external.sendto = config->external.sendto;
+	agent->config.external.user_ptr = config->external.user_ptr;
+	agent->config.external.local_address =
+	    alloc_string_copy(config->external.local_address, &alloc_failed);
+	agent->config.external.local_port = config->external.local_port;
+	agent->config.external.address_family = config->external.address_family;
 	if (alloc_failed) {
 		JLOG_FATAL("Memory allocation for configuration copy failed");
 		goto error;
@@ -188,6 +194,7 @@ void agent_destroy(juice_agent_t *agent) {
 	}
 	free(agent->config.turn_servers);
 	free((void *)agent->config.bind_address);
+	free((void *)agent->config.external.local_address);
 	free(agent);
 
 #ifdef _WIN32
@@ -323,7 +330,11 @@ int agent_gather_candidates(juice_agent_t *agent) {
 	conn_unlock(agent);
 	conn_interrupt(agent);
 
-	if (has_nonnumeric_server_hostnames(&agent->config)) {
+	// External mode promises that every callback runs on the caller's thread,
+	// so resolve server hostnames synchronously even though that can block the
+	// application's loop for a moment.
+	if (has_nonnumeric_server_hostnames(&agent->config) &&
+	    agent->config.concurrency_mode != JUICE_CONCURRENCY_MODE_EXTERNAL) {
 		// Resolve server hostnames in a separate thread as it may block
 		JLOG_DEBUG("Starting resolver thread for servers");
 		int ret = thread_init(&agent->resolver_thread, resolver_thread_entry, agent);
@@ -793,6 +804,29 @@ int agent_conn_update(juice_agent_t *agent, timestamp_t *next_timestamp) {
 int agent_conn_recv(juice_agent_t *agent, char *buf, size_t len, const addr_record_t *src) {
 	agent_input(agent, buf, len, src, NULL);
 	return 0; // ignore errors
+}
+
+int agent_input_external(juice_agent_t *agent, char *buf, size_t len, const addr_record_t *src) {
+	if (agent->state == JUICE_STATE_DISCONNECTED || agent->state == JUICE_STATE_GATHERING)
+		return 0;
+
+	// Only STUN messages and TURN ChannelData belong to ICE. Everything else is
+	// application data the caller already owns, so leave it untouched.
+	if (!is_stun_datagram(buf, len) && !is_channel_data(buf, len))
+		return 0;
+
+	conn_lock(agent);
+	int ret = agent_input(agent, buf, len, src, NULL);
+	conn_unlock(agent);
+	return ret < 0 ? ret : 1;
+}
+
+int agent_tick_external(juice_agent_t *agent) {
+	conn_lock(agent);
+	timestamp_t next_timestamp;
+	int ret = agent_bookkeeping(agent, &next_timestamp);
+	conn_unlock(agent);
+	return ret;
 }
 
 int agent_conn_fail(juice_agent_t *agent) {
@@ -2764,6 +2798,12 @@ agent_stun_entry_t *agent_find_entry_from_record(juice_agent_t *agent, const add
 }
 
 int agent_set_ice_tcp_mode(juice_agent_t *agent, juice_ice_tcp_mode_t ice_tcp_mode) {
+	if (agent->config.concurrency_mode == JUICE_CONCURRENCY_MODE_EXTERNAL &&
+	    ice_tcp_mode != JUICE_ICE_TCP_MODE_NONE) {
+		JLOG_WARN("ICE-TCP is not supported in external mode");
+		return JUICE_ERR_INVALID;
+	}
+
 	if (agent->conn_impl) {
 		JLOG_WARN("Unable to set ICE attributes, candidates gathering already started");
 		return JUICE_ERR_FAILED;
