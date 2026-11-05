@@ -34,7 +34,7 @@ typedef struct tcp_ice_write_context {
 typedef struct tcp_ice_read_context {
 	char buffer[TCP_ICE_BUFFER_SIZE];
 	uint16_t length;
-	uint16_t bytes_read; // 0 if finished
+	uint32_t bytes_read; // 0 if finished
 	uint16_t header;
 	bool pending;
 } tcp_ice_read_context_t;
