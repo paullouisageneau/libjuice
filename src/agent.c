@@ -95,6 +95,8 @@ juice_agent_t *agent_create(const juice_config_t *config) {
 		return NULL;
 	}
 
+	mutex_init(&agent->mutex, MUTEX_RECURSIVE);
+
 	bool alloc_failed = false;
 	agent->ice_tcp_mode = JUICE_ICE_TCP_MODE_NONE;
 	agent->config.concurrency_mode = config->concurrency_mode;
@@ -180,6 +182,7 @@ void agent_destroy(juice_agent_t *agent) {
 
 	// Free strings in config
 	free((void *)agent->config.stun_server_host);
+	assert(agent->config.turn_servers_count == 0 || agent->config.turn_servers);
 	for (int i = 0; i < agent->config.turn_servers_count; ++i) {
 		juice_turn_server_t *turn_server = agent->config.turn_servers + i;
 		free((void *)turn_server->host);
@@ -188,6 +191,7 @@ void agent_destroy(juice_agent_t *agent) {
 	}
 	free(agent->config.turn_servers);
 	free((void *)agent->config.bind_address);
+	mutex_destroy(&agent->mutex);
 	free(agent);
 
 #ifdef _WIN32
@@ -218,8 +222,10 @@ static thread_return_t THREAD_CALL resolver_thread_entry(void *arg) {
 
 int agent_gather_candidates(juice_agent_t *agent) {
 	JLOG_VERBOSE("Gathering candidates");
-	if (agent->conn_impl) {
+	conn_lock(agent);
+	if (agent->state != JUICE_STATE_DISCONNECTED) {
 		JLOG_WARN("Candidates gathering already started");
+		conn_unlock(agent);
 		return 0;
 	}
 
@@ -228,7 +234,15 @@ int agent_gather_candidates(juice_agent_t *agent) {
 		agent->mode = AGENT_MODE_CONTROLLING;
 	}
 
-	agent_change_state(agent, JUICE_STATE_GATHERING);
+	agent->state = JUICE_STATE_GATHERING;
+
+	// Unlock before the callback, which may call into another agent, and before creating the
+	// connection, as the registry must be locked before the agent
+	conn_unlock(agent);
+
+	JLOG_INFO("Changing state to %s", juice_state_to_string(JUICE_STATE_GATHERING));
+	if (agent->config.cb_state_changed)
+		agent->config.cb_state_changed(agent, JUICE_STATE_GATHERING, agent->config.user_ptr);
 
 	udp_socket_config_t socket_config;
 	memset(&socket_config, 0, sizeof(socket_config));
@@ -238,6 +252,9 @@ int agent_gather_candidates(juice_agent_t *agent) {
 
 	if (conn_create(agent, &socket_config)) {
 		JLOG_FATAL("Connection creation for agent failed");
+		conn_lock(agent);
+		agent->state = JUICE_STATE_DISCONNECTED; // allow gathering again
+		conn_unlock(agent);
 		return -1;
 	}
 
@@ -628,26 +645,32 @@ int agent_add_remote_candidate(juice_agent_t *agent, const char *sdp) {
 }
 
 int agent_set_local_ice_attributes(juice_agent_t *agent, const char *ufrag, const char *pwd) {
-	if (agent->conn_impl) {
+	conn_lock(agent);
+	if (agent->state != JUICE_STATE_DISCONNECTED) {
 		JLOG_WARN("Unable to set ICE attributes, candidates gathering already started");
+		conn_unlock(agent);
 		return JUICE_ERR_FAILED;
 	}
 
 	if (strlen(ufrag) < 4 || strlen(pwd) < 22 || !ice_is_valid_string(ufrag) ||
 	    !ice_is_valid_string(pwd)) {
 		JLOG_ERROR("Invalid ICE attributes");
+		conn_unlock(agent);
 		return JUICE_ERR_INVALID;
 	}
 
 	snprintf(agent->local.ice_ufrag, sizeof(agent->local.ice_ufrag), "%s", ufrag);
 	snprintf(agent->local.ice_pwd, sizeof(agent->local.ice_pwd), "%s", pwd);
+	conn_unlock(agent);
 	return JUICE_ERR_SUCCESS;
 }
 
 int agent_add_turn_server(juice_agent_t *agent, const juice_turn_server_t *turn_server) {
-	if (agent->conn_impl) {
+	conn_lock(agent);
+	if (agent->state != JUICE_STATE_DISCONNECTED) {
 		// The array must no be reallocated anymore after gathering started
 		JLOG_WARN("Unable to add TURN server, candidates gathering already started");
+		conn_unlock(agent);
 		return -1;
 	}
 
@@ -656,14 +679,17 @@ int agent_add_turn_server(juice_agent_t *agent, const juice_turn_server_t *turn_
 	            (agent->config.turn_servers_count + 1) * sizeof(juice_turn_server_t));
 	if (!new_turn_servers) {
 		JLOG_FATAL("Memory allocation for TURN servers failed");
+		conn_unlock(agent);
 		return -1;
 	}
 	memset(new_turn_servers + agent->config.turn_servers_count, 0, sizeof(juice_turn_server_t));
 	agent->config.turn_servers = new_turn_servers;
 	if (copy_turn_server(new_turn_servers + agent->config.turn_servers_count, turn_server) < 0) {
+		conn_unlock(agent);
 		return -1;
 	}
 	agent->config.turn_servers_count++;
+	conn_unlock(agent);
 	return 0;
 }
 
@@ -2764,12 +2790,15 @@ agent_stun_entry_t *agent_find_entry_from_record(juice_agent_t *agent, const add
 }
 
 int agent_set_ice_tcp_mode(juice_agent_t *agent, juice_ice_tcp_mode_t ice_tcp_mode) {
-	if (agent->conn_impl) {
+	conn_lock(agent);
+	if (agent->state != JUICE_STATE_DISCONNECTED) {
 		JLOG_WARN("Unable to set ICE attributes, candidates gathering already started");
+		conn_unlock(agent);
 		return JUICE_ERR_FAILED;
 	}
 
 	agent->ice_tcp_mode = ice_tcp_mode;
+	conn_unlock(agent);
 	return JUICE_ERR_SUCCESS;
 }
 
