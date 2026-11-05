@@ -335,38 +335,65 @@ static juice_agent_t *lookup_agent(conn_registry_t *registry, char *buf, size_t 
 	JLOG_VERBOSE("Looking up agent from address");
 
 	registry_impl_t *registry_impl = registry->impl;
+	char username[STUN_MAX_USERNAME_LEN];
+	const char *local_ufrag = NULL;
+	const char *remote_ufrag = NULL;
+	bool is_stun = is_stun_datagram(buf, len);
+	bool is_peer_request = false;
+	stun_message_t msg;
+
+	// Read before the address map is trusted: the message names its agent.
+	if (is_stun) {
+		if (stun_read(buf, len, &msg) < 0) {
+			JLOG_ERROR("STUN message reading failed");
+			return NULL;
+		}
+
+		is_peer_request = msg.msg_class == STUN_CLASS_REQUEST &&
+		                  msg.msg_method == STUN_METHOD_BINDING && msg.has_integrity;
+		if (is_peer_request) {
+			strcpy(username, msg.credentials.username);
+			char *separator = strchr(username, ':');
+			if (separator) {
+				*separator = '\0';
+				local_ufrag = username;
+				remote_ufrag = separator + 1;
+			}
+		}
+	}
+
 	map_entry_t *entry = find_map_entry(registry_impl, src, false);
 	juice_agent_t *agent = entry && entry->type == MAP_ENTRY_TYPE_FULL ? entry->agent : NULL;
+	// Agents may share a remote, and the mapping is made by whichever reached
+	// it first, so one the message does not belong to is stale.
+	if (agent && local_ufrag && strcmp(local_ufrag, agent->local.ice_ufrag) != 0) {
+		JLOG_DEBUG("Address maps to an agent the request does not name");
+		agent = NULL;
+	} else if (agent && is_stun && STUN_IS_RESPONSE(msg.msg_class) &&
+	           !agent_find_entry_from_transaction_id(agent, msg.transaction_id)) {
+		JLOG_DEBUG("Address maps to an agent that sent no such request");
+		agent = NULL;
+	}
+
 	if (agent) {
 		JLOG_DEBUG("Found agent from address");
 		return agent;
 	}
 
-	if (!is_stun_datagram(buf, len)) {
+	if (!is_stun) {
 		JLOG_INFO("Got non-STUN message from unknown source address");
 		return NULL;
 	}
 
 	JLOG_VERBOSE("Looking up agent from STUN message content");
 
-	stun_message_t msg;
-	if (stun_read(buf, len, &msg) < 0) {
-		JLOG_ERROR("STUN message reading failed");
-		return NULL;
-	}
-
-	if (msg.msg_class == STUN_CLASS_REQUEST && msg.msg_method == STUN_METHOD_BINDING &&
-	    msg.has_integrity) {
+	if (is_peer_request) {
 		// Binding request from peer
-		char username[STUN_MAX_USERNAME_LEN];
-		strcpy(username, msg.credentials.username);
-		char *separator = strchr(username, ':');
-		if (!separator) {
+		if (!local_ufrag) {
 			JLOG_WARN("STUN username invalid, username=\"%s\"", username);
 			return NULL;
 		}
-		*separator = '\0';
-		const char *local_ufrag = username;
+
 		for (int i = 0; i < registry->agents_size; ++i) {
 			agent = registry->agents[i];
 			if (is_ready(agent)) {
@@ -391,7 +418,7 @@ static juice_agent_t *lookup_agent(conn_registry_t *registry, char *buf, size_t 
 			juice_mux_binding_request_t incoming_info;
 
 			incoming_info.local_ufrag = local_ufrag;
-			incoming_info.remote_ufrag = separator + 1;
+			incoming_info.remote_ufrag = remote_ufrag;
 			incoming_info.address = host;
 			incoming_info.port = addr_get_port((struct sockaddr *)src);
 
