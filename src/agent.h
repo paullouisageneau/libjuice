@@ -143,6 +143,10 @@ struct juice_agent {
 	int entries_count;
 	atomic_ptr(agent_stun_entry_t) selected_entry;
 
+	addr_record_t source;
+	agent_stun_entry_t *source_entry;
+	atomic(bool) source_pinned;
+
 	uint64_t ice_tiebreaker;
 	timestamp_t pac_timestamp; // Patiently Awaiting Connectivity timer
 	timestamp_t nomination_timestamp;
@@ -168,8 +172,8 @@ int agent_set_local_ice_attributes(juice_agent_t *agent, const char *ufrag, cons
 int agent_add_turn_server(juice_agent_t *agent, const juice_turn_server_t *turn_server);
 int agent_set_remote_gathering_done(juice_agent_t *agent);
 int agent_send(juice_agent_t *agent, const char *data, size_t size, int ds);
-int agent_direct_send(juice_agent_t *agent, const addr_record_t *dst, const char *data, size_t size,
-                      int ds);
+int agent_direct_send(juice_agent_t *agent, const addr_record_t *dst, const addr_record_t *local,
+                      const char *data, size_t size, int ds); // local may be NULL
 int agent_relay_send(juice_agent_t *agent, agent_stun_entry_t *entry, const addr_record_t *dst,
                      const char *data, size_t size, int ds);
 int agent_channel_send(juice_agent_t *agent, agent_stun_entry_t *entry, const addr_record_t *dst,
@@ -178,13 +182,15 @@ juice_state_t agent_get_state(juice_agent_t *agent);
 int agent_get_selected_candidate_pair(juice_agent_t *agent, ice_candidate_t *local,
                                       ice_candidate_t *remote);
 
-int agent_conn_recv(juice_agent_t *agent, char *buf, size_t len, const addr_record_t *src);
+int agent_conn_recv(juice_agent_t *agent, char *buf, size_t len, const addr_record_t *src,
+                    const addr_record_t *local); // local may be NULL
 int agent_conn_update(juice_agent_t *agent, timestamp_t *next_timestamp);
 int agent_conn_tcp_state(juice_agent_t *agent, const addr_record_t *dst, tcp_state_t state);
 int agent_conn_fail(juice_agent_t *agent);
 
 int agent_input(juice_agent_t *agent, char *buf, size_t len, const addr_record_t *src,
-                const addr_record_t *relayed); // relayed may be NULL
+                const addr_record_t *local,
+                const addr_record_t *relayed); // local and relayed may be NULL
 int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp);
 void agent_change_state(juice_agent_t *agent, juice_state_t state);
 int agent_verify_stun_binding(juice_agent_t *agent, void *buf, size_t size,
@@ -192,11 +198,12 @@ int agent_verify_stun_binding(juice_agent_t *agent, void *buf, size_t size,
 int agent_verify_credentials(juice_agent_t *agent, const agent_stun_entry_t *entry, void *buf,
                              size_t size, stun_message_t *msg);
 int agent_dispatch_stun(juice_agent_t *agent, void *buf, size_t size, stun_message_t *msg,
-                        const addr_record_t *src,
-                        const addr_record_t *relayed); // relayed may be NULL
+                        const addr_record_t *src, const addr_record_t *local,
+                        const addr_record_t *relayed); // local and relayed may be NULL
 int agent_process_stun_binding(juice_agent_t *agent, const stun_message_t *msg,
                                agent_stun_entry_t *entry, const addr_record_t *src,
-                               const addr_record_t *relayed); // relayed may be NULL
+                               const addr_record_t *local,
+                               const addr_record_t *relayed); // local and relayed may be NULL
 int agent_send_stun_binding(juice_agent_t *agent, agent_stun_entry_t *entry, stun_class_t msg_class,
                             unsigned int error_code, const uint8_t *transaction_id,
                             const addr_record_t *mapped);

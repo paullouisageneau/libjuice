@@ -6,6 +6,13 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE // struct in6_pktinfo is a GNU extension on glibc
+#endif
+#if defined(__APPLE__) && !defined(__APPLE_USE_RFC_3542)
+#define __APPLE_USE_RFC_3542 // IPV6_PKTINFO is RFC 3542
+#endif
+
 #include "udp.h"
 #include "addr.h"
 #include "log.h"
@@ -16,6 +23,36 @@
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
+
+#ifdef _WIN32
+#include <mswsock.h>
+#define CONTROL_SPACE(len) WSA_CMSG_SPACE(len)
+#define CONTROL_LEN(len) WSA_CMSG_LEN(len)
+#else
+#define CONTROL_SPACE(len) CMSG_SPACE(len)
+#define CONTROL_LEN(len) CMSG_LEN(len)
+#endif
+
+#ifdef IPV6_RECVPKTINFO
+#define RECV_LOCAL_IPV6 IPV6_RECVPKTINFO
+#else
+#define RECV_LOCAL_IPV6 IPV6_PKTINFO // Windows has no IPV6_RECVPKTINFO
+#endif
+
+#if defined(IP_PKTINFO)
+#define RECV_LOCAL_IP IP_PKTINFO
+typedef struct in_pktinfo dstaddr_t;
+#elif defined(IP_RECVDSTADDR)
+#define RECV_LOCAL_IP IP_RECVDSTADDR
+typedef struct in_addr dstaddr_t;
+#endif
+
+#ifdef RECV_LOCAL_IP
+#define LOCAL_CONTROL_SIZE                                                                         \
+	(CONTROL_SPACE(sizeof(struct in6_pktinfo)) + CONTROL_SPACE(sizeof(dstaddr_t)))
+#else
+#define LOCAL_CONTROL_SIZE CONTROL_SPACE(sizeof(struct in6_pktinfo))
+#endif
 
 static struct addrinfo *find_family(struct addrinfo *ai_list, int family) {
 	struct addrinfo *ai = ai_list;
@@ -44,6 +81,23 @@ static uint16_t get_next_port_in_range(uint16_t begin, uint16_t end) {
 	return next;
 }
 
+static void enable_local_addr(socket_t sock, int family) {
+	const sockopt_t enabled = 1;
+
+	if (family == AF_INET6) {
+		if (setsockopt(sock, IPPROTO_IPV6, RECV_LOCAL_IPV6, (const char *)&enabled,
+		               sizeof(enabled)))
+			JLOG_WARN("Setting IPv6 local address reporting failed, errno=%d", sockerrno);
+
+		return;
+	}
+
+#ifdef RECV_LOCAL_IP
+	if (setsockopt(sock, IPPROTO_IP, RECV_LOCAL_IP, (const char *)&enabled, sizeof(enabled)))
+		JLOG_WARN("Setting IPv4 local address reporting failed, errno=%d", sockerrno);
+#endif
+}
+
 static socket_t create_socket_for_addrinfo(const udp_socket_config_t *config,
                                            const struct addrinfo *ai) {
 	// Create socket
@@ -57,6 +111,8 @@ static socket_t create_socket_for_addrinfo(const udp_socket_config_t *config,
 	const sockopt_t disabled = 0;
 	if (ai->ai_family == AF_INET6)
 		setsockopt(sock, IPPROTO_IPV6, IPV6_V6ONLY, (const char *)&disabled, sizeof(disabled));
+
+	enable_local_addr(sock, ai->ai_family);
 
 		// Set DF flag
 #ifndef NO_PMTUDISC
@@ -176,12 +232,159 @@ socket_t udp_create_socket(const udp_socket_config_t *config) {
 	return INVALID_SOCKET;
 }
 
-int udp_recvfrom(socket_t sock, char *buffer, size_t size, addr_record_t *src) {
+static bool set_local_addr(addr_record_t *local, int level, int type, const void *data,
+                           size_t len) {
+	struct in6_pktinfo pktinfo;
+	struct sockaddr_in6 *sin6;
+#ifdef RECV_LOCAL_IP
+	struct sockaddr_in *sin;
+	dstaddr_t dstaddr;
+#endif
+
+	if (level == IPPROTO_IPV6 && type == IPV6_PKTINFO && len >= CONTROL_LEN(sizeof(pktinfo))) {
+		memcpy(&pktinfo, data, sizeof(pktinfo));
+		sin6 = (struct sockaddr_in6 *)&local->addr;
+		memset(sin6, 0, sizeof(*sin6));
+		sin6->sin6_family = AF_INET6;
+		sin6->sin6_addr = pktinfo.ipi6_addr;
+		local->len = sizeof(*sin6);
+		addr_unmap_inet6_v4mapped((struct sockaddr *)&local->addr, &local->len);
+		return true;
+	}
+
+#ifdef RECV_LOCAL_IP
+	if (level == IPPROTO_IP && type == RECV_LOCAL_IP && len >= CONTROL_LEN(sizeof(dstaddr))) {
+		memcpy(&dstaddr, data, sizeof(dstaddr));
+		sin = (struct sockaddr_in *)&local->addr;
+		memset(sin, 0, sizeof(*sin));
+		sin->sin_family = AF_INET;
+#if defined(IP_PKTINFO)
+		sin->sin_addr = dstaddr.ipi_addr;
+#else
+		sin->sin_addr = dstaddr;
+#endif
+		local->len = sizeof(*sin);
+		return true;
+	}
+#endif
+
+	return false;
+}
+
+#ifdef _WIN32
+
+static bool get_wsa_extension(socket_t sock, GUID *guid, void **func) {
+	static mutex_t mutex = MUTEX_INITIALIZER;
+	DWORD len = 0;
+	bool found;
+
+	mutex_lock(&mutex);
+	if (!*func)
+		WSAIoctl(sock, SIO_GET_EXTENSION_FUNCTION_POINTER, guid, sizeof(*guid), func, sizeof(*func),
+		         &len, NULL, NULL);
+
+	found = *func != NULL;
+	mutex_unlock(&mutex);
+	return found;
+}
+
+static int recv_datagram(socket_t sock, char *buffer, size_t size, addr_record_t *src,
+                         addr_record_t *local) {
+	static LPFN_WSARECVMSG wsa_recvmsg = NULL;
+	char control[LOCAL_CONTROL_SIZE];
+	GUID guid = WSAID_WSARECVMSG;
+	WSACMSGHDR *cmsg;
+	DWORD len = 0;
+	WSAMSG msg;
+	WSABUF buf;
+
+	src->len = sizeof(src->addr);
+	src->socktype = SOCK_DGRAM;
+
+	if (local) {
+		memset(&local->addr, 0, sizeof(local->addr));
+		local->len = 0;
+		local->socktype = SOCK_DGRAM;
+	}
+
+	if (!local || !get_wsa_extension(sock, &guid, (void **)&wsa_recvmsg))
+		return recvfrom(sock, buffer, (int)size, 0, (struct sockaddr *)&src->addr, &src->len);
+
+	memset(&msg, 0, sizeof(msg));
+	buf.buf = buffer;
+	buf.len = (ULONG)size;
+	msg.name = (struct sockaddr *)&src->addr;
+	msg.namelen = src->len;
+	msg.lpBuffers = &buf;
+	msg.dwBufferCount = 1;
+	msg.Control.buf = control;
+	msg.Control.len = sizeof(control);
+
+	if (wsa_recvmsg(sock, &msg, &len, NULL, NULL) == SOCKET_ERROR)
+		return -1;
+
+	src->len = msg.namelen;
+
+	for (cmsg = WSA_CMSG_FIRSTHDR(&msg); cmsg; cmsg = WSA_CMSG_NXTHDR(&msg, cmsg))
+		if (set_local_addr(local, cmsg->cmsg_level, cmsg->cmsg_type, WSA_CMSG_DATA(cmsg),
+		                   cmsg->cmsg_len))
+			break;
+
+	return (int)len;
+}
+
+#else // POSIX
+
+static int recv_datagram(socket_t sock, char *buffer, size_t size, addr_record_t *src,
+                         addr_record_t *local) {
+	char control[LOCAL_CONTROL_SIZE];
+	struct cmsghdr *cmsg;
+	struct msghdr msg;
+	struct iovec iov;
+	int len;
+
+	memset(&msg, 0, sizeof(msg));
+	iov.iov_base = buffer;
+	iov.iov_len = size;
+	msg.msg_name = &src->addr;
+	msg.msg_namelen = sizeof(src->addr);
+	msg.msg_iov = &iov;
+	msg.msg_iovlen = 1;
+
+	if (local) {
+		msg.msg_control = control;
+		msg.msg_controllen = sizeof(control);
+		memset(&local->addr, 0, sizeof(local->addr));
+		local->len = 0;
+		local->socktype = SOCK_DGRAM;
+	}
+
+	len = (int)recvmsg(sock, &msg, 0);
+	if (len < 0)
+		return len;
+
+	src->len = msg.msg_namelen;
+	src->socktype = SOCK_DGRAM;
+
+	if (!local)
+		return len;
+
+	for (cmsg = CMSG_FIRSTHDR(&msg); cmsg; cmsg = CMSG_NXTHDR(&msg, cmsg))
+		if (set_local_addr(local, cmsg->cmsg_level, cmsg->cmsg_type, CMSG_DATA(cmsg),
+		                   cmsg->cmsg_len))
+			break;
+
+	return len;
+}
+
+#endif
+
+int udp_recvfrom(socket_t sock, char *buffer, size_t size, addr_record_t *src,
+                 addr_record_t *local) {
+	int len;
+
 	while (true) {
-		src->len = sizeof(src->addr);
-		src->socktype = SOCK_DGRAM;
-		int len =
-		    recvfrom(sock, buffer, (socklen_t)size, 0, (struct sockaddr *)&src->addr, &src->len);
+		len = recv_datagram(sock, buffer, size, src, local);
 		if (len >= 0) {
 			addr_unmap_inet6_v4mapped((struct sockaddr *)&src->addr, &src->len);
 
@@ -201,7 +404,90 @@ int udp_recvfrom(socket_t sock, char *buffer, size_t size, addr_record_t *src) {
 	}
 }
 
-int udp_sendto(socket_t sock, const char *data, size_t size, const addr_record_t *dst) {
+#ifdef _WIN32
+
+static int send_datagram(socket_t sock, const char *data, size_t size, const addr_record_t *dst,
+                         const addr_record_t *local) {
+	char control[CONTROL_SPACE(sizeof(struct in6_pktinfo))];
+	static LPFN_WSASENDMSG wsa_sendmsg = NULL;
+	const struct sockaddr_in6 *sin6;
+	GUID guid = WSAID_WSASENDMSG;
+	struct in6_pktinfo pktinfo;
+	WSACMSGHDR *cmsg;
+	DWORD len = 0;
+	WSAMSG msg;
+	WSABUF buf;
+
+	if (!get_wsa_extension(sock, &guid, (void **)&wsa_sendmsg))
+		return -1;
+
+	sin6 = (const struct sockaddr_in6 *)&local->addr;
+	memset(&pktinfo, 0, sizeof(pktinfo));
+	pktinfo.ipi6_addr = sin6->sin6_addr;
+
+	memset(control, 0, sizeof(control));
+	memset(&msg, 0, sizeof(msg));
+	buf.buf = (char *)data;
+	buf.len = (ULONG)size;
+	msg.name = (struct sockaddr *)&dst->addr;
+	msg.namelen = dst->len;
+	msg.lpBuffers = &buf;
+	msg.dwBufferCount = 1;
+	msg.Control.buf = control;
+	msg.Control.len = sizeof(control);
+
+	cmsg = WSA_CMSG_FIRSTHDR(&msg);
+	cmsg->cmsg_level = IPPROTO_IPV6;
+	cmsg->cmsg_type = IPV6_PKTINFO;
+	cmsg->cmsg_len = WSA_CMSG_LEN(sizeof(pktinfo));
+	memcpy(WSA_CMSG_DATA(cmsg), &pktinfo, sizeof(pktinfo));
+
+	if (wsa_sendmsg(sock, &msg, 0, &len, NULL, NULL) == SOCKET_ERROR)
+		return -1;
+
+	return (int)len;
+}
+
+#else // POSIX
+
+static int send_datagram(socket_t sock, const char *data, size_t size, const addr_record_t *dst,
+                         const addr_record_t *local) {
+	char control[CONTROL_SPACE(sizeof(struct in6_pktinfo))];
+	const struct sockaddr_in6 *sin6;
+	struct in6_pktinfo pktinfo;
+	struct cmsghdr *cmsg;
+	struct msghdr msg;
+	struct iovec iov;
+
+	sin6 = (const struct sockaddr_in6 *)&local->addr;
+	memset(&pktinfo, 0, sizeof(pktinfo));
+	pktinfo.ipi6_addr = sin6->sin6_addr;
+
+	memset(control, 0, sizeof(control));
+	memset(&msg, 0, sizeof(msg));
+	iov.iov_base = (void *)data;
+	iov.iov_len = size;
+	msg.msg_name = (void *)&dst->addr;
+	msg.msg_namelen = dst->len;
+	msg.msg_iov = &iov;
+	msg.msg_iovlen = 1;
+	msg.msg_control = control;
+	msg.msg_controllen = sizeof(control);
+
+	cmsg = CMSG_FIRSTHDR(&msg);
+	cmsg->cmsg_level = IPPROTO_IPV6;
+	cmsg->cmsg_type = IPV6_PKTINFO;
+	cmsg->cmsg_len = CMSG_LEN(sizeof(pktinfo));
+	memcpy(CMSG_DATA(cmsg), &pktinfo, sizeof(pktinfo));
+
+	return (int)sendmsg(sock, &msg, 0);
+}
+
+#endif
+
+int udp_sendto_from(socket_t sock, const char *data, size_t size, const addr_record_t *dst,
+                    const addr_record_t *local) {
+	const addr_record_t *target = dst;
 #ifndef __linux__
 	addr_record_t tmp = *dst;
 	addr_record_t name;
@@ -213,10 +499,22 @@ int udp_sendto(socket_t sock, const char *data, size_t size, const addr_record_t
 	} else {
 		JLOG_WARN("getsockname failed, errno=%d", sockerrno);
 	}
-	return sendto(sock, data, (socklen_t)size, 0, (const struct sockaddr *)&tmp.addr, tmp.len);
-#else
-	return sendto(sock, data, size, 0, (const struct sockaddr *)&dst->addr, dst->len);
+	target = &tmp;
 #endif
+
+	if (local && local->addr.ss_family == AF_INET6 && target->addr.ss_family == AF_INET6)
+		return send_datagram(sock, data, size, target, local);
+
+#ifndef __linux__
+	return sendto(sock, data, (socklen_t)size, 0, (const struct sockaddr *)&target->addr,
+	              target->len);
+#else
+	return sendto(sock, data, size, 0, (const struct sockaddr *)&target->addr, target->len);
+#endif
+}
+
+int udp_sendto(socket_t sock, const char *data, size_t size, const addr_record_t *dst) {
+	return udp_sendto_from(sock, data, size, dst, NULL);
 }
 
 int udp_sendto_self(socket_t sock, const char *data, size_t size) {

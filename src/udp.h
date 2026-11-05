@@ -21,8 +21,11 @@ typedef struct udp_socket_config {
 } udp_socket_config_t;
 
 socket_t udp_create_socket(const udp_socket_config_t *config);
-int udp_recvfrom(socket_t sock, char *buffer, size_t size, addr_record_t *src);
+int udp_recvfrom(socket_t sock, char *buffer, size_t size, addr_record_t *src,
+                 addr_record_t *local); // local may be NULL, reported without port
 int udp_sendto(socket_t sock, const char *data, size_t size, const addr_record_t *dst);
+int udp_sendto_from(socket_t sock, const char *data, size_t size, const addr_record_t *dst,
+                    const addr_record_t *local); // local may be NULL, IPv6 only
 int udp_sendto_self(socket_t sock, const char *data, size_t size);
 int udp_set_diffserv(socket_t sock, int ds);
 uint16_t udp_get_port(socket_t sock);
