@@ -75,6 +75,7 @@ set(TESTS_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/test/stun-unhandled-unhandle.c
     ${CMAKE_CURRENT_SOURCE_DIR}/test/stun.c
     ${CMAKE_CURRENT_SOURCE_DIR}/test/gathering.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/test/relay-only.c
     ${CMAKE_CURRENT_SOURCE_DIR}/test/remote-description.c
     ${CMAKE_CURRENT_SOURCE_DIR}/test/connectivity.c
     ${CMAKE_CURRENT_SOURCE_DIR}/test/turn.c
@@ -87,6 +88,9 @@ set(TESTS_SOURCES
 	${CMAKE_CURRENT_SOURCE_DIR}/test/ufrag.c
 	${CMAKE_CURRENT_SOURCE_DIR}/test/tcp.c
 )
+if (NOT NO_SERVER)
+    list(APPEND TESTS_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/test/relay-only-turn.c)
+endif()
 source_group("Test Files" FILES "${TESTS_SOURCES}")
 
 set(FUZZER_SOURCES

@@ -97,6 +97,7 @@ juice_agent_t *agent_create(const juice_config_t *config) {
 
 	bool alloc_failed = false;
 	agent->ice_tcp_mode = JUICE_ICE_TCP_MODE_NONE;
+	agent->ice_transport_policy = JUICE_ICE_TRANSPORT_POLICY_ALL;
 	agent->config.concurrency_mode = config->concurrency_mode;
 	agent->config.stun_server_host = alloc_string_copy(config->stun_server_host, &alloc_failed);
 	agent->config.stun_server_port = config->stun_server_port;
@@ -197,8 +198,10 @@ void agent_destroy(juice_agent_t *agent) {
 	JLOG_VERBOSE("Destroyed agent");
 }
 
-static bool has_nonnumeric_server_hostnames(const juice_config_t *config) {
-	if (config->stun_server_host && !addr_is_numeric_hostname(config->stun_server_host))
+static bool has_nonnumeric_server_hostnames(const juice_agent_t *agent) {
+	const juice_config_t *config = &agent->config;
+	if (agent->ice_transport_policy == JUICE_ICE_TRANSPORT_POLICY_ALL &&
+	    config->stun_server_host && !addr_is_numeric_hostname(config->stun_server_host))
 		return true;
 
 	for (int i = 0; i < config->turn_servers_count; ++i) {
@@ -242,36 +245,43 @@ int agent_gather_candidates(juice_agent_t *agent) {
 	}
 
 	addr_record_t records[ICE_MAX_CANDIDATES_COUNT - 1];
-	int records_count = conn_get_addrs(agent, records, ICE_MAX_CANDIDATES_COUNT - 1);
-	if (records_count < 0) {
-		JLOG_ERROR("Failed to gather local host candidates");
-		records_count = 0;
-	} else if (records_count == 0) {
-		JLOG_WARN("No local host candidates gathered");
-	} else if (records_count > ICE_MAX_CANDIDATES_COUNT - 1)
-		records_count = ICE_MAX_CANDIDATES_COUNT - 1;
+	int records_count = 0;
+	if (agent->ice_transport_policy == JUICE_ICE_TRANSPORT_POLICY_ALL) {
+		records_count = conn_get_addrs(agent, records, ICE_MAX_CANDIDATES_COUNT - 1);
+		if (records_count < 0) {
+			JLOG_ERROR("Failed to gather local host candidates");
+			records_count = 0;
+		} else if (records_count == 0) {
+			JLOG_WARN("No local host candidates gathered");
+		} else if (records_count > ICE_MAX_CANDIDATES_COUNT - 1)
+			records_count = ICE_MAX_CANDIDATES_COUNT - 1;
+	}
 
 	conn_lock(agent);
 
-	JLOG_VERBOSE("Adding %d local host candidates", records_count);
-	for (int i = 0; i < records_count; ++i) {
-		ice_candidate_t candidate;
-		if (ice_create_local_candidate(ICE_CANDIDATE_TYPE_HOST, 1, agent->local.candidates_count,
-		                               records + i, &candidate, ICE_CANDIDATE_TRANSPORT_UDP)) {
-			JLOG_ERROR("Failed to create host candidate");
-			continue;
-		}
-		if (agent->local.candidates_count >= MAX_HOST_CANDIDATES_COUNT) {
-			JLOG_WARN("Local description already has the maximum number of host candidates");
-			break;
-		}
-		if (ice_add_candidate(&candidate, &agent->local)) {
-			JLOG_ERROR("Failed to add candidate to local description");
-			continue;
+	// TURN still needs UDP sockets without host candidates.
+	if (agent->ice_transport_policy == JUICE_ICE_TRANSPORT_POLICY_ALL) {
+		JLOG_VERBOSE("Adding %d local host candidates", records_count);
+		for (int i = 0; i < records_count; ++i) {
+			ice_candidate_t candidate;
+			if (ice_create_local_candidate(ICE_CANDIDATE_TYPE_HOST, 1, agent->local.candidates_count,
+			                               records + i, &candidate, ICE_CANDIDATE_TRANSPORT_UDP)) {
+				JLOG_ERROR("Failed to create host candidate");
+				continue;
+			}
+			if (agent->local.candidates_count >= MAX_HOST_CANDIDATES_COUNT) {
+				JLOG_WARN("Local description already has the maximum number of host candidates");
+				break;
+			}
+			if (ice_add_candidate(&candidate, &agent->local)) {
+				JLOG_ERROR("Failed to add candidate to local description");
+				continue;
+			}
 		}
 	}
 
-	if (agent->ice_tcp_mode == JUICE_ICE_TCP_MODE_ACTIVE) {
+	if (agent->ice_transport_policy == JUICE_ICE_TRANSPORT_POLICY_ALL &&
+	    agent->ice_tcp_mode == JUICE_ICE_TCP_MODE_ACTIVE) {
 		if (records_count > 0) {
 			// RFC 6544: The connection-address encoded into the candidate-attribute for
 			// active candidates MUST be set to the IP address that will be used for the
@@ -323,7 +333,7 @@ int agent_gather_candidates(juice_agent_t *agent) {
 	conn_unlock(agent);
 	conn_interrupt(agent);
 
-	if (has_nonnumeric_server_hostnames(&agent->config)) {
+	if (has_nonnumeric_server_hostnames(agent)) {
 		// Resolve server hostnames in a separate thread as it may block
 		JLOG_DEBUG("Starting resolver thread for servers");
 		int ret = thread_init(&agent->resolver_thread, resolver_thread_entry, agent);
@@ -446,7 +456,8 @@ int agent_resolve_servers(juice_agent_t *agent) {
 
 	// STUN server resolution
 	// The entry is added after so the TURN server address will be matched in priority
-	if (agent->config.stun_server_host) {
+	if (agent->ice_transport_policy == JUICE_ICE_TRANSPORT_POLICY_ALL &&
+	    agent->config.stun_server_host) {
 		if (!agent->config.stun_server_port)
 			agent->config.stun_server_port = 3478; // default STUN port
 
@@ -1365,9 +1376,12 @@ int agent_dispatch_stun(juice_agent_t *agent, void *buf, size_t size, stun_messa
 			JLOG_WARN("STUN message verification failed");
 			return -1;
 		}
-		if (agent_add_remote_reflexive_candidate(agent, ICE_CANDIDATE_TYPE_PEER_REFLEXIVE,
-		                                         msg->priority, src)) {
-			JLOG_WARN("Failed to add remote peer reflexive candidate from STUN message");
+		if (agent->ice_transport_policy == JUICE_ICE_TRANSPORT_POLICY_ALL ||
+		    (agent->ice_transport_policy == JUICE_ICE_TRANSPORT_POLICY_RELAY && relayed != NULL)) {
+			if (agent_add_remote_reflexive_candidate(agent, ICE_CANDIDATE_TYPE_PEER_REFLEXIVE,
+			                                         msg->priority, src)) {
+				JLOG_WARN("Failed to add remote peer reflexive candidate from STUN message");
+			}
 		}
 	}
 
@@ -2322,6 +2336,9 @@ int agent_add_local_reflexive_candidate(juice_agent_t *agent, ice_candidate_type
 		JLOG_ERROR("Invalid type for local reflexive candidate");
 		return -1;
 	}
+	if (agent->ice_transport_policy == JUICE_ICE_TRANSPORT_POLICY_RELAY)
+		return 0;
+
 	int family = record->addr.ss_family;
 	if (ice_find_candidate_from_addr(&agent->local, record,
 	                                 family == AF_INET6 ? ICE_CANDIDATE_TYPE_UNKNOWN : type)) {
@@ -2411,6 +2428,10 @@ int agent_add_local_tcp_active_candidate(juice_agent_t *agent, addr_record_t *re
 
 int agent_add_candidate_pair(juice_agent_t *agent, ice_candidate_t *local, // local may be NULL
                              ice_candidate_t *remote) {
+	if (agent->ice_transport_policy == JUICE_ICE_TRANSPORT_POLICY_RELAY &&
+	    (!local || local->type != ICE_CANDIDATE_TYPE_RELAYED))
+		return 0;
+
 	ice_candidate_pair_t pair;
 	bool is_controlling = agent->mode == AGENT_MODE_CONTROLLING;
 	if (ice_create_candidate_pair(local, remote, is_controlling, &pair)) {
@@ -2505,7 +2526,8 @@ int agent_add_candidate_pair(juice_agent_t *agent, ice_candidate_t *local, // lo
 int agent_add_candidate_pairs_for_remote(juice_agent_t *agent, ice_candidate_t *remote) {
 	// Here is the trick: local non-relayed candidates are undifferentiated for sending.
 	// Therefore, we don't need to match remote candidates with local ones.
-	if (agent_add_candidate_pair(agent, NULL, remote))
+	if (agent->ice_transport_policy == JUICE_ICE_TRANSPORT_POLICY_ALL &&
+	    agent_add_candidate_pair(agent, NULL, remote))
 		return -1;
 
 	// However, we need still to differenciate local relayed candidates
@@ -2770,6 +2792,20 @@ int agent_set_ice_tcp_mode(juice_agent_t *agent, juice_ice_tcp_mode_t ice_tcp_mo
 	}
 
 	agent->ice_tcp_mode = ice_tcp_mode;
+	return JUICE_ERR_SUCCESS;
+}
+
+int agent_set_ice_transport_policy(juice_agent_t *agent,
+                                   juice_ice_transport_policy_t ice_transport_policy) {
+	if (ice_transport_policy != JUICE_ICE_TRANSPORT_POLICY_ALL &&
+	    ice_transport_policy != JUICE_ICE_TRANSPORT_POLICY_RELAY)
+		return JUICE_ERR_INVALID;
+	if (agent->conn_impl || agent->candidate_pairs_count > 0) {
+		JLOG_WARN("Unable to change ICE transport policy after connectivity setup started");
+		return JUICE_ERR_FAILED;
+	}
+
+	agent->ice_transport_policy = ice_transport_policy;
 	return JUICE_ERR_SUCCESS;
 }
 

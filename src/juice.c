@@ -224,3 +224,11 @@ int juice_set_ice_tcp_mode(juice_agent_t *agent, juice_ice_tcp_mode_t ice_tcp_mo
 
 	return agent_set_ice_tcp_mode(agent, ice_tcp_mode);
 }
+
+int juice_set_ice_transport_policy(juice_agent_t *agent,
+                                  juice_ice_transport_policy_t ice_transport_policy) {
+	if (!agent)
+		return JUICE_ERR_INVALID;
+
+	return agent_set_ice_transport_policy(agent, ice_transport_policy);
+}

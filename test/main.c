@@ -29,6 +29,10 @@ int test_stun_unhandled_no_host(void);
 int test_stun_unhandled_unhandle(void);
 int test_tcp(void);
 int test_tcp_bad_candidate(void);
+int test_relay_only(void);
+#ifndef NO_SERVER
+int test_relay_only_turn(void);
+#endif
 
 #ifndef NO_SERVER
 int test_server(void);
@@ -60,6 +64,12 @@ int main(int argc, char **argv) {
 		fprintf(stderr, "Candidates gathering test failed\n");
 		return -1;
 	}
+
+	printf("\nRunning relay-only candidate filtering test...\n");
+	if (test_relay_only()) {
+		fprintf(stderr, "Relay-only candidate filtering test failed\n");
+    return -1;
+  }
 
 	printf("\nRunning early STUN / late remote SDP test...\n");
 	if (test_remote_description_early_stun()) {
@@ -159,6 +169,14 @@ int main(int argc, char **argv) {
 	printf("\nRunning server test...\n");
 	if (test_server()) {
 		fprintf(stderr, "Server test failed\n");
+		return -1;
+	}
+#endif
+
+#ifndef NO_SERVER
+	printf("\nRunning relay-only TURN integration test...\n");
+	if (test_relay_only_turn()) {
+		fprintf(stderr, "Relay-only TURN integration test failed\n");
 		return -1;
 	}
 #endif
