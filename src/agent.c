@@ -1744,8 +1744,11 @@ int agent_send_stun_binding(juice_agent_t *agent, agent_stun_entry_t *entry, stu
 			// Once the controlling agent has picked a valid pair for nomination, it repeats the
 			// connectivity check that produced this valid pair [...], this time with the
 			// USE-CANDIDATE attribute.
+
+			// Keep the attribute on the later checks of the pair: a controlled agent that already
+			// has the nomination changes nothing, and one that missed it gets it again.
 			msg.use_candidate = agent->mode == AGENT_MODE_CONTROLLING && entry->pair &&
-			                    entry->pair->nomination_requested && !entry->pair->nominated;
+			                    entry->pair->nomination_requested;
 
 			entry->mode = agent->mode; // save current mode in case of conflict
 			break;
