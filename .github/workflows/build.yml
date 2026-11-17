@@ -17,6 +17,11 @@ jobs:
       run: (cd build; make)
     - name: test
       run: ./build/tests
+    - name: test picohash with function sanitizer
+      run: |
+        clang -std=c11 -O1 -g -fsanitize=function -fno-sanitize-recover=function \
+          -DPICOHASH_STANDALONE -Isrc test/picohash.c -o picohash-test
+        ./picohash-test
   build-macos:
     runs-on: macos-latest
     steps:

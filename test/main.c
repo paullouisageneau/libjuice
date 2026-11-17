@@ -11,6 +11,7 @@
 #include <stdio.h>
 
 int test_crc32(void);
+int test_picohash(void);
 int test_base64(void);
 int test_stun(void);
 int test_remote_description_early_stun(void);
@@ -40,6 +41,12 @@ int main(int argc, char **argv) {
 	printf("\nRunning CRC32 implementation test...\n");
 	if (test_crc32()) {
 		fprintf(stderr, "CRC32 implementation test failed\n");
+		return -2;
+	}
+
+	printf("\nRunning picohash implementation test...\n");
+	if (test_picohash()) {
+		fprintf(stderr, "picohash implementation test failed\n");
 		return -2;
 	}
 

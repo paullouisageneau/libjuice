@@ -44,9 +44,9 @@ typedef struct {
     uint_fast32_t block[PICOHASH_MD5_DIGEST_LENGTH];
 } _picohash_md5_ctx_t;
 
-static void _picohash_md5_init(_picohash_md5_ctx_t *ctx);
-static void _picohash_md5_update(_picohash_md5_ctx_t *ctx, const void *data, size_t size);
-static void _picohash_md5_final(_picohash_md5_ctx_t *ctx, void *digest);
+static void _picohash_md5_init(void *ctx);
+static void _picohash_md5_update(void *ctx, const void *data, size_t size);
+static void _picohash_md5_final(void *ctx, void *digest);
 
 #define PICOHASH_SHA1_BLOCK_LENGTH 64
 #define PICOHASH_SHA1_DIGEST_LENGTH 20
@@ -58,9 +58,9 @@ typedef struct {
     uint8_t bufferOffset;
 } _picohash_sha1_ctx_t;
 
-static void _picohash_sha1_init(_picohash_sha1_ctx_t *ctx);
-static void _picohash_sha1_update(_picohash_sha1_ctx_t *ctx, const void *input, size_t len);
-static void _picohash_sha1_final(_picohash_sha1_ctx_t *ctx, void *digest);
+static void _picohash_sha1_init(void *ctx);
+static void _picohash_sha1_update(void *ctx, const void *input, size_t len);
+static void _picohash_sha1_final(void *ctx, void *digest);
 
 #define PICOHASH_SHA256_BLOCK_LENGTH 64
 #define PICOHASH_SHA256_DIGEST_LENGTH 32
@@ -74,11 +74,11 @@ typedef struct {
     unsigned char buf[PICOHASH_SHA256_BLOCK_LENGTH];
 } _picohash_sha256_ctx_t;
 
-static void _picohash_sha256_init(_picohash_sha256_ctx_t *ctx);
-static void _picohash_sha256_update(_picohash_sha256_ctx_t *ctx, const void *data, size_t len);
-static void _picohash_sha256_final(_picohash_sha256_ctx_t *ctx, void *digest);
-static void _picohash_sha224_init(_picohash_sha256_ctx_t *ctx);
-static void _picohash_sha224_final(_picohash_sha256_ctx_t *ctx, void *digest);
+static void _picohash_sha256_init(void *ctx);
+static void _picohash_sha256_update(void *ctx, const void *data, size_t len);
+static void _picohash_sha256_final(void *ctx, void *digest);
+static void _picohash_sha224_init(void *ctx);
+static void _picohash_sha224_final(void *ctx, void *digest);
 
 #define PICOHASH_MAX_BLOCK_LENGTH 64
 #define PICOHASH_MAX_DIGEST_LENGTH 32
@@ -255,8 +255,9 @@ static const void *_picohash_md5_body(_picohash_md5_ctx_t *ctx, const void *data
     return ptr;
 }
 
-inline void _picohash_md5_init(_picohash_md5_ctx_t *ctx)
+inline void _picohash_md5_init(void *opaque)
 {
+    _picohash_md5_ctx_t *ctx = opaque;
     ctx->a = 0x67452301;
     ctx->b = 0xefcdab89;
     ctx->c = 0x98badcfe;
@@ -266,8 +267,9 @@ inline void _picohash_md5_init(_picohash_md5_ctx_t *ctx)
     ctx->hi = 0;
 }
 
-inline void _picohash_md5_update(_picohash_md5_ctx_t *ctx, const void *data, size_t size)
+inline void _picohash_md5_update(void *opaque, const void *data, size_t size)
 {
+    _picohash_md5_ctx_t *ctx = opaque;
     uint_fast32_t saved_lo;
     unsigned long used, free;
 
@@ -300,8 +302,9 @@ inline void _picohash_md5_update(_picohash_md5_ctx_t *ctx, const void *data, siz
     memcpy(ctx->buffer, data, size);
 }
 
-inline void _picohash_md5_final(_picohash_md5_ctx_t *ctx, void *_digest)
+inline void _picohash_md5_final(void *opaque, void *_digest)
 {
+    _picohash_md5_ctx_t *ctx = opaque;
     unsigned char *digest = _digest;
     unsigned long used, free;
 
@@ -415,8 +418,9 @@ static inline void _picohash_sha1_add_uncounted(_picohash_sha1_ctx_t *s, uint8_t
     }
 }
 
-inline void _picohash_sha1_init(_picohash_sha1_ctx_t *s)
+inline void _picohash_sha1_init(void *opaque)
 {
+    _picohash_sha1_ctx_t *s = opaque;
     s->state[0] = 0x67452301;
     s->state[1] = 0xefcdab89;
     s->state[2] = 0x98badcfe;
@@ -426,8 +430,9 @@ inline void _picohash_sha1_init(_picohash_sha1_ctx_t *s)
     s->bufferOffset = 0;
 }
 
-inline void _picohash_sha1_update(_picohash_sha1_ctx_t *s, const void *_data, size_t len)
+inline void _picohash_sha1_update(void *opaque, const void *_data, size_t len)
 {
+    _picohash_sha1_ctx_t *s = opaque;
     const uint8_t *data = _data;
     for (; len != 0; --len) {
         ++s->byteCount;
@@ -435,8 +440,9 @@ inline void _picohash_sha1_update(_picohash_sha1_ctx_t *s, const void *_data, si
     }
 }
 
-inline void _picohash_sha1_final(_picohash_sha1_ctx_t *s, void *digest)
+inline void _picohash_sha1_final(void *opaque, void *digest)
 {
+    _picohash_sha1_ctx_t *s = opaque;
     // Pad with 0x80 followed by 0x00 until the end of the block
     _picohash_sha1_add_uncounted(s, 0x80);
     while (s->bufferOffset != 56)
@@ -568,8 +574,9 @@ static inline void _picohash_sha256_do_final(_picohash_sha256_ctx_t *ctx, void *
     }
 }
 
-inline void _picohash_sha256_init(_picohash_sha256_ctx_t *ctx)
+inline void _picohash_sha256_init(void *opaque)
 {
+    _picohash_sha256_ctx_t *ctx = opaque;
     ctx->curlen = 0;
     ctx->length = 0;
     ctx->state[0] = 0x6A09E667UL;
@@ -582,8 +589,9 @@ inline void _picohash_sha256_init(_picohash_sha256_ctx_t *ctx)
     ctx->state[7] = 0x5BE0CD19UL;
 }
 
-inline void _picohash_sha256_update(_picohash_sha256_ctx_t *ctx, const void *data, size_t len)
+inline void _picohash_sha256_update(void *opaque, const void *data, size_t len)
 {
+    _picohash_sha256_ctx_t *ctx = opaque;
     const unsigned char *in = data;
     size_t n;
 
@@ -610,13 +618,15 @@ inline void _picohash_sha256_update(_picohash_sha256_ctx_t *ctx, const void *dat
     }
 }
 
-inline void _picohash_sha256_final(_picohash_sha256_ctx_t *ctx, void *digest)
+inline void _picohash_sha256_final(void *opaque, void *digest)
 {
+    _picohash_sha256_ctx_t *ctx = opaque;
     _picohash_sha256_do_final(ctx, digest, PICOHASH_SHA256_DIGEST_LENGTH);
 }
 
-inline void _picohash_sha224_init(_picohash_sha256_ctx_t *ctx)
+inline void _picohash_sha224_init(void *opaque)
 {
+    _picohash_sha256_ctx_t *ctx = opaque;
     ctx->curlen = 0;
     ctx->length = 0;
     ctx->state[0] = 0xc1059ed8UL;
@@ -629,8 +639,9 @@ inline void _picohash_sha224_init(_picohash_sha256_ctx_t *ctx)
     ctx->state[7] = 0xbefa4fa4UL;
 }
 
-inline void _picohash_sha224_final(_picohash_sha256_ctx_t *ctx, void *digest)
+inline void _picohash_sha224_final(void *opaque, void *digest)
 {
+    _picohash_sha256_ctx_t *ctx = opaque;
     _picohash_sha256_do_final(ctx, digest, PICOHASH_SHA224_DIGEST_LENGTH);
 }
 
@@ -638,9 +649,9 @@ inline void picohash_init_md5(picohash_ctx_t *ctx)
 {
     ctx->block_length = PICOHASH_MD5_BLOCK_LENGTH;
     ctx->digest_length = PICOHASH_MD5_DIGEST_LENGTH;
-    ctx->_reset = (void *)_picohash_md5_init;
-    ctx->_update = (void *)_picohash_md5_update;
-    ctx->_final = (void *)_picohash_md5_final;
+    ctx->_reset = _picohash_md5_init;
+    ctx->_update = _picohash_md5_update;
+    ctx->_final = _picohash_md5_final;
 
     _picohash_md5_init(&ctx->_md5);
 }
@@ -649,9 +660,9 @@ inline void picohash_init_sha1(picohash_ctx_t *ctx)
 {
     ctx->block_length = PICOHASH_SHA1_BLOCK_LENGTH;
     ctx->digest_length = PICOHASH_SHA1_DIGEST_LENGTH;
-    ctx->_reset = (void *)_picohash_sha1_init;
-    ctx->_update = (void *)_picohash_sha1_update;
-    ctx->_final = (void *)_picohash_sha1_final;
+    ctx->_reset = _picohash_sha1_init;
+    ctx->_update = _picohash_sha1_update;
+    ctx->_final = _picohash_sha1_final;
     _picohash_sha1_init(&ctx->_sha1);
 }
 
@@ -659,9 +670,9 @@ inline void picohash_init_sha224(picohash_ctx_t *ctx)
 {
     ctx->block_length = PICOHASH_SHA224_BLOCK_LENGTH;
     ctx->digest_length = PICOHASH_SHA224_DIGEST_LENGTH;
-    ctx->_reset = (void *)_picohash_sha224_init;
-    ctx->_update = (void *)_picohash_sha256_update;
-    ctx->_final = (void *)_picohash_sha224_final;
+    ctx->_reset = _picohash_sha224_init;
+    ctx->_update = _picohash_sha256_update;
+    ctx->_final = _picohash_sha224_final;
     _picohash_sha224_init(&ctx->_sha256);
 }
 
@@ -669,9 +680,9 @@ inline void picohash_init_sha256(picohash_ctx_t *ctx)
 {
     ctx->block_length = PICOHASH_SHA256_BLOCK_LENGTH;
     ctx->digest_length = PICOHASH_SHA256_DIGEST_LENGTH;
-    ctx->_reset = (void *)_picohash_sha256_init;
-    ctx->_update = (void *)_picohash_sha256_update;
-    ctx->_final = (void *)_picohash_sha256_final;
+    ctx->_reset = _picohash_sha256_init;
+    ctx->_update = _picohash_sha256_update;
+    ctx->_final = _picohash_sha256_final;
     _picohash_sha256_init(&ctx->_sha256);
 }
 
@@ -700,8 +711,9 @@ static inline void _picohash_hmac_apply_key(picohash_ctx_t *ctx, unsigned char d
         ctx->_hmac.key[i] ^= delta;
 }
 
-static void _picohash_hmac_final(picohash_ctx_t *ctx, void *digest)
+static void _picohash_hmac_final(void *opaque, void *digest)
 {
+    picohash_ctx_t *ctx = opaque;
     unsigned char inner_digest[PICOHASH_MAX_DIGEST_LENGTH];
 
     ctx->_hmac.hash_final(ctx, inner_digest);
@@ -714,8 +726,9 @@ static void _picohash_hmac_final(picohash_ctx_t *ctx, void *digest)
     ctx->_hmac.hash_final(ctx, digest);
 }
 
-static inline void _picohash_hmac_reset(picohash_ctx_t *ctx)
+static inline void _picohash_hmac_reset(void *opaque)
 {
+    picohash_ctx_t *ctx = opaque;
     ctx->_hmac.hash_reset(ctx);
     _picohash_hmac_apply_key(ctx, 0x36);
 }
@@ -737,8 +750,8 @@ inline void picohash_init_hmac(picohash_ctx_t *ctx, void (*initf)(picohash_ctx_t
     /* replace reset and final function */
     ctx->_hmac.hash_reset = ctx->_reset;
     ctx->_hmac.hash_final = ctx->_final;
-    ctx->_reset = (void *)_picohash_hmac_reset;
-    ctx->_final = (void *)_picohash_hmac_final;
+    ctx->_reset = _picohash_hmac_reset;
+    ctx->_final = _picohash_hmac_final;
 
     /* start calculating the inner hash */
     _picohash_hmac_apply_key(ctx, 0x36);
