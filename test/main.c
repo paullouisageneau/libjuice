@@ -21,6 +21,7 @@ int test_notrickle(void);
 int test_gathering(void);
 int test_turn(void);
 int test_conflict(void);
+int test_nomination_repeated(void);
 int test_bind(void);
 int test_ufrag(void);
 int test_stun_unhandled(void);
@@ -102,6 +103,12 @@ int main(int argc, char **argv) {
 	printf("\nRunning connectivity test with role conflict...\n");
 	if (test_conflict()) {
 		fprintf(stderr, "Connectivity test with role conflict failed\n");
+		return -1;
+	}
+
+	printf("\nRunning repeated nomination test...\n");
+	if (test_nomination_repeated()) {
+		fprintf(stderr, "Repeated nomination test failed\n");
 		return -1;
 	}
 
