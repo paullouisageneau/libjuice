@@ -99,7 +99,7 @@ int tcp_ice_read(socket_t sock, tcp_ice_read_context_t *context) {
 	}
 
 	int len;
-	while (context->bytes_read < 2 + context->length) {
+	while (context->bytes_read < (uint32_t)(2 + context->length)) {
 		if (context->bytes_read < 2) {
 			len = recv(sock, (char *)&context->header + context->bytes_read, 2 - context->bytes_read, flags);
 		} else { // bytes_read >= 2
