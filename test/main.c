@@ -21,6 +21,7 @@ int test_notrickle(void);
 int test_gathering(void);
 int test_turn(void);
 int test_conflict(void);
+int test_nomination_repeated(void);
 int test_bind(void);
 int test_ufrag(void);
 int test_stun_unhandled(void);
@@ -33,6 +34,7 @@ int test_relay_only(void);
 #ifndef NO_SERVER
 int test_relay_only_turn(void);
 #endif
+int test_tcp_pending_connect(void);
 
 #ifndef NO_SERVER
 int test_server(void);
@@ -115,6 +117,12 @@ int main(int argc, char **argv) {
 		return -1;
 	}
 
+	printf("\nRunning repeated nomination test...\n");
+	if (test_nomination_repeated()) {
+		fprintf(stderr, "Repeated nomination test failed\n");
+		return -1;
+	}
+
 	printf("\nRunning connectivity test with bind address...\n");
 	if (test_bind()) {
 		fprintf(stderr, "Connectivity test with bind address failed\n");
@@ -136,6 +144,12 @@ int main(int argc, char **argv) {
 	printf("\nRunning TCP Bad Candidate test...\n");
 	if (test_tcp_bad_candidate()) {
 		fprintf(stderr, "TCP bad candidate test failed\n");
+		return -2;
+	}
+
+	printf("\nRunning TCP pending connection test...\n");
+	if (test_tcp_pending_connect()) {
+		fprintf(stderr, "TCP pending connection test failed\n");
 		return -2;
 	}
 

@@ -84,6 +84,7 @@ set(TESTS_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/test/notrickle.c
     ${CMAKE_CURRENT_SOURCE_DIR}/test/server.c
     ${CMAKE_CURRENT_SOURCE_DIR}/test/conflict.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/test/nomination.c
     ${CMAKE_CURRENT_SOURCE_DIR}/test/bind.c
 	${CMAKE_CURRENT_SOURCE_DIR}/test/ufrag.c
 	${CMAKE_CURRENT_SOURCE_DIR}/test/tcp.c
@@ -239,6 +240,10 @@ if(NOT NO_TESTS)
 	add_executable(juice-tests ${TESTS_SOURCES})
 	target_include_directories(juice-tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 	target_include_directories(juice-tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include/juice)
+
+	if(DISABLE_CONSENT_FRESHNESS)
+		target_compile_definitions(juice-tests PRIVATE JUICE_DISABLE_CONSENT_FRESHNESS=1)
+	endif()
 
 	set_target_properties(juice-tests PROPERTIES
 		VERSION ${PROJECT_VERSION}
