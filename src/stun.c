@@ -321,10 +321,11 @@ int stun_write(void *buf, size_t size, const stun_message_t *msg, const char *pa
 
 			if (msg->msg_class == STUN_CLASS_REQUEST &&
 			    msg->credentials.password_algorithm != STUN_PASSWORD_ALGORITHM_UNSET) {
-				struct stun_value_password_algorithm pwa;
-				pwa.algorithm = htons(msg->credentials.password_algorithm);
-				len = stun_write_attr(pos, end - pos, STUN_ATTR_PASSWORD_ALGORITHM, &pwa,
-				                      sizeof(pwa));
+				uint8_t pwa_buf[sizeof(struct stun_value_password_algorithm)];
+				struct stun_value_password_algorithm *pwa = (struct stun_value_password_algorithm *)pwa_buf;
+				memset(pwa, 0, sizeof(*pwa));
+				pwa->algorithm = htons(msg->credentials.password_algorithm);
+				len = stun_write_attr(pos, end - pos, STUN_ATTR_PASSWORD_ALGORITHM, pwa_buf, sizeof(*pwa));
 				if (len <= 0)
 					goto overflow;
 				pos += len;
