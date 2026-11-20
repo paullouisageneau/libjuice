@@ -117,4 +117,6 @@ uint32_t ice_compute_priority(ice_candidate_type_t type, int family, int compone
 
 bool ice_is_valid_string(const char *str);
 
+void ice_copy_description_parameters(const ice_description_t *source, ice_description_t *dest);
+
 #endif

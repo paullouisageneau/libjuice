@@ -549,11 +549,8 @@ int agent_set_remote_description(juice_agent_t *agent, const char *sdp) {
 		return JUICE_ERR_FAILED;
 	}
 
-	// Preserve existing candidates referenced by active pairs.
-	strcpy(agent->remote.ice_ufrag, remote.ice_ufrag);
-	strcpy(agent->remote.ice_pwd, remote.ice_pwd);
-	agent->remote.ice_lite = remote.ice_lite;
-	agent->remote.finished = agent->remote.finished || remote.finished;
+	// Preserve existing candidates referenced by existing pairs.
+	ice_copy_description_parameters(&remote, &agent->remote);
 
 	agent_update_pac_timer(agent);
 

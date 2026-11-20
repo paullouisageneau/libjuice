@@ -504,3 +504,11 @@ bool ice_is_valid_string(const char *str) {
 
 	return true;
 }
+
+void ice_copy_description_parameters(const ice_description_t *source, ice_description_t *dest) {
+	strcpy(dest->ice_ufrag, source->ice_ufrag);
+	strcpy(dest->ice_pwd, source->ice_pwd);
+	dest->ice_lite = source->ice_lite;
+	dest->finished = source->finished;
+}
+
