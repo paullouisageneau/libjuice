@@ -1,4 +1,4 @@
-cmake_minimum_required (VERSION 3.10)
+cmake_minimum_required (VERSION 3.10...4.4.4)
 project (libjuice
 	VERSION 1.7.4
 	LANGUAGES C)
@@ -75,6 +75,7 @@ set(TESTS_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/test/stun-unhandled-unhandle.c
     ${CMAKE_CURRENT_SOURCE_DIR}/test/stun.c
     ${CMAKE_CURRENT_SOURCE_DIR}/test/gathering.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/test/remote-description.c
     ${CMAKE_CURRENT_SOURCE_DIR}/test/connectivity.c
     ${CMAKE_CURRENT_SOURCE_DIR}/test/turn.c
     ${CMAKE_CURRENT_SOURCE_DIR}/test/thread.c
@@ -82,6 +83,7 @@ set(TESTS_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/test/notrickle.c
     ${CMAKE_CURRENT_SOURCE_DIR}/test/server.c
     ${CMAKE_CURRENT_SOURCE_DIR}/test/conflict.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/test/nomination.c
     ${CMAKE_CURRENT_SOURCE_DIR}/test/bind.c
 	${CMAKE_CURRENT_SOURCE_DIR}/test/ufrag.c
 	${CMAKE_CURRENT_SOURCE_DIR}/test/tcp.c
@@ -236,6 +238,10 @@ if(NOT NO_TESTS)
 	target_include_directories(juice-tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 	target_include_directories(juice-tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include/juice)
 
+	if(DISABLE_CONSENT_FRESHNESS)
+		target_compile_definitions(juice-tests PRIVATE JUICE_DISABLE_CONSENT_FRESHNESS=1)
+	endif()
+
 	set_target_properties(juice-tests PROPERTIES
 		VERSION ${PROJECT_VERSION}
 		OUTPUT_NAME tests)
@@ -243,7 +249,7 @@ if(NOT NO_TESTS)
 	set_target_properties(juice-tests PROPERTIES
 		XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER com.github.paullouisageneau.libjuice.tests)
 
-	target_link_libraries(juice-tests juice Threads::Threads)
+	target_link_libraries(juice-tests juice-static Threads::Threads)
 
 	if(WIN32)
 		target_link_libraries(juice-tests ws2_32)

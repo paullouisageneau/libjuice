@@ -566,7 +566,11 @@ int agent_set_remote_description(juice_agent_t *agent, const char *sdp) {
 		return JUICE_ERR_FAILED;
 	}
 
-	agent->remote = remote;
+	// Preserve existing candidates referenced by active pairs.
+	strcpy(agent->remote.ice_ufrag, remote.ice_ufrag);
+	strcpy(agent->remote.ice_pwd, remote.ice_pwd);
+	agent->remote.ice_lite = remote.ice_lite;
+	agent->remote.finished = agent->remote.finished || remote.finished;
 
 	agent_update_pac_timer(agent);
 
@@ -586,9 +590,13 @@ int agent_set_remote_description(juice_agent_t *agent, const char *sdp) {
 	for (int i = 0; i < agent->candidate_pairs_count; ++i) {
 		agent_unfreeze_candidate_pair(agent, agent->candidate_pairs + i);
 	}
-	JLOG_DEBUG("Adding %d candidates from remote description", (int)agent->remote.candidates_count);
-	for (int i = 0; i < agent->remote.candidates_count; ++i) {
-		ice_candidate_t *remote = agent->remote.candidates + i;
+	JLOG_DEBUG("Adding %d candidates from remote description", (int)remote.candidates_count);
+	for (int i = 0; i < remote.candidates_count; ++i) {
+		if (ice_add_candidate(remote.candidates + i, &agent->remote)) {
+			JLOG_WARN("Failed to add candidate from remote description");
+			continue;
+		}
+		ice_candidate_t *remote = agent->remote.candidates + agent->remote.candidates_count - 1;
 		if (agent_add_candidate_pairs_for_remote(agent, remote))
 			JLOG_WARN("Failed to add candidate pair");
 	}
@@ -952,8 +960,13 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 			    if (entry->tcp_state == TCP_STATE_DISCONNECTED)
 					conn_tcp_connect(agent, &entry->record); // First attempt a TCP connection
 
-				if(entry->tcp_state != TCP_STATE_CONNECTED)
+				if (entry->tcp_state != TCP_STATE_CONNECTED) {
+					// Still connecting, agent_conn_tcp_state() will arm the entry on success or
+					// failure. Leaving the entry overdue would make bookkeeping run again
+					// immediately, polling in a loop until the connection times out.
+					entry->next_transmission = now + MIN_STUN_RETRANSMISSION_TIMEOUT;
 					continue;
+				}
 			}
 
 			if (entry->retransmissions >= 0) {
@@ -1762,8 +1775,11 @@ int agent_send_stun_binding(juice_agent_t *agent, agent_stun_entry_t *entry, stu
 			// Once the controlling agent has picked a valid pair for nomination, it repeats the
 			// connectivity check that produced this valid pair [...], this time with the
 			// USE-CANDIDATE attribute.
+
+			// Keep the attribute on the later checks of the pair: a controlled agent that already
+			// has the nomination changes nothing, and one that missed it gets it again.
 			msg.use_candidate = agent->mode == AGENT_MODE_CONTROLLING && entry->pair &&
-			                    entry->pair->nomination_requested && !entry->pair->nominated;
+			                    entry->pair->nomination_requested;
 
 			entry->mode = agent->mode; // save current mode in case of conflict
 			break;
