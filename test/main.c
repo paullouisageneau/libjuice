@@ -11,6 +11,7 @@
 #include <stdio.h>
 
 int test_crc32(void);
+int test_udp_dual_stack(void);
 int test_base64(void);
 int test_stun(void);
 int test_remote_description_early_stun(void);
@@ -38,6 +39,12 @@ int test_server(void);
 
 int main(int argc, char **argv) {
 	juice_set_log_level(JUICE_LOG_LEVEL_WARN);
+
+	printf("\nRunning UDP dual-stack socket test...\n");
+	if (test_udp_dual_stack()) {
+		fprintf(stderr, "UDP dual-stack socket test failed\n");
+		return -1;
+	}
 
 	printf("\nRunning CRC32 implementation test...\n");
 	if (test_crc32()) {
