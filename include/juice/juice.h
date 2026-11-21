@@ -95,6 +95,11 @@ typedef enum juice_ice_tcp_mode {
 	JUICE_ICE_TCP_MODE_ACTIVE,   // ICE-TCP will operate as a client
 } juice_ice_tcp_mode_t;
 
+typedef enum juice_ice_transport_policy {
+	JUICE_ICE_TRANSPORT_POLICY_ALL = 0, // Allow direct and relayed ICE connections
+	JUICE_ICE_TRANSPORT_POLICY_RELAY,   // Use only TURN relays
+} juice_ice_transport_policy_t;
+
 typedef struct juice_config {
 	juice_concurrency_mode_t concurrency_mode;
 
@@ -138,6 +143,8 @@ JUICE_EXPORT int juice_set_local_ice_attributes(juice_agent_t *agent, const char
 JUICE_EXPORT const char *juice_state_to_string(juice_state_t state);
 JUICE_EXPORT int juice_mux_listen(const char *bind_address, int local_port, juice_cb_mux_incoming_t cb, void *user_ptr);
 JUICE_EXPORT int juice_set_ice_tcp_mode(juice_agent_t *agent, juice_ice_tcp_mode_t ice_tcp_mode);
+JUICE_EXPORT int juice_set_ice_transport_policy(juice_agent_t *agent,
+                                               juice_ice_transport_policy_t ice_transport_policy);
 
 // ICE server
 

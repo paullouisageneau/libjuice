@@ -130,6 +130,7 @@ struct juice_agent {
 	juice_state_t state;
 	agent_mode_t mode;
 	juice_ice_tcp_mode_t ice_tcp_mode;
+	juice_ice_transport_policy_t ice_transport_policy;
 
 	ice_description_t local;
 	ice_description_t remote;
@@ -243,5 +244,7 @@ agent_find_entry_from_record(juice_agent_t *agent, const addr_record_t *record,
                              const addr_record_t *relayed); // relayed may be NULL
 void agent_translate_host_candidate_entry(juice_agent_t *agent, agent_stun_entry_t *entry);
 int agent_set_ice_tcp_mode(juice_agent_t *agent, juice_ice_tcp_mode_t ice_tcp_mode);
+int agent_set_ice_transport_policy(juice_agent_t *agent,
+                                   juice_ice_transport_policy_t ice_transport_policy);
 
 #endif
