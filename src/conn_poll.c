@@ -204,6 +204,8 @@ int conn_poll_prepare(conn_registry_t *registry, pfds_record_t *pfds, timestamp_
 		i++;
 
 		if (conn_impl->tcp_sock != INVALID_SOCKET) {
+			assert(i < pfds->size);
+
 			struct pollfd *tcp_pfd = pfds->pfds + i;
 			tcp_pfd->fd = conn_impl->tcp_sock;
 			if (conn_impl->tcp_state == TCP_STATE_CONNECTING) {
