@@ -22,15 +22,15 @@
 
 static conn_mode_entry_t mode_entries[MODE_ENTRIES_SIZE] = {
     {conn_poll_registry_init, conn_poll_registry_cleanup, conn_poll_init, conn_poll_cleanup,
-     conn_poll_lock, conn_poll_unlock, conn_poll_interrupt, conn_poll_send, conn_poll_tcp_connect, conn_poll_get_addrs,
-     NULL, NULL, NULL, MUTEX_INITIALIZER, NULL},
+     conn_poll_lock, conn_poll_unlock, conn_poll_interrupt, conn_poll_send, conn_poll_send_batch,
+     conn_poll_tcp_connect, conn_poll_get_addrs, NULL, NULL, NULL, MUTEX_INITIALIZER, NULL},
     {conn_mux_registry_init, conn_mux_registry_cleanup, conn_mux_init, conn_mux_cleanup,
-     conn_mux_lock, conn_mux_unlock, conn_mux_interrupt, conn_mux_send, NULL, conn_mux_get_addrs,
-     conn_mux_listen, conn_mux_get_registry, conn_mux_can_release_registry, MUTEX_INITIALIZER, NULL},
-    {NULL, NULL, conn_thread_init, conn_thread_cleanup,
-     conn_thread_lock, conn_thread_unlock, conn_thread_interrupt, conn_thread_send, NULL, conn_thread_get_addrs,
-     NULL, NULL, NULL, MUTEX_INITIALIZER, NULL}
-};
+     conn_mux_lock, conn_mux_unlock, conn_mux_interrupt, conn_mux_send, conn_mux_send_batch, NULL,
+     conn_mux_get_addrs, conn_mux_listen, conn_mux_get_registry, conn_mux_can_release_registry,
+     MUTEX_INITIALIZER, NULL},
+    {NULL, NULL, conn_thread_init, conn_thread_cleanup, conn_thread_lock, conn_thread_unlock,
+     conn_thread_interrupt, conn_thread_send, conn_thread_send_batch, NULL, conn_thread_get_addrs,
+     NULL, NULL, NULL, MUTEX_INITIALIZER, NULL}};
 
 static conn_mode_entry_t *get_mode_entry(juice_concurrency_mode_t mode) {
 	assert(mode >= 0 && mode < MODE_ENTRIES_SIZE);
@@ -248,6 +248,28 @@ int conn_send(juice_agent_t *agent, const addr_record_t *dst, const char *data, 
 		return -1;
 
 	return get_agent_mode_entry(agent)->send_func(agent, dst, data, size, ds);
+}
+
+int conn_send_batch(juice_agent_t *agent, const addr_record_t *dst, const juice_buffer_t *buffers,
+                    size_t count, int ds) {
+	if (!agent->conn_impl)
+		return -1;
+
+	conn_mode_entry_t *entry = get_agent_mode_entry(agent);
+
+	// Send in chunks so the send lock is not held for too long when the batch is large
+	size_t sent = 0;
+	while (sent < count) {
+		size_t n = count - sent < UDP_BATCH_MAX ? count - sent : UDP_BATCH_MAX;
+		int ret = entry->send_batch_func(agent, dst, buffers + sent, n, ds);
+		if (ret < 0)
+			return sent > 0 ? (int)sent : ret;
+
+		sent += (size_t)ret;
+		if ((size_t)ret < n) // stopped on error
+			break;
+	}
+	return (int)sent;
 }
 
 void conn_tcp_connect(juice_agent_t *agent, const addr_record_t *dst) {

@@ -80,6 +80,7 @@ set(TESTS_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/test/turn.c
     ${CMAKE_CURRENT_SOURCE_DIR}/test/thread.c
     ${CMAKE_CURRENT_SOURCE_DIR}/test/mux.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/test/batch.c
     ${CMAKE_CURRENT_SOURCE_DIR}/test/notrickle.c
     ${CMAKE_CURRENT_SOURCE_DIR}/test/server.c
     ${CMAKE_CURRENT_SOURCE_DIR}/test/conflict.c
@@ -125,6 +126,22 @@ if(WIN32)
 	target_link_libraries(juice-static PRIVATE
 		ws2_32 # winsock2
 		bcrypt)
+endif()
+
+if(NOT WIN32)
+	include(CheckSymbolExists)
+	include(CMakePushCheckState)
+	cmake_push_check_state()
+	set(CMAKE_REQUIRED_DEFINITIONS -D_GNU_SOURCE)
+	check_symbol_exists(sendmmsg "sys/socket.h" HAVE_SENDMMSG)
+	cmake_pop_check_state()
+	if(HAVE_SENDMMSG)
+		target_compile_definitions(juice PRIVATE HAVE_SENDMMSG=1)
+		target_compile_definitions(juice-static PRIVATE HAVE_SENDMMSG=1)
+	else()
+		target_compile_definitions(juice PRIVATE HAVE_SENDMMSG=0)
+		target_compile_definitions(juice-static PRIVATE HAVE_SENDMMSG=0)
+	endif()
 endif()
 
 if (USE_NETTLE)

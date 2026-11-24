@@ -44,6 +44,8 @@ typedef struct conn_mode_entry {
 	int (*interrupt_func)(juice_agent_t *agent);
 	int (*send_func)(juice_agent_t *agent, const addr_record_t *dst, const char *data, size_t size,
 	                 int ds);
+	int (*send_batch_func)(juice_agent_t *agent, const addr_record_t *dst,
+	                       const juice_buffer_t *buffers, size_t count, int ds);
 	void (*tcp_connect_func)(juice_agent_t *agent, const addr_record_t *dst);
 	int (*get_addrs_func)(juice_agent_t *agent, addr_record_t *records, size_t size);
 	int (*mux_listen_func)(conn_registry_t *registry, juice_cb_mux_incoming_t cb, void *user_ptr);
@@ -61,6 +63,8 @@ void conn_unlock(juice_agent_t *agent);
 int conn_interrupt(juice_agent_t *agent);
 int conn_send(juice_agent_t *agent, const addr_record_t *dst, const char *data, size_t size,
               int ds);
+int conn_send_batch(juice_agent_t *agent, const addr_record_t *dst, const juice_buffer_t *buffers,
+                    size_t count, int ds);
 void conn_tcp_connect(juice_agent_t *agent, const addr_record_t *dst);
 int conn_get_addrs(juice_agent_t *agent, addr_record_t *records, size_t size);
 

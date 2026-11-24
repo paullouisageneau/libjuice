@@ -6,6 +6,10 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE // for sendmmsg()
+#endif
+
 #include "udp.h"
 #include "addr.h"
 #include "log.h"
@@ -13,9 +17,28 @@
 #include "thread.h" // for mutexes
 
 #include <assert.h>
+#include <limits.h>
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
+
+#ifdef _WIN32
+#include <mswsock.h> // for WSA_CMSG_* macros with MinGW
+#ifndef UDP_SEND_MSG_SIZE
+#define UDP_SEND_MSG_SIZE 2
+#endif
+// Maximum total size of a buffer split into datagrams by UDP Send Offload
+#define UDP_USO_MAX_SIZE 65000
+#endif
+
+// HAVE_SENDMMSG may be defined by the build system
+#ifndef HAVE_SENDMMSG
+#if defined(__linux__) && (!defined(__ANDROID__) || __ANDROID_API__ >= 21)
+#define HAVE_SENDMMSG 1
+#else
+#define HAVE_SENDMMSG 0
+#endif
+#endif
 
 static struct addrinfo *find_family(struct addrinfo *ai_list, int family) {
 	struct addrinfo *ai = ai_list;
@@ -201,21 +224,231 @@ int udp_recvfrom(socket_t sock, char *buffer, size_t size, addr_record_t *src) {
 	}
 }
 
-int udp_sendto(socket_t sock, const char *data, size_t size, const addr_record_t *dst) {
 #ifndef __linux__
-	addr_record_t tmp = *dst;
+// Map an IPv4 destination to IPv4-mapped IPv6 if the socket is IPv6
+static const addr_record_t *map_dst_for_socket(socket_t sock, const addr_record_t *dst,
+                                               addr_record_t *tmp) {
+	*tmp = *dst;
 	addr_record_t name;
 	name.len = sizeof(name.addr);
 	name.socktype = SOCK_DGRAM;
 	if (getsockname(sock, (struct sockaddr *)&name.addr, &name.len) == 0) {
 		if (name.addr.ss_family == AF_INET6)
-			addr_map_inet6_v4mapped(&tmp.addr, &tmp.len);
+			addr_map_inet6_v4mapped(&tmp->addr, &tmp->len);
 	} else {
 		JLOG_WARN("getsockname failed, errno=%d", sockerrno);
 	}
-	return sendto(sock, data, (socklen_t)size, 0, (const struct sockaddr *)&tmp.addr, tmp.len);
+	return tmp;
+}
+#endif
+
+int udp_sendto(socket_t sock, const char *data, size_t size, const addr_record_t *dst) {
+#ifndef __linux__
+	addr_record_t tmp;
+	dst = map_dst_for_socket(sock, dst, &tmp);
+	return sendto(sock, data, (socklen_t)size, 0, (const struct sockaddr *)&dst->addr, dst->len);
 #else
 	return sendto(sock, data, size, 0, (const struct sockaddr *)&dst->addr, dst->len);
+#endif
+}
+
+// dst must already be mapped for the socket
+static int send_single(socket_t sock, const juice_buffer_t *buffer, const addr_record_t *dst) {
+#ifndef __linux__
+	return sendto(sock, buffer->data, (socklen_t)buffer->size, 0,
+	              (const struct sockaddr *)&dst->addr, dst->len);
+#else
+	return sendto(sock, buffer->data, buffer->size, 0, (const struct sockaddr *)&dst->addr,
+	              dst->len);
+#endif
+}
+
+#ifndef _WIN32
+// Fallback with one system call per datagram
+static int send_loop(socket_t sock, const juice_buffer_t *buffers, size_t count,
+                     const addr_record_t *dst) {
+	for (size_t i = 0; i < count; ++i)
+		if (send_single(sock, buffers + i, dst) < 0)
+			return i > 0 ? (int)i : -1;
+
+	return (int)count;
+}
+#endif
+
+#ifdef _WIN32
+
+// WSASendMsg() sends a single datagram per call, so there is no direct equivalent to sendmmsg().
+// However, since Windows 10 version 2004, UDP Send Offload (USO) allows sending a buffer which is
+// split by the stack into datagrams of the same size, except the last one which may be shorter,
+// when the UDP_SEND_MSG_SIZE control message is passed. Segmentation is performed in software when
+// the network interface does not support the offload, for instance on loopback.
+
+#ifndef NO_USO
+static atomic(int) uso_state = 0; // 0 if unknown, 1 if available, -1 if unavailable
+#else
+static atomic(int) uso_state = -1; // disabled at build time
+#endif
+
+static bool is_uso_available(socket_t sock) {
+	int state = atomic_load(&uso_state);
+	if (state == 0) {
+		DWORD value = 0;
+		int len = sizeof(value);
+		state =
+		    getsockopt(sock, IPPROTO_UDP, UDP_SEND_MSG_SIZE, (char *)&value, &len) == 0 ? 1 : -1;
+		JLOG_DEBUG("UDP Send Offload is %s", state > 0 ? "available" : "not available");
+		atomic_store(&uso_state, state);
+	}
+	return state > 0;
+}
+
+// Send datagrams of size segment_size, except the last one which may be shorter, in one call
+static int send_uso(socket_t sock, const juice_buffer_t *buffers, size_t count, DWORD segment_size,
+                    const addr_record_t *dst) {
+	assert(count <= UDP_BATCH_MAX);
+	WSABUF wsabufs[UDP_BATCH_MAX];
+	for (size_t i = 0; i < count; ++i) {
+		wsabufs[i].buf = (CHAR *)buffers[i].data;
+		wsabufs[i].len = (ULONG)buffers[i].size;
+	}
+
+	union {
+		WSACMSGHDR header; // for alignment
+		char buf[WSA_CMSG_SPACE(sizeof(DWORD))];
+	} control;
+	memset(&control, 0, sizeof(control));
+
+	WSAMSG msg;
+	memset(&msg, 0, sizeof(msg));
+	msg.name = (LPSOCKADDR)&dst->addr;
+	msg.namelen = dst->len;
+	msg.lpBuffers = wsabufs;
+	msg.dwBufferCount = (ULONG)count;
+	msg.Control.buf = control.buf;
+	msg.Control.len = sizeof(control.buf);
+
+	WSACMSGHDR *cmsg = WSA_CMSG_FIRSTHDR(&msg);
+	cmsg->cmsg_level = IPPROTO_UDP;
+	cmsg->cmsg_type = UDP_SEND_MSG_SIZE;
+	cmsg->cmsg_len = WSA_CMSG_LEN(sizeof(DWORD));
+	memcpy(WSA_CMSG_DATA(cmsg), &segment_size, sizeof(segment_size));
+
+	DWORD sent = 0;
+	return WSASendMsg(sock, &msg, 0, &sent, NULL, NULL) == 0 ? 0 : -1;
+}
+
+static int send_batch_windows(socket_t sock, const juice_buffer_t *buffers, size_t count,
+                              const addr_record_t *dst) {
+	size_t i = 0;
+	while (i < count) {
+		// Find the longest run of datagrams which can be sent with USO
+		size_t segment_size = buffers[i].size;
+		size_t j = i + 1;
+		if (segment_size > 0 && is_uso_available(sock)) {
+			size_t total = segment_size;
+			while (j < count && j - i < UDP_BATCH_MAX && buffers[j].size == segment_size &&
+			       total + segment_size <= UDP_USO_MAX_SIZE) {
+				total += segment_size;
+				++j;
+			}
+			// The last datagram may be shorter
+			if (j < count && j - i < UDP_BATCH_MAX && buffers[j].size > 0 &&
+			    buffers[j].size < segment_size && total + buffers[j].size <= UDP_USO_MAX_SIZE) {
+				total += buffers[j].size;
+				++j;
+			}
+		}
+
+		if (j - i == 1) {
+			if (send_single(sock, buffers + i, dst) < 0)
+				return i > 0 ? (int)i : -1;
+
+			++i;
+			continue;
+		}
+
+		if (send_uso(sock, buffers + i, j - i, (DWORD)segment_size, dst) < 0) {
+			int err = sockerrno;
+			if (err != WSAEINVAL && err != WSAEOPNOTSUPP && err != WSAENOPROTOOPT)
+				return i > 0 ? (int)i : -1;
+
+			// The error might be caused by USO, check if a single datagram can be sent
+			if (send_single(sock, buffers + i, dst) < 0)
+				return i > 0 ? (int)i : -1;
+
+			JLOG_INFO("UDP Send Offload failed, errno=%d, disabling it", err);
+			atomic_store(&uso_state, -1);
+			++i;
+			continue;
+		}
+
+		i = j;
+	}
+	return (int)count;
+}
+
+#elif HAVE_SENDMMSG
+
+static atomic(bool) sendmmsg_unavailable = false;
+
+static int send_batch_mmsg(socket_t sock, const juice_buffer_t *buffers, size_t count,
+                           const addr_record_t *dst) {
+	struct mmsghdr msgs[UDP_BATCH_MAX];
+	struct iovec iovs[UDP_BATCH_MAX];
+	size_t sent = 0;
+	while (sent < count) {
+		size_t n = count - sent < UDP_BATCH_MAX ? count - sent : UDP_BATCH_MAX;
+		memset(msgs, 0, n * sizeof(*msgs));
+		for (size_t i = 0; i < n; ++i) {
+			iovs[i].iov_base = (void *)buffers[sent + i].data;
+			iovs[i].iov_len = buffers[sent + i].size;
+			msgs[i].msg_hdr.msg_name = (void *)&dst->addr;
+			msgs[i].msg_hdr.msg_namelen = dst->len;
+			msgs[i].msg_hdr.msg_iov = iovs + i;
+			msgs[i].msg_hdr.msg_iovlen = 1;
+		}
+
+		int ret = sendmmsg(sock, msgs, (unsigned int)n, 0);
+		if (ret < 0) {
+			if (sent == 0 && sockerrno == ENOSYS) {
+				JLOG_INFO("sendmmsg is not available, falling back to sendto");
+				atomic_store(&sendmmsg_unavailable, true);
+				return send_loop(sock, buffers, count, dst);
+			}
+			return sent > 0 ? (int)sent : -1;
+		}
+
+		sent += (size_t)ret;
+		if ((size_t)ret < n) // stopped on error
+			break;
+	}
+	return (int)sent;
+}
+
+#endif
+
+int udp_sendto_batch(socket_t sock, const juice_buffer_t *buffers, size_t count,
+                     const addr_record_t *dst) {
+	if (count == 0)
+		return 0;
+
+	if (count > INT_MAX)
+		count = INT_MAX;
+
+#ifndef __linux__
+	addr_record_t tmp;
+	dst = map_dst_for_socket(sock, dst, &tmp);
+#endif
+
+#ifdef _WIN32
+	return send_batch_windows(sock, buffers, count, dst);
+#elif HAVE_SENDMMSG
+	if (!atomic_load(&sendmmsg_unavailable))
+		return send_batch_mmsg(sock, buffers, count, dst);
+
+	return send_loop(sock, buffers, count, dst);
+#else
+	return send_loop(sock, buffers, count, dst);
 #endif
 }
 

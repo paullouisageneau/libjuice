@@ -697,6 +697,28 @@ int agent_direct_send(juice_agent_t *agent, const addr_record_t *dst, const char
 	return conn_send(agent, dst, data, size, ds);
 }
 
+int agent_send_batch(juice_agent_t *agent, const juice_buffer_t *buffers, size_t count, int ds) {
+	// Try not to lock in the send path
+	agent_stun_entry_t *selected_entry = atomic_load(&agent->selected_entry);
+	if (!selected_entry) {
+		JLOG_ERROR("Send while ICE is not connected");
+		return -1;
+	}
+
+	if (selected_entry->relay_entry) {
+		// The datagrams should be sent through the relay, use a channel to minimize overhead
+		return agent_channel_send_batch(agent, selected_entry->relay_entry, &selected_entry->record,
+		                                buffers, count, ds);
+	}
+
+	return agent_direct_send_batch(agent, &selected_entry->record, buffers, count, ds);
+}
+
+int agent_direct_send_batch(juice_agent_t *agent, const addr_record_t *dst,
+                            const juice_buffer_t *buffers, size_t count, int ds) {
+	return conn_send_batch(agent, dst, buffers, count, ds);
+}
+
 int agent_relay_send(juice_agent_t *agent, agent_stun_entry_t *entry, const addr_record_t *dst,
                      const char *data, size_t size, int ds) {
 	if (!entry->turn) {
@@ -756,6 +778,90 @@ int agent_channel_send(juice_agent_t *agent, agent_stun_entry_t *entry, const ad
 	}
 
 	return agent_direct_send(agent, &entry->record, buffer, len, ds);
+}
+
+int agent_channel_send_batch(juice_agent_t *agent, agent_stun_entry_t *entry,
+                             const addr_record_t *record, const juice_buffer_t *buffers,
+                             size_t count, int ds) {
+	// Must be called without holding the connection lock
+	if (!entry->turn) {
+		JLOG_ERROR("Missing TURN state on relay entry");
+		return -1;
+	}
+
+	// Send ChannelBind if necessary
+	conn_lock(agent);
+	uint16_t channel;
+	if (!turn_get_bound_channel(&entry->turn->map, record, &channel))
+		if (agent_send_turn_channel_bind_request(agent, entry, record, ds, &channel) < 0) {
+			conn_unlock(agent);
+			return -1;
+		}
+	conn_unlock(agent);
+
+	JLOG_VERBOSE("Sending batch of %d datagrams via TURN ChannelData, channel=0x%hX", (int)count,
+	             channel);
+
+	// Wrap the data as ChannelData, one chunk at a time
+	juice_buffer_t wrapped[UDP_BATCH_MAX];
+	char *buffer = NULL;
+	size_t buffer_size = 0;
+	size_t sent = 0;
+	int ret = 0;
+	while (sent < count) {
+		size_t n = count - sent < UDP_BATCH_MAX ? count - sent : UDP_BATCH_MAX;
+		size_t needed = 0;
+		for (size_t i = 0; i < n; ++i)
+			needed += sizeof(struct channel_data_header) + buffers[sent + i].size;
+
+		if (needed > buffer_size) {
+			char *new_buffer = realloc(buffer, needed);
+			if (!new_buffer) {
+				JLOG_ERROR("Memory allocation failed for ChannelData buffer");
+				ret = -1;
+				break;
+			}
+			buffer = new_buffer;
+			buffer_size = needed;
+		}
+
+		size_t wrapped_count = 0;
+		char *ptr = buffer;
+		while (wrapped_count < n) {
+			const juice_buffer_t *b = buffers + sent + wrapped_count;
+			int len = turn_wrap_channel_data(ptr, (size_t)(buffer + buffer_size - ptr), b->data,
+			                                 b->size, channel);
+			if (len <= 0) {
+				JLOG_ERROR("TURN ChannelData wrapping failed");
+				ret = -1;
+				break;
+			}
+			wrapped[wrapped_count].data = ptr;
+			wrapped[wrapped_count].size = (size_t)len;
+			ptr += len;
+			++wrapped_count;
+		}
+
+		if (wrapped_count > 0) {
+			int r = agent_direct_send_batch(agent, &entry->record, wrapped, wrapped_count, ds);
+			if (r < 0) {
+				ret = r;
+				break;
+			}
+			sent += (size_t)r;
+			if ((size_t)r < wrapped_count) // stopped on error
+				break;
+		}
+
+		if (wrapped_count < n) // wrapping failed
+			break;
+	}
+
+	free(buffer);
+	if (sent == 0 && ret < 0)
+		return ret;
+
+	return (int)sent;
 }
 
 juice_state_t agent_get_state(juice_agent_t *agent) {
