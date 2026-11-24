@@ -90,6 +90,11 @@ typedef enum juice_concurrency_mode {
 	JUICE_CONCURRENCY_MODE_THREAD,   // Each connection runs in its own thread
 } juice_concurrency_mode_t;
 
+typedef struct juice_buffer {
+	const char *data;
+	size_t size;
+} juice_buffer_t;
+
 typedef enum juice_ice_tcp_mode {
 	JUICE_ICE_TCP_MODE_NONE = 0, // ICE-TCP is disabled
 	JUICE_ICE_TCP_MODE_ACTIVE,   // ICE-TCP will operate as a client

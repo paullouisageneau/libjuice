@@ -10,9 +10,13 @@
 #define JUICE_UDP_H
 
 #include "addr.h"
+#include "juice.h"
 #include "socket.h"
 
 #include <stdint.h>
+
+// Maximum number of datagrams passed to the system in a single call
+#define UDP_BATCH_MAX 64
 
 typedef struct udp_socket_config {
 	const char *bind_address;
@@ -23,6 +27,11 @@ typedef struct udp_socket_config {
 socket_t udp_create_socket(const udp_socket_config_t *config);
 int udp_recvfrom(socket_t sock, char *buffer, size_t size, addr_record_t *src);
 int udp_sendto(socket_t sock, const char *data, size_t size, const addr_record_t *dst);
+// Send count datagrams to dst with as few system calls as possible.
+// Returns the number of datagrams sent, or -1 on error if none could be sent (sockerrno is set).
+// If the returned number is less than count, datagram at the returned index failed to be sent.
+int udp_sendto_batch(socket_t sock, const juice_buffer_t *buffers, size_t count,
+                     const addr_record_t *dst);
 int udp_sendto_self(socket_t sock, const char *data, size_t size);
 int udp_set_diffserv(socket_t sock, int ds);
 uint16_t udp_get_port(socket_t sock);
