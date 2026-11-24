@@ -273,6 +273,37 @@ int conn_thread_send(juice_agent_t *agent, const addr_record_t *dst, const char 
 	return ret;
 }
 
+int conn_thread_send_batch(juice_agent_t *agent, const addr_record_t *dst,
+                           const juice_buffer_t *buffers, size_t count, int ds) {
+	conn_impl_t *conn_impl = agent->conn_impl;
+
+	mutex_lock(&conn_impl->send_mutex);
+
+	if (conn_impl->send_ds >= 0 && conn_impl->send_ds != ds) {
+		JLOG_VERBOSE("Setting Differentiated Services field to 0x%X", ds);
+		if (udp_set_diffserv(conn_impl->sock, ds) == 0)
+			conn_impl->send_ds = ds;
+		else
+			conn_impl->send_ds = -1; // disable for next time
+	}
+
+	JLOG_VERBOSE("Sending batch of %d datagrams", (int)count);
+
+	int ret = udp_sendto_batch(conn_impl->sock, buffers, count, dst);
+	if (ret < 0) {
+		ret = -sockerrno;
+		if (ret == -SEAGAIN || ret == -SEWOULDBLOCK)
+			JLOG_INFO("Send failed, buffer is full");
+		else if (ret == -SEMSGSIZE)
+			JLOG_WARN("Send failed, datagram is too large");
+		else
+			JLOG_WARN("Send failed, errno=%d", -ret);
+	}
+
+	mutex_unlock(&conn_impl->send_mutex);
+	return ret;
+}
+
 int conn_thread_get_addrs(juice_agent_t *agent, addr_record_t *records, size_t size) {
 	conn_impl_t *conn_impl = agent->conn_impl;
 

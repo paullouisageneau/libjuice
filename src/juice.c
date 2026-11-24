@@ -15,6 +15,7 @@
 #include "server.h"
 #endif
 
+#include <limits.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -88,18 +89,47 @@ JUICE_EXPORT int juice_send(juice_agent_t *agent, const char *data, size_t size)
 	return juice_send_diffserv(agent, data, size, 0);
 }
 
+static int send_error_to_juice_error(int ret) {
+	if (ret == -SEAGAIN || ret == -SEWOULDBLOCK)
+		return JUICE_ERR_AGAIN;
+	if (ret == -SEMSGSIZE)
+		return JUICE_ERR_TOO_LARGE;
+	return JUICE_ERR_FAILED;
+}
+
 JUICE_EXPORT int juice_send_diffserv(juice_agent_t *agent, const char *data, size_t size, int ds) {
 	if (!agent || (!data && size))
 		return JUICE_ERR_INVALID;
 
 	int ret = agent_send(agent, data, size, ds);
-	if(ret >= 0)
+	if (ret >= 0)
 		return JUICE_ERR_SUCCESS;
-	if(ret == -SEAGAIN || ret == -SEWOULDBLOCK)
-		return JUICE_ERR_AGAIN;
-	if(ret == -SEMSGSIZE)
-		return JUICE_ERR_TOO_LARGE;
-	return JUICE_ERR_FAILED;
+
+	return send_error_to_juice_error(ret);
+}
+
+JUICE_EXPORT int juice_send_batch(juice_agent_t *agent, const juice_buffer_t *buffers,
+                                  size_t count) {
+	return juice_send_batch_diffserv(agent, buffers, count, 0);
+}
+
+JUICE_EXPORT int juice_send_batch_diffserv(juice_agent_t *agent, const juice_buffer_t *buffers,
+                                           size_t count, int ds) {
+	if (!agent || (!buffers && count) || count > INT_MAX)
+		return JUICE_ERR_INVALID;
+
+	for (size_t i = 0; i < count; ++i)
+		if (!buffers[i].data && buffers[i].size)
+			return JUICE_ERR_INVALID;
+
+	if (count == 0)
+		return 0;
+
+	int ret = agent_send_batch(agent, buffers, count, ds);
+	if (ret >= 0)
+		return ret;
+
+	return send_error_to_juice_error(ret);
 }
 
 JUICE_EXPORT juice_state_t juice_get_state(juice_agent_t *agent) { return agent_get_state(agent); }

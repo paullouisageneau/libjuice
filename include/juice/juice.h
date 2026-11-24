@@ -134,6 +134,16 @@ JUICE_EXPORT int juice_add_turn_server(juice_agent_t *agent, const juice_turn_se
 JUICE_EXPORT int juice_set_remote_gathering_done(juice_agent_t *agent);
 JUICE_EXPORT int juice_send(juice_agent_t *agent, const char *data, size_t size);
 JUICE_EXPORT int juice_send_diffserv(juice_agent_t *agent, const char *data, size_t size, int ds);
+// Send count datagrams in order, using as few system calls as the platform allows.
+// Returns the number of datagrams sent, or a negative error code if none could be sent. If the
+// returned number is less than count, the datagram at that index could not be sent and the
+// following ones were not attempted; calling again with the remaining datagrams retries them or
+// returns the error. juice_send_batch_diffserv() sets the same Differentiated Services field on
+// all datagrams.
+JUICE_EXPORT int juice_send_batch(juice_agent_t *agent, const juice_buffer_t *buffers,
+                                  size_t count);
+JUICE_EXPORT int juice_send_batch_diffserv(juice_agent_t *agent, const juice_buffer_t *buffers,
+                                           size_t count, int ds);
 JUICE_EXPORT juice_state_t juice_get_state(juice_agent_t *agent);
 JUICE_EXPORT int juice_get_selected_candidates(juice_agent_t *agent, char *local, size_t local_size,
                                                char *remote, size_t remote_size);
