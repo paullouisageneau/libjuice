@@ -17,6 +17,7 @@ int test_remote_description_early_stun(void);
 int test_connectivity(void);
 int test_thread(void);
 int test_mux(void);
+int test_batch(void);
 int test_notrickle(void);
 int test_gathering(void);
 int test_turn(void);
@@ -92,6 +93,12 @@ int main(int argc, char **argv) {
 	printf("\nRunning mux-mode connectivity test...\n");
 	if (test_mux()) {
 		fprintf(stderr, "Mux-mode connectivity test failed\n");
+		return -1;
+	}
+
+	printf("\nRunning batched send test...\n");
+	if (test_batch()) {
+		fprintf(stderr, "Batched send test failed\n");
 		return -1;
 	}
 
