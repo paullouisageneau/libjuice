@@ -202,19 +202,22 @@ int udp_recvfrom(socket_t sock, char *buffer, size_t size, addr_record_t *src) {
 }
 
 int udp_sendto(socket_t sock, const char *data, size_t size, const addr_record_t *dst) {
+	return udp_sendto_family(sock, AF_UNSPEC, data, size, dst);
+}
+
+int udp_sendto_family(socket_t sock, int sock_family, const char *data, size_t size,
+                      const addr_record_t *dst) {
 #ifndef __linux__
+	if (sock_family == AF_UNSPEC)
+		sock_family = udp_get_family(sock);
+
 	addr_record_t tmp = *dst;
-	addr_record_t name;
-	name.len = sizeof(name.addr);
-	name.socktype = SOCK_DGRAM;
-	if (getsockname(sock, (struct sockaddr *)&name.addr, &name.len) == 0) {
-		if (name.addr.ss_family == AF_INET6)
-			addr_map_inet6_v4mapped(&tmp.addr, &tmp.len);
-	} else {
-		JLOG_WARN("getsockname failed, errno=%d", sockerrno);
-	}
+	if (sock_family == AF_INET6)
+		addr_map_inet6_v4mapped(&tmp.addr, &tmp.len);
+
 	return sendto(sock, data, (socklen_t)size, 0, (const struct sockaddr *)&tmp.addr, tmp.len);
 #else
+	(void)sock_family;
 	return sendto(sock, data, size, 0, (const struct sockaddr *)&dst->addr, dst->len);
 #endif
 }
@@ -303,6 +306,13 @@ uint16_t udp_get_port(socket_t sock) {
 	if (udp_get_bound_addr(sock, &record) < 0)
 		return 0;
 	return addr_get_port((struct sockaddr *)&record.addr);
+}
+
+int udp_get_family(socket_t sock) {
+	addr_record_t record;
+	if (udp_get_bound_addr(sock, &record) < 0)
+		return AF_UNSPEC;
+	return record.addr.ss_family;
 }
 
 int udp_get_bound_addr(socket_t sock, addr_record_t *record) {

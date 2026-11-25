@@ -35,6 +35,7 @@ typedef struct conn_impl {
 	conn_registry_t *registry;
 	conn_state_t state;
 	socket_t udp_sock;
+	int udp_family;
 	socket_t tcp_sock;
 	tcp_ice_write_context_t tcp_ice_write_context;
 	tcp_ice_read_context_t tcp_ice_read_context;
@@ -547,6 +548,7 @@ int conn_poll_init(juice_agent_t *agent, conn_registry_t *registry, udp_socket_c
 		return -1;
 	}
 
+	conn_impl->udp_family = udp_get_family(conn_impl->udp_sock);
 	mutex_init(&conn_impl->send_mutex, 0);
 	conn_impl->registry = registry;
 	conn_impl->tcp_sock = INVALID_SOCKET;
@@ -638,7 +640,7 @@ int conn_poll_send(juice_agent_t *agent, const addr_record_t *dst, const char *d
 				conn_impl->send_ds = -1; // disable for next time
 		}
 
-		ret = udp_sendto(conn_impl->udp_sock, data, size, dst);
+		ret = udp_sendto_family(conn_impl->udp_sock, conn_impl->udp_family, data, size, dst);
 		if (ret < 0)
 			ret = -sockerrno;
 	}
