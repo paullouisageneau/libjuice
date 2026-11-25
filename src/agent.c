@@ -165,6 +165,30 @@ void agent_destroy(juice_agent_t *agent) {
 		thread_join(agent->resolver_thread, NULL);
 	}
 
+	// Send TURN Refresh with lifetime=0 to deallocate before closing the socket.
+	// Without this, the server must wait for the full allocation lifetime (default
+	// 600s) before reclaiming relay addresses — RFC 8656 Section 8.
+	if (agent->conn_impl) {
+		for (int i = 0; i < agent->entries_count; ++i) {
+			agent_stun_entry_t *entry = agent->entries + i;
+			if (entry->type == AGENT_STUN_ENTRY_TYPE_RELAY && entry->turn &&
+			    *entry->turn->credentials.nonce != '\0') {
+				stun_message_t msg;
+				memset(&msg, 0, sizeof(msg));
+				msg.msg_class = STUN_CLASS_REQUEST;
+				msg.msg_method = STUN_METHOD_REFRESH;
+				juice_random(msg.transaction_id, STUN_TRANSACTION_ID_SIZE);
+				msg.lifetime = 0;
+				msg.lifetime_set = true;
+				msg.credentials = entry->turn->credentials;
+				char buffer[BUFFER_SIZE];
+				int size = stun_write(buffer, BUFFER_SIZE, &msg, entry->turn->password);
+				if (size > 0)
+					agent_direct_send(agent, &entry->record, buffer, size, 0);
+			}
+		}
+	}
+
 	if (agent->conn_impl) {
 		conn_destroy(agent);
 	}
