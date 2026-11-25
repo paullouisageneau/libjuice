@@ -102,6 +102,13 @@ typedef struct agent_turn_state {
 	turn_map_t map;
 	stun_credentials_t credentials;
 	const char *password;
+	/* Whether a request has been sent with the current credentials. A 401
+	 * repeating the stored nonce after this point is a duplicate answer to a
+	 * retransmitted credential-less request, not a rejection of the
+	 * credentialed one; only a new nonce (or repeated identical nonces after a
+	 * few retries) is treated as an authentication failure. */
+	bool sent_with_credentials;
+	int auth_retries; // 401s with an unchanged nonce received after that
 } agent_turn_state_t;
 
 typedef struct agent_stun_entry {
