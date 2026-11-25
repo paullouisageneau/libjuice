@@ -37,6 +37,7 @@ typedef struct registry_impl {
 	uint16_t port;
 	thread_t thread;
 	socket_t sock;
+	int sock_family;
 	mutex_t send_mutex;
 	int send_ds;
 	map_entry_t *map;
@@ -250,6 +251,7 @@ int conn_mux_registry_init(conn_registry_t *registry, udp_socket_config_t *confi
 		free(registry_impl);
 		return -1;
 	}
+	registry_impl->sock_family = udp_get_family(registry_impl->sock);
 
 	registry_impl->port = udp_get_port(registry_impl->sock);
 
@@ -633,7 +635,7 @@ int conn_mux_send(juice_agent_t *agent, const addr_record_t *dst, const char *da
 
 	JLOG_VERBOSE("Sending datagram, size=%d", size);
 
-	int ret = udp_sendto(registry_impl->sock, data, size, dst);
+	int ret = udp_sendto_family(registry_impl->sock, registry_impl->sock_family, data, size, dst);
 	if (ret < 0) {
 		ret = -sockerrno;
 		if (sockerrno == SEAGAIN || sockerrno == SEWOULDBLOCK)

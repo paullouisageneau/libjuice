@@ -21,6 +21,7 @@
 typedef struct conn_impl {
 	thread_t thread;
 	socket_t sock;
+	int sock_family;
 	mutex_t mutex;
 	mutex_t send_mutex;
 	int send_ds;
@@ -172,6 +173,7 @@ int conn_thread_init(juice_agent_t *agent, conn_registry_t *registry, udp_socket
 		free(conn_impl);
 		return -1;
 	}
+	conn_impl->sock_family = udp_get_family(conn_impl->sock);
 
 	mutex_init(&conn_impl->mutex, MUTEX_RECURSIVE); // Recursive to allow calls from user callbacks
 	mutex_init(&conn_impl->send_mutex, 0);
@@ -258,7 +260,7 @@ int conn_thread_send(juice_agent_t *agent, const addr_record_t *dst, const char 
 
 	JLOG_VERBOSE("Sending datagram, size=%d", size);
 
-	int ret = udp_sendto(conn_impl->sock, data, size, dst);
+	int ret = udp_sendto_family(conn_impl->sock, conn_impl->sock_family, data, size, dst);
 	if (ret < 0) {
 		ret = -sockerrno;
 		if (sockerrno == SEAGAIN || sockerrno == SEWOULDBLOCK)
