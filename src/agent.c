@@ -1889,11 +1889,25 @@ int agent_process_turn_allocate(juice_agent_t *agent, const stun_message_t *msg,
 		if (msg->error_code == 401) { // Unauthorized
 			JLOG_DEBUG("Got TURN %s Unauthorized response",
 			           msg->msg_method == STUN_METHOD_ALLOCATE ? "Allocate" : "Refresh");
-			if (*entry->turn->credentials.realm != '\0') {
-				JLOG_ERROR("TURN authentication failed");
-				entry->state = AGENT_STUN_ENTRY_STATE_FAILED;
-				agent_update_gathering_done(agent);
-				return -1;
+			/* Only fail if a credentialed request was actually sent. A 401 with
+			 * a different nonce, or with the same nonce after a few retries, is
+			 * a genuine authentication failure. A 401 repeating the stored
+			 * nonce before/right after the first credentialed send is the
+			 * server answering a retransmitted copy of the initial
+			 * credential-less request; re-arm and retry instead of failing. */
+			if (entry->turn->sent_with_credentials) {
+				bool same_nonce =
+				    strncmp(msg->credentials.nonce, entry->turn->credentials.nonce,
+				            STUN_MAX_NONCE_LEN) == 0;
+				if (!same_nonce || ++entry->turn->auth_retries > 2) {
+					JLOG_ERROR("TURN authentication failed");
+					entry->state = AGENT_STUN_ENTRY_STATE_FAILED;
+					agent_update_gathering_done(agent);
+					return -1;
+				}
+				JLOG_INFO("Got duplicate TURN 401 with same nonce after sending credentials, "
+				          "retrying (%d)",
+				          entry->turn->auth_retries);
 			}
 			if (*msg->credentials.realm == '\0' || *msg->credentials.nonce == '\0') {
 				JLOG_ERROR("Expected realm and nonce in TURN error response");
@@ -2013,6 +2027,7 @@ int agent_send_turn_allocate_request(juice_agent_t *agent, const agent_stun_entr
 	if (*entry->turn->credentials.nonce != '\0') {
 		msg.credentials = entry->turn->credentials;
 		password = entry->turn->password;
+		entry->turn->sent_with_credentials = true; // local fix, see agent.h
 	}
 
 	char buffer[BUFFER_SIZE];
